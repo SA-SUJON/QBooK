@@ -120,6 +120,14 @@ class MainActivity : AppCompatActivity() {
     /** False when the page's own scroll container is scrolled away from top. */
     @Volatile private var pageAtTop: Boolean = true
 
+    /**
+     * True while the page has a video or audio element actually playing.
+     *
+     * Reported from the page, because the URL cannot answer it: the lite
+     * renderer swaps the Reels screen in without navigating.
+     */
+    @Volatile private var mediaPlaying: Boolean = false
+
     /** True while a login / signup / checkpoint page is showing. */
     private var onAuthPage: Boolean = false
 
@@ -344,6 +352,21 @@ class MainActivity : AppCompatActivity() {
             }
         }, 4500)
 
+        // Downloading also has to be able to begin here, not only from
+        // onPageFinished. After a fresh install the first page load is the
+        // login screen, and once the credentials are accepted Facebook swaps
+        // its shell in client-side — often with no further onPageFinished for
+        // the feed. The one call site therefore never fired, and nothing was
+        // ever saved until some later navigation happened to trigger it.
+        // start() is a no-op when it is already running, not logged in, or
+        // offline saving is switched off, so calling it on every resume is
+        // safe and costs a few field reads.
+        binding.root.postDelayed({
+            if (!isFinishing && !isDestroyed && isOnline) {
+                BackgroundSyncManager.start()
+            }
+        }, 6000)
+
         if (MainViewModel.pendingUpdateCheck) {
             MainViewModel.pendingUpdateCheck = false
             UpdateWatcher.checkNow(force = true)
@@ -368,16 +391,17 @@ class MainActivity : AppCompatActivity() {
 
         saveOfflinePosition()
 
-        val url = binding.webView.url ?: ""
-        // Any Facebook video surface, not just Reels - a Watch tab video
-        // (m.facebook.com/watch/?v=...) never matched "/reel" or "/reels",
-        // so background audio silently did nothing for anyone playing a
-        // video from Watch instead of the Reels feed.
-        val isReelPage = url.contains("/reel") || url.contains("/reels") ||
-            url.contains("/watch") || url.contains("/videos") ||
-            url.contains("fb.watch")
+        // Whether audio should continue cannot be decided from the URL.
+        // Facebook's lite renderer swaps the Reels screen in place without
+        // navigating, so the address stays on the home feed the whole time a
+        // reel is playing — the old "/reel" / "/watch" test simply never
+        // matched, and background audio did nothing for the one case it
+        // exists for. mediaPlaying is reported by the page itself, from the
+        // video element's own play/pause events, so it is true whenever
+        // something is actually making sound regardless of the URL.
+        val keepAudioAlive = prefs.backgroundAudio && mediaPlaying
 
-        if (prefs.backgroundAudio && isReelPage) {
+        if (keepAudioAlive) {
             // Keep WebView alive so media continues in background.
             // A foreground service tells Android this is active media
             // playback, preventing Chromium from throttling timers.
@@ -669,6 +693,16 @@ class MainActivity : AppCompatActivity() {
                 // can still have "Get the app" banners. Loading the
                 // homepage ensures the first visible frame is clean.
                 binding.webView.loadUrl(prefs.homepage)
+
+                // Just signed in, so there is a session for the first time.
+                // This is the earliest honest moment to start filling the
+                // offline store, and on a fresh install it is the only one
+                // that reliably arrives.
+                binding.root.postDelayed({
+                    if (!isFinishing && !isDestroyed && isOnline) {
+                        BackgroundSyncManager.start()
+                    }
+                }, 8000)
             }
         }
     }
@@ -1656,6 +1690,18 @@ class MainActivity : AppCompatActivity() {
             // online no such message exists - the tap simply does nothing when
             // there is nothing to show. The app's own offline banner, outside
             // the WebView, already says why.
+        }
+
+        /**
+         * Page reports whether a video or audio element is actually playing.
+         *
+         * This is what decides background audio now. The URL cannot: the lite
+         * renderer swaps the Reels screen in place without navigating, so the
+         * address stays on the home feed for the whole time a reel is playing.
+         */
+        @JavascriptInterface
+        fun onMediaState(playing: Boolean) {
+            mediaPlaying = playing
         }
 
         /**

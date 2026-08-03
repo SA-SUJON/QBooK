@@ -1020,6 +1020,49 @@ object AdBlocker {
                 document.addEventListener('touchmove', onScroll, {passive: true, capture: true});
                 report();
               })();
+
+              // ---- is anything actually playing? -----------------------------
+              // Background audio used to be decided from the URL, but the lite
+              // renderer swaps the Reels screen in without navigating, so the
+              // address never changes and the test never matched. The video
+              // element knows the truth, so let it say so.
+              (function() {
+                var last = null;
+
+                function anyPlaying() {
+                  var v = document.getElementsByTagName('video');
+                  for (var i = 0; i < v.length; i++) {
+                    var m = v[i];
+                    // readyState alone is not enough: a buffered but paused
+                    // clip would keep the service alive forever.
+                    if (!m.paused && !m.ended && m.currentTime > 0) return true;
+                  }
+                  var a = document.getElementsByTagName('audio');
+                  for (var j = 0; j < a.length; j++) {
+                    var n = a[j];
+                    if (!n.paused && !n.ended && n.currentTime > 0) return true;
+                  }
+                  return false;
+                }
+
+                function tell() {
+                  var now = anyPlaying();
+                  if (now === last) return;
+                  last = now;
+                  try { window.FBPro.onMediaState(now); } catch (e) {}
+                }
+
+                // Media events do not bubble, so they are caught on capture.
+                ['play', 'playing', 'pause', 'ended', 'emptied'].forEach(function(e) {
+                  document.addEventListener(e, tell, true);
+                });
+
+                // A reel can be swapped out without firing pause on the old
+                // element, so poll as a backstop. Cheap: a tag lookup and a
+                // couple of boolean reads.
+                setInterval(tell, 1000);
+                tell();
+              })();
             })();
         """.trimIndent()
     }

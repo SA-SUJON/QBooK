@@ -518,5 +518,69 @@ console.log('\nTransient network failures');
      savedAt >= 0 && retryAt >= 0 && savedAt < retryAt);
 }
 
+// ------------------------------------------------- background audio and sync
+//
+// Two bugs with one shape: both asked the URL a question the URL cannot answer.
+// Facebook's lite renderer swaps screens in place, so the address bar stays on
+// the home feed while a reel plays, and a fresh login produces no further
+// onPageFinished for the feed.
+console.log('\nBackground audio follows playback, not the URL');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const ab = fs.readFileSync(KT('utils/AdBlocker.kt'), 'utf8');
+
+  const onPause = ma.slice(ma.indexOf('override fun onPause'),
+                           ma.indexOf('override fun onPause') + 1400);
+  ok('the audio decision no longer greps the URL',
+     !/isReelPage/.test(onPause) &&
+     !/url\.contains\("\/reel"\)/.test(onPause));
+  ok('it uses reported playback instead',
+     /prefs\.backgroundAudio && mediaPlaying/.test(onPause));
+  ok('the field exists and is volatile',
+     /@Volatile private var mediaPlaying/.test(ma));
+  ok('the bridge can receive it',
+     /fun onMediaState\(playing: Boolean\)/.test(ma));
+
+  ok('the page reports playback',
+     /window\.FBPro\.onMediaState/.test(ab));
+  ok('a paused or ended element does not count',
+     /!m\.paused && !m\.ended/.test(ab));
+  ok('media events are captured, since they do not bubble',
+     /addEventListener\(e, tell, true\)/.test(ab));
+  ok('a swapped-out reel is caught by a backstop poll',
+     /setInterval\(tell,/.test(ab));
+}
+
+console.log('\nOffline saving starts on its own');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+
+  const starts = (ma.match(/BackgroundSyncManager\.start\(\)/g) || []).length;
+  ok('sync can start from more than one place', starts >= 3,
+     'call sites: ' + starts);
+
+  const onResume = ma.slice(ma.indexOf('override fun onResume'),
+                            ma.indexOf('override fun onResume') + 2000);
+  ok('opening the app is enough to begin',
+     /BackgroundSyncManager\.start\(\)/.test(onResume));
+  ok('and only while there is a connection',
+     /isOnline[\s\S]{0,80}BackgroundSyncManager\.start\(\)/.test(onResume));
+
+  const signedIn = ma.slice(ma.indexOf('if (wasAuth && !auth)'),
+                            ma.indexOf('if (wasAuth && !auth)') + 900);
+  ok('signing in for the first time begins a pass',
+     /BackgroundSyncManager\.start\(\)/.test(signedIn));
+
+  ok('the original onPageFinished trigger is still there',
+     /onPageFinished[\s\S]{0,1200}BackgroundSyncManager\.start\(\)/.test(ma));
+
+  const bs = fs.readFileSync(KT('utils/BackgroundSyncManager.kt'), 'utf8');
+  ok('start() is safe to call repeatedly',
+     /fun start\(\)[\s\S]{0,200}if \(isRunning\) return/.test(bs));
+  ok('and refuses when signed out or saving is off',
+     /!UrlHelper\.isLoggedIn\(\) \) *return|!UrlHelper\.isLoggedIn\(\)\) return/.test(bs) &&
+     /!p\.offlineMode\) return/.test(bs));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
