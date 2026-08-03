@@ -612,8 +612,16 @@ console.log('\nFullscreen video is not restarted by a layout pass');
   const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
   ok('the inset refresh stands down during fullscreen',
      /fun refreshInsetsAfterLoad[\s\S]{0,400}if \(customView != null \|\| inFullscreenTransition\) return/.test(ma));
+  // The enter and exit handlers used to carry identical copies of the settle
+  // block, so this counted three call sites. They now share one helper, which
+  // is what lets a new transition cancel the previous one's pending callback.
+  // The requirement is unchanged: leaving fullscreen must still ask for a
+  // fresh pass, and must not do it while the player is up.
   ok('the fullscreen handlers still request their own',
-     (ma.match(/ViewCompat\.requestApplyInsets/g) || []).length >= 3);
+     /private fun endFullscreenTransition\(\)[\s\S]{0,900}ViewCompat\.requestApplyInsets\(binding\.root\)/
+       .test(ma) &&
+     /private fun endFullscreenTransition\(\)[\s\S]{0,900}customView == null/.test(ma) &&
+     (ma.match(/ViewCompat\.requestApplyInsets/g) || []).length >= 2);
 }
 
 console.log('\nCompleteness allows for srcset alternates');

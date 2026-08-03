@@ -724,7 +724,134 @@ console.log('\nOnline layout is not left with stale insets');
   ok('but not while a video is fullscreen, which would restart it',
      /fun refreshInsetsAfterLoad[\s\S]{0,500}if \(customView != null \|\| inFullscreenTransition\) return/.test(ma));
   const n = (ma.match(/ViewCompat\.requestApplyInsets/g) || []).length;
-  ok('every un-suppress point does so', n >= 3, 'found ' + n);
+  // Two: the page-load path and the single shared fullscreen settle. It used
+  // to be three because the enter and exit handlers each carried their own
+  // copy of the same block.
+  ok('every un-suppress point does so', n >= 2, 'found ' + n);
+}
+
+// ------------------------------------------------- the feed jumping upwards
+//
+// Reported as: now and then the feed sits too high, up under the status bar,
+// and sometimes goes fullscreen on its own.
+//
+// Page loads and fullscreen transitions both want insets held still, and they
+// shared one boolean. Tap a reel while the feed is still loading and the
+// sequence is: onShowCustomView holds and hides the system bars, then
+// onPageFinished clears the shared flag while still fullscreen. The next
+// inset pass measures the immersive bars - top = 0 - and writes that into the
+// root, so when the bars come back the padding stays at zero.
+//
+// The settle callbacks were also never cancelled. Tapping through reels
+// produces exit/enter pairs much closer together than the 500ms delay, so the
+// previous transition's callback fired in the middle of the next fullscreen,
+// cleared both flags and re-laid out the root under the player.
+console.log('\nInset holds are counted, and stale settles are cancelled');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+
+  ok('holds are counted, not a single shared boolean',
+     /private var insetHolds = 0/.test(ma) &&
+     /private fun holdInsets\(\)/.test(ma) &&
+     /private fun releaseInsets\(\)/.test(ma));
+  ok('suppression only lifts when the last holder releases',
+     /if \(insetHolds == 0\) suppressInsets = false/.test(ma));
+  // The only writes are the declaration's initialiser and the two inside
+  // holdInsets/releaseInsets. Anything else means a caller is bypassing the
+  // count, which is exactly how the two paths used to clobber each other.
+  ok('nothing writes the flag outside the hold helpers',
+     (ma.match(/suppressInsets = (true|false)/g) || []).length === 3 &&
+     /private fun holdInsets\(\) \{[\s\S]{0,120}suppressInsets = true/.test(ma) &&
+     /private fun releaseInsets\(\) \{[\s\S]{0,200}suppressInsets = false/.test(ma));
+
+  ok('a page load takes and returns exactly one hold',
+     /pageLoadHoldsInsets = true; holdInsets\(\)/.test(ma) &&
+     /pageLoadHoldsInsets = false; releaseInsets\(\)/.test(ma));
+  ok('so finishing a load cannot release the fullscreen hold',
+     /if \(pageLoadHoldsInsets\)/.test(ma));
+
+  ok('a new transition cancels the previous settle',
+     /private fun beginFullscreenTransition\(\)[\s\S]{0,400}removeCallbacks/.test(ma));
+  ok('the settle is held so it can be cancelled',
+     /private var fullscreenSettle: Runnable\? = null/.test(ma));
+  // Three each: the declaration and the two call sites (enter and exit).
+  ok('entering and leaving both go through the pair',
+     (ma.match(/beginFullscreenTransition\(\)/g) || []).length === 3 &&
+     (ma.match(/endFullscreenTransition\(\)/g) || []).length === 3 &&
+     /override fun onShowCustomView[\s\S]{0,1800}beginFullscreenTransition\(\)/.test(ma) &&
+     /override fun onHideCustomView[\s\S]{0,400}beginFullscreenTransition\(\)/.test(ma));
+  ok('the settle refuses to measure while still fullscreen',
+     /private fun endFullscreenTransition[\s\S]{0,900}if \(!suppressInsets && customView == null\)/
+       .test(ma));
+
+  // The listener is the last line of defence: the system dispatches its own
+  // passes when the bars animate, long after any transition has settled.
+  ok('the listener ignores passes taken while fullscreen',
+     /setOnApplyWindowInsetsListener[\s\S]{0,900}if \(customView != null\) return@setOnApplyWindowInsetsListener/
+       .test(ma));
+
+  // Behavioural: run the real ordering.
+  const App = class {
+    constructor() {
+      this.holds = 0; this.suppress = false; this.inTrans = false;
+      this.customView = null; this.padded = 63; this.pageHolds = false;
+      this.settle = null; this.q = [];
+    }
+    hold() { this.holds++; this.suppress = true; }
+    release() { if (this.holds > 0) this.holds--; if (this.holds === 0) this.suppress = false; }
+    post(at, fn) { const r = { at, fn }; this.q.push(r); return r; }
+    cancel(r) { const i = this.q.indexOf(r); if (i >= 0) this.q.splice(i, 1); }
+    applyInsets(bars) {
+      if (this.suppress) return;
+      if (this.customView) return;           // immersive measurement, refuse
+      this.padded = bars;
+    }
+    begin() {
+      if (this.settle) { this.cancel(this.settle); this.settle = null; }
+      if (!this.inTrans) { this.inTrans = true; this.hold(); }
+    }
+    end(now) {
+      if (this.settle) this.cancel(this.settle);
+      this.settle = this.post(now + 500, () => {
+        this.settle = null;
+        if (this.inTrans) { this.inTrans = false; this.release(); }
+        if (!this.suppress && !this.customView) this.applyInsets(63);
+      });
+    }
+    pageStart() { if (!this.pageHolds) { this.pageHolds = true; this.hold(); } }
+    pageFinish() {
+      if (this.pageHolds) { this.pageHolds = false; this.release(); }
+      if (!this.suppress && !this.customView) this.applyInsets(63);
+    }
+    drain() {
+      this.q.sort((x, y) => x.at - y.at);
+      while (this.q.length) { const j = this.q.shift(); j.fn(); }
+    }
+  };
+
+  // Tap a reel while the feed is still loading.
+  const a = new App();
+  a.pageStart();
+  a.post(100, () => { a.customView = {}; a.begin(); a.end(100); });
+  a.post(300, () => a.pageFinish());
+  a.drain();
+  ok('a load finishing mid-fullscreen leaves the padding alone', a.padded === 63,
+     'padding ' + a.padded);
+
+  // Rapid exit then enter: the stale settle must not fire mid-fullscreen.
+  const b = new App();
+  b.customView = null; b.begin(); b.end(0);
+  b.post(200, () => { b.customView = {}; b.begin(); b.end(200); });
+  b.drain();
+  ok('a stale settle cannot clear the new transition', b.inTrans === false);
+  ok('and cannot write immersive padding', b.padded === 63, 'padding ' + b.padded);
+
+  // An ordinary exit still restores the padding.
+  const c = new App();
+  c.customView = {}; c.padded = 0;
+  c.customView = null; c.begin(); c.end(0);
+  c.drain();
+  ok('leaving fullscreen restores the padding', c.padded === 63, 'padding ' + c.padded);
 }
 
 console.log('\nOnline requests are never delayed by the offline store');

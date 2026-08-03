@@ -495,6 +495,47 @@ class MainActivity : AppCompatActivity() {
 
     private var inFullscreenTransition = false
 
+    /**
+     * Page loads and fullscreen transitions both want to hold insets still,
+     * and they used to share one boolean. Whichever finished first cleared it
+     * for the other, which is how the layout ended up shifting at random:
+     *
+     *  - tap a reel while the feed is still loading. onShowCustomView sets the
+     *    flag and hides the system bars; onPageFinished then clears it a
+     *    moment later, still fullscreen, and the next inset pass writes the
+     *    immersive insets (top = 0) into the root. On leaving fullscreen the
+     *    bars come back but the padding stays at zero, so everything sits up
+     *    under the status bar.
+     *
+     * Counting instead of flagging: the suppression only lifts when every
+     * holder has released it.
+     */
+    private var insetHolds = 0
+
+    private fun holdInsets() {
+        insetHolds++
+        suppressInsets = true
+    }
+
+    private fun releaseInsets() {
+        if (insetHolds > 0) insetHolds--
+        if (insetHolds == 0) suppressInsets = false
+    }
+
+    /**
+     * Clears the fullscreen transition after the animation settles.
+     *
+     * Kept as a field so it can be cancelled. There was no removeCallbacks
+     * anywhere, so a quick exit-then-enter left the exit's callback pending;
+     * it fired half a second into the new fullscreen, cleared the flags and
+     * pushed an inset pass under the fullscreen container - the very re-layout
+     * that makes the player re-attach and the clip jump.
+     */
+    private var fullscreenSettle: Runnable? = null
+
+    /** True while the current page load owns one inset hold. */
+    private var pageLoadHoldsInsets = false
+
     private fun setupEdgeToEdge() {
         // Apply insets to the root FrameLayout, never to contentRoot.
         // contentRoot visibility toggles (GONE ↔ VISIBLE) during fullscreen
@@ -505,6 +546,14 @@ class MainActivity : AppCompatActivity() {
         // when the keyboard or system bars genuinely change.
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
             if (suppressInsets) return@setOnApplyWindowInsetsListener windowInsets
+            // Never record insets while a video is fullscreen. The system bars
+            // are hidden then, so the measurement is top = 0; writing that into
+            // the root means the feed keeps zero padding after the bars come
+            // back, and every row sits up underneath the status bar. The
+            // suppression flags do not cover this on their own - the system
+            // dispatches its own passes when the bars animate away, long after
+            // any transition has settled.
+            if (customView != null) return@setOnApplyWindowInsetsListener windowInsets
             val bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
             view.updatePadding(
@@ -674,6 +723,44 @@ class MainActivity : AppCompatActivity() {
      * handlers already ask for a fresh dispatch when they stop suppressing;
      * this is the same thing for an ordinary navigation.
      */
+    /**
+     * Start a fullscreen enter or exit.
+     *
+     * Cancels any settle still pending from the previous transition. Tapping
+     * through reels produces exit/enter pairs far closer together than the
+     * settle delay, and the old callback used to fire in the middle of the
+     * next fullscreen and re-lay out the root underneath the player.
+     */
+    private fun beginFullscreenTransition() {
+        fullscreenSettle?.let { binding.root.removeCallbacks(it) }
+        fullscreenSettle = null
+        if (!inFullscreenTransition) {
+            inFullscreenTransition = true
+            holdInsets()
+        }
+    }
+
+    /** Release the transition once the animation and bar change have settled. */
+    private fun endFullscreenTransition() {
+        fullscreenSettle?.let { binding.root.removeCallbacks(it) }
+        val r = Runnable {
+            fullscreenSettle = null
+            if (inFullscreenTransition) {
+                inFullscreenTransition = false
+                releaseInsets()
+            }
+            // Only ask for a pass once nothing is suppressing, and never while
+            // a video is still fullscreen: measuring then captures the
+            // immersive insets (top = 0) and writes them into the root, which
+            // is what left the feed sitting under the status bar afterwards.
+            if (!suppressInsets && customView == null) {
+                ViewCompat.requestApplyInsets(binding.root)
+            }
+        }
+        fullscreenSettle = r
+        binding.root.postDelayed(r, 500)
+    }
+
     private fun refreshInsetsAfterLoad() {
         // Not while a video is fullscreen. An inset pass re-lays out the root,
         // and doing that under the fullscreen container made the player
@@ -1058,7 +1145,9 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                suppressInsets = true
+                // Counted, so finishing this load cannot lift a hold that a
+                // fullscreen transition is still relying on.
+                if (!pageLoadHoldsInsets) { pageLoadHoldsInsets = true; holdInsets() }
                 binding.errorView.visibility = View.GONE
                 binding.webView.visibility = View.VISIBLE
 
@@ -1091,7 +1180,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                suppressInsets = false
+                if (pageLoadHoldsInsets) { pageLoadHoldsInsets = false; releaseInsets() }
                 binding.swipeRefresh.isRefreshing = false
                 mainFrameRetries = 0
                 refreshInsetsAfterLoad()
@@ -1449,7 +1538,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     visibility = View.VISIBLE
                 }
-                inFullscreenTransition = true; suppressInsets = true
+                beginFullscreenTransition()
                 binding.contentRoot.visibility = View.GONE
                 enterImmersive(true)
                 // Reels/Stories are vertical (9:16) video. Forcing landscape here
@@ -1458,22 +1547,12 @@ class MainActivity : AppCompatActivity() {
                 // of locking to landscape, so vertical video stays fullscreen and
                 // horizontal video (e.g. shared long-form clips) can still rotate.
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-                binding.root.postDelayed({
-                    inFullscreenTransition = false
-                    suppressInsets = false
-                    // Insets may have changed while suppressed (system bars
-                    // hiding/showing), and there is no guarantee a fresh
-                    // dispatch arrives right after we stop suppressing. Ask
-                    // for one explicitly so root padding can't be left stale
-                    // from whatever insets were current before this point -
-                    // that staleness is what let content sit a bit high.
-                    ViewCompat.requestApplyInsets(binding.root)
-                }, 500)
+                endFullscreenTransition()
             }
 
             override fun onHideCustomView() {
                 if (customView == null) return
-                inFullscreenTransition = true; suppressInsets = true
+                beginFullscreenTransition()
                 binding.customViewContainer.apply {
                     removeAllViews()
                     visibility = View.GONE
@@ -1484,11 +1563,7 @@ class MainActivity : AppCompatActivity() {
                 customViewCallback = null
                 enterImmersive(false)
                 requestedOrientation = originalOrientation
-                binding.root.postDelayed({
-                    inFullscreenTransition = false
-                    suppressInsets = false
-                    ViewCompat.requestApplyInsets(binding.root)
-                }, 500)
+                endFullscreenTransition()
 
                 // V4 Step 3: Re-inject after exiting fullscreen (helps restore feed state)
                 binding.root.postDelayed({
