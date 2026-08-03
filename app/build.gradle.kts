@@ -35,8 +35,8 @@ android {
         applicationId = "com.dustbook.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 100
-        versionName = "4.11.6"
+        versionCode = 101
+        versionName = "4.11.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

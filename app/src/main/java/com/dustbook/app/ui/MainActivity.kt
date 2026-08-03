@@ -414,8 +414,21 @@ class MainActivity : AppCompatActivity() {
             // not throttle its timers.
             startBgAudioService()
         } else {
+            // onPause() is per-WebView and is what we want here.
+            //
+            // pauseTimers() is not: Android documents it as "a global request,
+            // not restricted to just this WebView", so it also froze the
+            // offscreen WebView that OfflineSync runs. Leaving the app
+            // therefore stopped the download every time — the service stayed
+            // up and the notification stayed on screen, because the service
+            // was never the thing that had stalled.
+            //
+            // It is only called when nothing is downloading, so an idle app
+            // still gives back the same CPU it did before.
             binding.webView.onPause()
-            binding.webView.pauseTimers()
+            if (!BackgroundSyncManager.isRunning) {
+                binding.webView.pauseTimers()
+            }
         }
 
         CookieManager.getInstance().flush()

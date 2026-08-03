@@ -668,6 +668,22 @@ console.log('\nBackground audio leaves the focus alone');
 
 console.log('\nDownloading survives the task being swiped away');
 {
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+
+  // pauseTimers() is documented as "a global request, not restricted to just
+  // this WebView", so calling it on leaving also froze the offscreen WebView
+  // OfflineSync runs. The service stayed up and the notification stayed on
+  // screen, which is why this looked like a service problem and was not.
+  ok('the global timer pause is not applied while a pass is running',
+     /if \(!BackgroundSyncManager\.isRunning\) \{\s*\n\s*binding\.webView\.pauseTimers\(\)/
+       .test(ma));
+  ok('an idle app still pauses timers as before',
+     /pauseTimers\(\)/.test(ma));
+  ok('the per-WebView pause is still unconditional',
+     /binding\.webView\.onPause\(\)\s*\n\s*if \(!BackgroundSyncManager\.isRunning\)/.test(ma));
+  ok('resuming restores them, since that call is global too',
+     /onResume[\s\S]{0,400}resumeTimers\(\)/.test(ma));
+
   const ss = fs.existsSync(KT('ui/SyncService.kt'))
     ? fs.readFileSync(KT('ui/SyncService.kt'), 'utf8') : '';
   ok('the service handles the task being removed',
