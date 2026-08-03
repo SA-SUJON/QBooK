@@ -336,6 +336,9 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         stopBgAudioService()
+        // Back in front: let the framework manage visibility normally again,
+        // so a WebView the user has finished with is still suspended.
+        binding.webView.keepMediaAlive = false
         binding.webView.onResume()
         binding.webView.resumeTimers()
         applyBlockerFlags()
@@ -364,6 +367,7 @@ class MainActivity : AppCompatActivity() {
         binding.root.postDelayed({
             if (!isFinishing && !isDestroyed && isOnline) {
                 BackgroundSyncManager.start()
+                SyncService.startIfNeeded(applicationContext)
             }
         }, 6000)
 
@@ -401,10 +405,17 @@ class MainActivity : AppCompatActivity() {
         // something is actually making sound regardless of the URL.
         val keepAudioAlive = prefs.backgroundAudio && mediaPlaying
 
+        // The service alone was never enough. Android suspends the media
+        // pipeline itself when the window is hidden, one layer below anything
+        // onPause can do — which is why a notification appeared and the audio
+        // stopped anyway. MediaWebView swallows that notification, but only
+        // while this flag is set.
+        binding.webView.keepMediaAlive = keepAudioAlive
+
         if (keepAudioAlive) {
-            // Keep WebView alive so media continues in background.
-            // A foreground service tells Android this is active media
-            // playback, preventing Chromium from throttling timers.
+            // The service is still needed: it tells Android this is active
+            // media playback, so the process is not frozen and Chromium does
+            // not throttle its timers.
             startBgAudioService()
         } else {
             binding.webView.onPause()
@@ -701,6 +712,7 @@ class MainActivity : AppCompatActivity() {
                 binding.root.postDelayed({
                     if (!isFinishing && !isDestroyed && isOnline) {
                         BackgroundSyncManager.start()
+                        SyncService.startIfNeeded(applicationContext)
                     }
                 }, 8000)
             }
@@ -1023,8 +1035,9 @@ class MainActivity : AppCompatActivity() {
                 // content and nothing is competing for the first paint.
                 // Silent, background, never blocks scrolling.
                 if (!onAuthPage && UrlHelper.isInternal(url)) {
-                    BackgroundSyncManager.start()
                     view?.postDelayed({ maybeSyncOffline() }, 8_000)
+                    BackgroundSyncManager.start()
+                    SyncService.startIfNeeded(applicationContext)
                 }
                 // Re-probe several times: after a login submit Facebook swaps
                 // the shell client-side, so the password field disappears

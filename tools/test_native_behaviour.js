@@ -582,5 +582,70 @@ console.log('\nOffline saving starts on its own');
      /!p\.offlineMode\) return/.test(bs));
 }
 
+// ------------------------------------- playback survives the window going away
+//
+// The foreground service was not enough on its own. Android suspends a
+// WebView's media pipeline itself when the window is hidden, below anything
+// onPause can reach — which is why a notification appeared and the audio
+// stopped anyway.
+console.log('\nPlayback survives the window being hidden');
+{
+  // Read defensively: if the file is gone the assertions must fail, not
+  // crash the suite before the remaining sections have run.
+  const mw = fs.existsSync(KT('ui/MediaWebView.kt'))
+    ? fs.readFileSync(KT('ui/MediaWebView.kt'), 'utf8') : '';
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const lay = fs.readFileSync(
+    path.join(ROOT, 'app/src/main/res/layout/activity_main.xml'), 'utf8');
+
+  ok('the WebView can ignore a hidden window',
+     /override fun onWindowVisibilityChanged/.test(mw));
+  ok('it only does so when told to',
+     /keepMediaAlive && visibility != View\.VISIBLE/.test(mw) &&
+     /return\b/.test(mw));
+  ok('the default behaviour is still reachable',
+     /super\.onWindowVisibilityChanged\(visibility\)/.test(mw));
+  ok('the layout actually uses it',
+     /com\.dustbook\.app\.ui\.MediaWebView/.test(lay));
+  ok('the flag is raised only for real playback',
+     /keepMediaAlive = keepAudioAlive/.test(ma) &&
+     /prefs\.backgroundAudio && mediaPlaying/.test(ma));
+  ok('and lowered again on resume',
+     /onResume[\s\S]{0,400}keepMediaAlive = false/.test(ma));
+  ok('the service is still started alongside it',
+     /keepAudioAlive\)[\s\S]{0,400}startBgAudioService\(\)/.test(ma));
+}
+
+console.log('\nDownloading survives the app closing');
+{
+  const ss = fs.existsSync(KT('ui/SyncService.kt'))
+    ? fs.readFileSync(KT('ui/SyncService.kt'), 'utf8') : '';
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const mf = fs.readFileSync(
+    path.join(ROOT, 'app/src/main/AndroidManifest.xml'), 'utf8');
+
+  ok('there is a foreground service for saving',
+     /class SyncService : Service\(\)/.test(ss));
+  ok('it is declared as a data sync service',
+     /android:name="\.ui\.SyncService"/.test(mf) &&
+     /android:foregroundServiceType="dataSync"/.test(mf));
+  ok('the permission is requested',
+     /FOREGROUND_SERVICE_DATA_SYNC/.test(mf));
+  ok('it starts wherever a pass starts',
+     (ma.match(/SyncService\.startIfNeeded/g) || []).length >= 3);
+  ok('it refuses to start when no pass is running',
+     /if \(!BackgroundSyncManager\.isRunning\) return/.test(ss));
+  ok('it stops itself when the pass finishes',
+     /if \(!BackgroundSyncManager\.isRunning\)[\s\S]{0,80}stopSelf\(\)/.test(ss));
+  ok('the user can stop it from the notification',
+     /ACTION_STOP/.test(ss) && /"Stop"/.test(ss));
+  ok('the notification stays out of the way',
+     /IMPORTANCE_MIN/.test(ss) && /setSilent\(true\)/.test(ss));
+  ok('a refused start does not crash the process',
+     /startForeground\(NOTIFICATION_ID[\s\S]{0,400}catch \(e: Exception\)[\s\S]{0,300}stopSelf\(\)/.test(ss));
+  ok('it is not resurrected pointlessly',
+     /START_NOT_STICKY/.test(ss));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
