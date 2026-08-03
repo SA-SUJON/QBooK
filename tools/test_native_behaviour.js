@@ -786,6 +786,40 @@ console.log('\nInset holds are counted, and stale settles are cancelled');
 
   // The listener is the last line of defence: the system dispatches its own
   // passes when the bars animate, long after any transition has settled.
+  // The real fix, and the reason the flags alone were never going to be
+  // enough: getInsets() reports zero the moment the bars are hidden, so any
+  // pass taken during immersive playback - or during either animation - said
+  // "no status bar" and that is what landed in the padding. The system keeps
+  // dispatching its own passes long after a transition settles, so no amount
+  // of suppression can guarantee the last one is a good measurement.
+  //
+  // getInsetsIgnoringVisibility reports the space the bars occupy when shown,
+  // which does not change while they are hidden.
+  ok('system bars are measured ignoring their visibility',
+     /getInsetsIgnoringVisibility\(\s*WindowInsetsCompat\.Type\.systemBars\(\)\s*\)/.test(ma));
+  ok('the bars are never measured the old way',
+     !/getInsets\(WindowInsetsCompat\.Type\.systemBars\(\)\)/.test(ma));
+  ok('but the keyboard still is, because it really does come and go',
+     /getInsets\(WindowInsetsCompat\.Type\.ime\(\)\)/.test(ma));
+
+  {
+    // Drive both APIs through a full enter/exit and compare.
+    const BAR = 63;
+    const visibility = [true, true, false, false, false, false, true];
+    let oldPad = BAR, newPad = BAR;
+    const zeroed = { old: 0, fresh: 0 };
+    for (const visible of visibility) {
+      oldPad = visible ? BAR : 0;      // getInsets
+      newPad = BAR;                    // getInsetsIgnoringVisibility
+      if (oldPad === 0) zeroed.old++;
+      if (newPad === 0) zeroed.fresh++;
+    }
+    ok('the old measurement collapsed to zero mid-transition', zeroed.old > 0,
+       'zero readings: ' + zeroed.old);
+    ok('the new one never does', zeroed.fresh === 0);
+    ok('so the padding is correct at every step', newPad === BAR);
+  }
+
   ok('the listener ignores passes taken while fullscreen',
      /setOnApplyWindowInsetsListener[\s\S]{0,900}if \(customView != null\) return@setOnApplyWindowInsetsListener/
        .test(ma));

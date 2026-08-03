@@ -531,6 +531,71 @@ console.log('\nCounting waits for the whole item');
   ok('but does once the video is really there',
      full(['av_s.jpg', '/o1/v/vid']) === true);
   ok('a text post counts immediately', full([]) === true);
+
+  // ---------------------------------------------------------------
+  // A post whose only images are chrome must still be readable.
+  //
+  // Reported as: offline shows only a handful of the posts that were saved.
+  //
+  // Capture records every <img> inside a card, so an ordinary text update
+  // carries the author's avatar and any emoji in the body. The rule then read
+  // that as "this item has media and none of it arrived" and hid the post -
+  // even though the words were already in the stored markup and there was
+  // nothing left to wait for. On a feed of text updates that hides almost
+  // everything.
+  //
+  // Faithful port of the real predicates, so this exercises the decision and
+  // not a paraphrase of it.
+  const isVideoUrl = (u) => {
+    const c = u.split('?')[0].toLowerCase();
+    return c.endsWith('.mp4') || c.endsWith('.webm') || c.includes('/v/t2/');
+  };
+  const isAvatar = (u) => {
+    const c = u.split('?')[0];
+    return c.includes('/t39.30808-1/') || (c.includes('profile') && c.includes('_s.'));
+  };
+  const isChrome = (u) => {
+    const c = u.split('?')[0].toLowerCase();
+    return c.includes('/emoji.php/') || c.includes('static.xx.fbcdn.net') ||
+           c.includes('/rsrc.php/') || c.endsWith('.svg');
+  };
+  const shown = (media, cache) => {
+    if (media.length === 0) return true;
+    const has = (u) => cache[u] !== undefined;
+    const hasMin = (u) => (cache[u] || 0) >= MIN;
+    const videos = media.filter(isVideoUrl);
+    const images = media.filter((u) => !isVideoUrl(u));
+    if (videos.length) return videos.some(hasMin);
+    if (images.some((u) => has(u) && !isAvatar(u))) return true;
+    if (images.every(has)) return true;
+    if (images.every((u) => isAvatar(u) || isChrome(u))) return true;
+    return false;
+  };
+
+  const AV = 'https://scontent.xx.fbcdn.net/v/t39.30808-1/1_s.jpg';
+  const PHOTO = 'https://scontent.xx.fbcdn.net/v/t51.0-10/photo_n.jpg';
+  const EMOJI = 'https://static.xx.fbcdn.net/images/emoji.php/v9/t4b/1/16/1f600.png';
+  const VID = 'https://video.xx.fbcdn.net/v/t2/reel.mp4';
+
+  ok('a text post carrying only the author avatar is shown',
+     shown([AV], {}) === true);
+  ok('and one carrying an avatar and an emoji is shown',
+     shown([AV, EMOJI], {}) === true);
+  ok('a photo post is still withheld until the photo arrives',
+     shown([AV, PHOTO], { [AV]: 4000 }) === false);
+  ok('and shown once it has',
+     shown([AV, PHOTO], { [AV]: 4000, [PHOTO]: 90000 }) === true);
+  ok('a reel is still withheld while its video downloads',
+     shown([AV, VID], { [AV]: 4000, [VID]: 120000 }) === false);
+  ok('and shown once the video is really there',
+     shown([AV, VID], { [AV]: 4000, [VID]: 9000000 }) === true);
+
+  const feedSrc = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  ok('the chrome test exists in the source',
+     /private fun isChrome\(url: String\): Boolean/.test(feedSrc));
+  ok('and is only reached after the real-content tests',
+     feedSrc.indexOf('images.any { OfflineCache.has(it) && !isAvatar(it) }') <
+     feedSrc.indexOf('images.all { isAvatar(it) || isChrome(it) }'));
 }
 
 // ------------------------------------------- tapping Stories offline works

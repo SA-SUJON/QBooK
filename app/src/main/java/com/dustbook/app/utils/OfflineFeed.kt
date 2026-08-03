@@ -280,8 +280,34 @@ object OfflineFeed {
         // image per item is what "the photo is saved" actually means. This is
         // still far stricter than the old rule, which counted an item whose
         // only cached file was a 4 KB avatar.
-        return images.any { OfflineCache.has(it) && !isAvatar(it) } ||
-            images.all { OfflineCache.has(it) }
+        if (images.any { OfflineCache.has(it) && !isAvatar(it) }) return true
+        if (images.all { OfflineCache.has(it) }) return true
+
+        // Nothing here is content.
+        //
+        // Capture records every <img> inside a card, and on a plain text post
+        // the only images are the author's avatar and any emoji in the body.
+        // The rule above then read that as "this item has media and none of it
+        // arrived" and hid the post - so a feed of ordinary text updates came
+        // back offline as a handful of items instead of the fifty that were
+        // saved. There is nothing to wait for on such a post: the words are in
+        // the stored markup already.
+        if (images.all { isAvatar(it) || isChrome(it) }) return true
+
+        return false
+    }
+
+    /**
+     * Interface furniture rather than post content: emoji sprites, static
+     * icons and spacers. These come from Facebook's static host, not the
+     * content CDN, and a post is perfectly readable without them.
+     */
+    private fun isChrome(url: String): Boolean {
+        val clean = url.substringBefore('?').lowercase(Locale.ROOT)
+        return clean.contains("/emoji.php/") ||
+            clean.contains("static.xx.fbcdn.net") ||
+            clean.contains("/rsrc.php/") ||
+            clean.endsWith(".svg")
     }
 
     /**

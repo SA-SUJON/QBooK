@@ -554,7 +554,28 @@ class MainActivity : AppCompatActivity() {
             // dispatches its own passes when the bars animate away, long after
             // any transition has settled.
             if (customView != null) return@setOnApplyWindowInsetsListener windowInsets
-            val bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+
+            // getInsetsIgnoringVisibility, not getInsets.
+            //
+            // getInsets reports zero the moment the bars are hidden, so every
+            // measurement taken during immersive playback - or during the
+            // animation on the way in or out - said "no status bar" and that
+            // is what got written into the padding. When the bars came back
+            // the padding stayed at zero and the whole page sat up underneath
+            // them. All the suppression flags in the world cannot fix that,
+            // because the system keeps dispatching passes of its own long
+            // after any transition has settled; the measurement itself was
+            // the wrong one.
+            //
+            // This asks instead for the space the bars occupy when they are
+            // shown, which does not change while they are hidden. The layout
+            // therefore stays still, which is the entire point.
+            //
+            // The keyboard genuinely does come and go, so the IME is still
+            // read normally.
+            val bars = windowInsets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars()
+            )
             val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
             view.updatePadding(
                 top = bars.top,
