@@ -9,7 +9,7 @@ sign in on Facebook's own form, you browse Facebook's own pages, and Facebook's
 own layout is what you see — just without the advertising, the install prompts,
 and the parts of the feed you did not ask for.
 
-**Current release: [v4.11.0](../../releases/latest) · Android 8.0+ · ~14 MB**
+**Current release: [v4.11.1](../../releases/latest) · Android 8.0+ · ~14 MB**
 
 ---
 
