@@ -59,6 +59,7 @@ jobs:
           node tools/test_offline_ui.js
           node tools/test_offline_pipeline.js
           node tools/test_offline_spec.js
+          node tools/test_notifications.js
 
       - name: Lint
         run: ./gradlew lintDebug --stacktrace

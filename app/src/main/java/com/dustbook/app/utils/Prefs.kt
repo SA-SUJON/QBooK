@@ -56,6 +56,9 @@ class Prefs(context: Context) {
         const val KEY_INAPP_MESSAGING = "inapp_messaging"
 
         // Updates
+        const val KEY_PUSH_NOTIFICATIONS = "push_notifications"
+
+        // Updates
         const val KEY_AUTO_UPDATE = "auto_update_check"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
 
@@ -188,6 +191,14 @@ class Prefs(context: Context) {
             return raw.toIntOrNull()?.coerceIn(30, 250) ?: 30
         }
     val inAppMessaging: Boolean get() = sp.getBoolean(KEY_INAPP_MESSAGING, false)
+    /**
+     * Check Facebook for new activity in the background.
+     *
+     * Off by default: it costs a page load every fifteen minutes, and a user
+     * who has not asked for notifications should not pay for them.
+     */
+    val pushNotifications: Boolean get() = sp.getBoolean(KEY_PUSH_NOTIFICATIONS, false)
+
     val autoUpdateCheck: Boolean get() = sp.getBoolean(KEY_AUTO_UPDATE, true)
 
     /** Last reel the user watched offline — next session resumes here. */

@@ -112,6 +112,7 @@ dependencies {
     implementation(libs.androidx.fragment)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.webkit)
+    implementation(libs.androidx.work.runtime)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

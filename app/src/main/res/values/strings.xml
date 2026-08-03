@@ -23,6 +23,13 @@
     <string name="cat_blocking">Blocking</string>
     <string name="cat_appearance">Appearance</string>
     <string name="cat_feed">Feed cleanup</string>
+    <string name="pref_push">Notifications</string>
+    <string name="pref_push_sum">Check Facebook for likes, comments and friend requests in the background</string>
+    <string name="notif_channel_activity">Activity</string>
+    <string name="notif_channel_activity_sum">Likes, comments, mentions and shares</string>
+    <string name="notif_channel_requests">Friend requests</string>
+    <string name="notif_channel_requests_sum">New and accepted friend requests</string>
+    <string name="grp_notifications">Notifications</string>
     <string name="cat_browsing">Browsing</string>
     <string name="cat_data">Privacy &amp; data</string>
     <string name="cat_about">About</string>

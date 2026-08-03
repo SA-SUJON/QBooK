@@ -23,6 +23,9 @@ import com.dustbook.app.utils.AppExecutors
 import com.dustbook.app.utils.BlockList
 import com.dustbook.app.utils.BackgroundSyncManager
 import com.dustbook.app.utils.NetworkPolicy
+import com.dustbook.app.utils.NotificationPresenter
+import com.dustbook.app.utils.NotificationStore
+import com.dustbook.app.utils.NotificationWorker
 import com.dustbook.app.utils.OfflineCache
 import com.dustbook.app.utils.OfflineDocs
 import com.dustbook.app.utils.OfflineFeed
@@ -248,6 +251,24 @@ class SettingsActivity : AppCompatActivity() {
                 }
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_SHOW_PROGRESS)
                 ?.setOnPreferenceChangeListener { _, _ -> markDirty(false); true }
+
+            // Notifications: schedule or cancel the background check as soon
+            // as the switch moves, rather than waiting for the next launch.
+            findPreference<SwitchPreferenceCompat>(Prefs.KEY_PUSH_NOTIFICATIONS)
+                ?.setOnPreferenceChangeListener { _, v ->
+                    val on = v as Boolean
+                    val ctx = requireContext().applicationContext
+                    if (on) {
+                        NotificationPresenter.ensureChannels(ctx)
+                        NotificationWorker.schedule(ctx)
+                    } else {
+                        NotificationWorker.cancel(ctx)
+                        // Forget what was seen, so switching back on seeds
+                        // again instead of announcing a backlog.
+                        NotificationStore.clear(ctx)
+                    }
+                    true
+                }
 
             // ---- icon switching ----
             val iconPref = findPreference<Preference>(Prefs.KEY_APP_ICON)

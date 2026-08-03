@@ -34,4 +34,9 @@
             android:title="@string/pref_haptics" android:defaultValue="false"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_notifications" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="push_notifications"
+            android:title="@string/pref_push" android:summary="@string/pref_push_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+    </PreferenceCategory>
 </PreferenceScreen>

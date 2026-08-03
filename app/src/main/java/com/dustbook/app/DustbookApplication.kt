@@ -7,6 +7,8 @@ import android.webkit.WebView
 import androidx.appcompat.app.AppCompatDelegate
 import com.dustbook.app.utils.AdBlocker
 import com.dustbook.app.utils.AppExecutors
+import com.dustbook.app.utils.NotificationPresenter
+import com.dustbook.app.utils.NotificationWorker
 import com.dustbook.app.utils.OfflineCache
 import com.dustbook.app.utils.OfflineDocs
 import com.dustbook.app.utils.OfflineFeed
@@ -45,6 +47,14 @@ class DustbookApplication : Application() {
         // onCreate meant an update published while the app was open went
         // unnoticed until the next cold start.
         UpdateWatcher.start(this)
+
+        // Re-assert the notification schedule on every process start. The
+        // work itself survives a reboot, but the channels do not exist until
+        // something creates them, and a cancelled schedule has to stay
+        // cancelled if the user turned the switch off while we were not
+        // running.
+        if (prefs.pushNotifications) NotificationPresenter.ensureChannels(this)
+        NotificationWorker.sync(this, prefs)
 
         // Start Chromium during app startup rather than on the first frame of
         // MainActivity. Without this the very first load pays for the whole
