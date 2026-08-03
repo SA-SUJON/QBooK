@@ -147,6 +147,47 @@ object OfflineCapture {
            * the cache. Absolute URLs are left exactly as they are, which is
            * what lets the offline store answer them.
            */
+          /**
+           * Remove every <div> carrying attr="value", including its children.
+           *
+           * A lazy regex cannot do this: it ends at the first closing tag,
+           * which for a wrapper element is the wrong one, and the leftover
+           * </div> corrupts the markup. Counting opens and closes from the
+           * match forwards finds the real end of the element.
+           */
+          function removeTag(html, attr, value) {
+            // The quote characters are built from char codes so this stays
+            // readable inside a Kotlin raw string, where a backslash reaches
+            // JavaScript untouched and an escaped quote would not parse.
+            var q = String.fromCharCode(34) + String.fromCharCode(39);
+            var open = new RegExp(
+              '<div[^>]*\\b' + attr + '\\s*=\\s*[' + q + ']' +
+              value + '[' + q + '][^>]*>', 'i');
+            // Bounded, so malformed markup cannot spin here.
+            for (var guard = 0; guard < 200; guard++) {
+              var m = open.exec(html);
+              if (!m) break;
+              var start = m.index;
+              var i = start + m[0].length;
+              var depth = 1;
+              var tag = /<\/?div\b[^>]*>/gi;
+              tag.lastIndex = i;
+              var t;
+              while (depth > 0 && (t = tag.exec(html)) !== null) {
+                if (t[0].charAt(1) === '/') depth--; else depth++;
+                i = tag.lastIndex;
+              }
+              if (depth > 0) {
+                // Unbalanced markup: drop from the opening tag to the end
+                // rather than leaving a half-removed element behind.
+                html = html.slice(0, start);
+                break;
+              }
+              html = html.slice(0, start) + html.slice(i);
+            }
+            return html;
+          }
+
           function markupOf(card) {
             var html = card.outerHTML || '';
             if (!html || html.length > MAX) return '';
@@ -176,17 +217,18 @@ object OfflineCapture {
                 });
             }
             // Strip Facebook's audio/video overlay elements.
-            // These "Tap to unmute" labels and their nested chrome
-            // stay permanently visible offline because Facebook's JS
-            // would normally dismiss them on interaction.
-            // Remove via a recursive loop, not a single regex, to
-            // handle deeply nested div structures.
-            var before = '';
-            while (before !== html) {
-              before = html;
-              html = html.replace(
-                /<div[^>]*\bdata-sigil\s*=\s*["']m-video-overlay["'][^>]*>[\s\S]*?<\/div>/gi, '');
-            }
+            //
+            // These "Tap to unmute" labels are dismissed by Facebook's own
+            // JS on interaction. Offline that JS never runs, so the label
+            // sits on top of the video for good.
+            //
+            // The previous attempt looped a lazy regex ending at the first
+            // </div>. Facebook's overlay wraps nested divs, so that match
+            // stopped inside the overlay and left its trailing </div>
+            // behind. The browser then re-balanced the broken markup and
+            // the label came back — which is why the recursion never
+            // finished the job. Depth has to be counted instead.
+            html = removeTag(html, 'data-sigil', 'm-video-overlay');
             return html;
           }
 

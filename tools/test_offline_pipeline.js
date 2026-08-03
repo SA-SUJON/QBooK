@@ -332,5 +332,87 @@ console.log('\nThe offline notice is a toast, not a permanent bar');
      String(hits));
 }
 
+// ------------------------------------------ the "Tap to unmute" label offline
+//
+// Facebook dismisses this label with its own JS on interaction. Offline that
+// JS never runs, so it has to be gone from the stored markup. A lazy regex
+// ending at the first </div> stopped inside the overlay, left its trailing
+// </div> behind and corrupted the markup, so the label survived.
+console.log('\nStored markup carries no audio overlay');
+{
+  const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+
+  ok('the overlay is removed by counting depth, not a lazy regex',
+     /function removeTag\(html, attr, value\)/.test(cap) &&
+     !/m-video-overlay["'\]]*\[\^>\]\*>\[\\s\\S\]\*\?/.test(cap));
+  ok('it is applied to the audio overlay',
+     /removeTag\(html, 'data-sigil', 'm-video-overlay'\)/.test(cap));
+  ok('the scan is bounded so malformed markup cannot spin',
+     /guard < \d+/.test(cap));
+
+  // Run the real function against the shapes Facebook actually serves.
+  // Built defensively: if the helper is missing these assertions must fail,
+  // not throw and hide every section after this one.
+  let removeTag = null;
+  try {
+    const src = cap.slice(cap.indexOf('function removeTag'),
+                          cap.indexOf('function markupOf'));
+    // eslint-disable-next-line no-new-func
+    removeTag = new Function(src + '; return removeTag;')();
+  } catch (e) {
+    removeTag = null;
+  }
+  if (typeof removeTag !== 'function') {
+    removeTag = () => '<<removeTag missing>>';
+  }
+
+  const cases = {
+    'flat': '<div data-sigil="m-video-overlay">Tap to unmute</div><div id="k">real</div>',
+    'nested': '<div class="x" data-sigil="m-video-overlay"><div class="i">' +
+              '<span>Tap to unmute</span></div></div><div id="k">real</div>',
+    'deeply nested': '<div data-sigil="m-video-overlay"><div><div><div>' +
+              'Tap to unmute</div></div></div></div><div id="k">real</div>',
+    'two overlays': '<div data-sigil="m-video-overlay"><div>Tap to unmute</div></div>' +
+              '<p>mid</p><div data-sigil="m-video-overlay"><div>unmute</div></div>' +
+              '<div id="k">real</div>',
+  };
+  for (const [name, html] of Object.entries(cases)) {
+    const out = removeTag(html, 'data-sigil', 'm-video-overlay');
+    const opens = (out.match(/<div/g) || []).length;
+    const closes = (out.match(/<\/div>/g) || []).length;
+    ok('removed from ' + name, !/unmute/i.test(out), out);
+    ok('  real content kept in ' + name, /real/.test(out));
+    ok('  markup stays balanced in ' + name, opens === closes,
+       opens + ' open vs ' + closes + ' close');
+  }
+  ok('markup with no overlay is untouched',
+     removeTag('<div id="k">real</div>', 'data-sigil', 'm-video-overlay')
+       === '<div id="k">real</div>');
+}
+
+// ---------------------------------------- the offline story sits too high
+//
+// Online the activity pads its root view so content clears the status bar. A
+// position:fixed overlay inside the WebView is measured against the viewport
+// and never sees that padding, so the offline story viewer started under the
+// status bar while the online one did not.
+console.log('\nOffline story viewer clears the status bar');
+{
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+  const sv = docs.slice(docs.indexOf('private fun storyViewer'));
+
+  ok('the overlay asks for the safe area',
+     /safe-area-inset-top/.test(sv) && /safe-area-inset-bottom/.test(sv));
+  ok('env() is set through a stylesheet, not the style attribute',
+     /createElement\('style'\)/.test(sv) &&
+     /__db_story_overlay\{/.test(sv));
+  ok('a plain 0 fallback precedes it',
+     /top:0;bottom:0;[\s\S]{0,80}safe-area-inset-top/.test(sv));
+  ok('viewport-fit=cover is ensured, or env() never resolves',
+     /viewport-fit/.test(sv) && /meta\[name=viewport\]/.test(sv));
+  ok('an existing viewport meta is amended, not replaced',
+     /indexOf\('viewport-fit'\) === -1/.test(sv));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

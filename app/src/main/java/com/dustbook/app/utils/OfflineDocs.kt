@@ -261,7 +261,50 @@ object OfflineDocs {
 
           var overlay=document.createElement('div');
           overlay.id='__db_story_overlay';
-          overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#000;overflow:hidden;';
+          // position:fixed is measured against the viewport, not against the
+          // padding the activity applies to its root view. Online that padding
+          // is what keeps content clear of the status bar; a fixed overlay
+          // inside the WebView never sees it, so the story sat too high with
+          // its top edge under the status bar.
+          //
+          // env(safe-area-inset-*) is the viewport-level equivalent, but it
+          // only resolves when the document asks for viewport-fit=cover, and
+          // this overlay is injected into Facebook's own stored markup whose
+          // meta tag we do not control. Ensure the meta tag says so first,
+          // then the insets resolve; where they still do not, the 0px
+          // fallback leaves the previous behaviour untouched.
+          try {
+            var vp = document.querySelector('meta[name=viewport]');
+            if (!vp) {
+              vp = document.createElement('meta');
+              vp.setAttribute('name', 'viewport');
+              vp.setAttribute('content', 'width=device-width,initial-scale=1');
+              document.head.appendChild(vp);
+            }
+            var c = vp.getAttribute('content') || '';
+            if (c.indexOf('viewport-fit') === -1) {
+              vp.setAttribute('content', c + ',viewport-fit=cover');
+            }
+          } catch (e) {}
+
+          // Set through a stylesheet rather than the style attribute. An
+          // inline declaration is parsed property by property and a value the
+          // parser does not recognise is dropped on the spot, which would
+          // leave top unset. In a stylesheet the whole rule is handed to the
+          // engine, so top falls back cleanly to 0px where env() is unknown
+          // and resolves where it is not.
+          try {
+            var st = document.createElement('style');
+            st.textContent =
+              '#__db_story_overlay{position:fixed;left:0;right:0;' +
+              'z-index:99999;background:#000;overflow:hidden;' +
+              'top:0;bottom:0;' +
+              'top:env(safe-area-inset-top,0px);' +
+              'bottom:env(safe-area-inset-bottom,0px);}';
+            document.head.appendChild(st);
+          } catch (e) {}
+          overlay.style.cssText='position:fixed;left:0;right:0;top:0;bottom:0;'+
+            'z-index:99999;background:#000;overflow:hidden;';
           document.body.appendChild(overlay);
 
           var prevZone=document.createElement('div');
