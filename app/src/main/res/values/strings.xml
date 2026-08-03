@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dustbook</string>
+    <string name="facebook_url">https://www.facebook.com</string>
+
+    <string name="loading">Loading…</string>
+    <string name="retry">Retry</string>
+    <string name="offline_title">Can\'t load the page</string>
+    <string name="offline_message">Check your internet connection and try again.</string>
+    <string name="no_app_to_open">No app found to open this link</string>
+    <string name="choose_file">Choose a file</string>
+
+    <string name="download_started">Download started</string>
+    <string name="download_completed">Saved to Downloads</string>
+    <string name="download_failed">Download failed</string>
+
+    <string name="permission_required">Permission needed</string>
+    <string name="permission_rationale">Some features need this permission. You can grant it in system settings.</string>
+    <string name="grant_permission">Open settings</string>
+    <string name="dismiss">Not now</string>
+
+    <string name="hidden_settings">Hidden Settings</string>
+    <string name="cat_blocking">Blocking</string>
+    <string name="cat_appearance">Appearance</string>
+    <string name="cat_feed">Feed cleanup</string>
+    <string name="cat_browsing">Browsing</string>
+    <string name="cat_data">Privacy &amp; data</string>
+    <string name="cat_about">About</string>
+
+    <string name="pref_adblock">Ad blocker</string>
+    <string name="pref_adblock_sum">Block ad and tracker network requests</string>
+    <string name="pref_cosmetic">Hide ad elements</string>
+    <string name="pref_cosmetic_sum">Remove sponsored posts and ad slots from the page</string>
+    <string name="pref_app_promo">Remove app download banners</string>
+    <string name="pref_app_promo_sum">Strips every \"Get the app\", Play Store and App Store link on any screen</string>
+    <string name="pref_popups">Block popups</string>
+    <string name="pref_popups_sum">Block windows the page opens without a tap</string>
+    <string name="pref_stats">Requests blocked</string>
+    <string name="pref_reset_stats">Reset counter</string>
+    <string name="blocked_count_fmt">%1$d blocked in this session</string>
+
+    <string name="pref_dark">Theme</string>
+    <string name="pref_amoled">AMOLED black</string>
+    <string name="pref_amoled_sum">Pure black background in dark mode</string>
+    <string name="pref_progress">Loading bar</string>
+    <string name="pref_progress_sum">Show page load progress at the top</string>
+
+    <string name="pref_hide_stories">Hide Stories</string>
+    <string name="pref_hide_reels">Hide Reels</string>
+    <string name="pref_hide_pymk">Hide People You May Know</string>
+
+    <string name="pref_desktop">Desktop site</string>
+    <string name="pref_desktop_sum">Request the desktop version of Facebook</string>
+    <string name="pref_zoom">Pinch to zoom</string>
+    <string name="pref_zoom_sum">Allow zooming photos and text</string>
+    <string name="pref_pull">Pull to refresh</string>
+    <string name="pref_autoplay">Autoplay videos</string>
+    <string name="pref_autoplay_sum">Play videos without tapping</string>
+    <string name="pref_external">Open outside links in browser</string>
+    <string name="pref_external_sum">Non-Facebook links open in your default browser</string>
+    <string name="pref_screen_on">Keep screen on</string>
+    <string name="pref_haptics">Haptic feedback</string>
+    <string name="pref_homepage">Start page</string>
+
+    <string name="pref_session">Remember last page</string>
+    <string name="pref_session_sum">Reopen where you left off</string>
+    <string name="clear_cache">Clear cache</string>
+    <string name="clear_cache_sum">Delete cached pages, images and storage</string>
+    <string name="clear_cookies">Clear cookies</string>
+    <string name="clear_cookies_sum">This will sign you out</string>
+    <string name="clear_all_data">Reset app</string>
+    <string name="clear_all_sum">Erase everything and restart</string>
+    <string name="confirm_logout">You will be signed out of Facebook. Continue?</string>
+    <string name="confirm_reset">This erases all settings, cookies and cache, then restarts the app. Continue?</string>
+    <string name="cache_cleared">Cache cleared</string>
+    <string name="cookies_cleared">Cookies cleared</string>
+    <string name="all_data_cleared">All data cleared</string>
+
+    <string name="pref_version">Version</string>
+    <string name="pref_gesture">Open this screen</string>
+    <string name="pref_gesture_sum">Three finger double tap anywhere on the main screen</string>
+    <string name="cat_home">Home page sections</string>
+    <string name="pref_filters">Filter lists</string>
+    <string name="filters_fmt">%1$s domains from AdGuard, EasyList, EasyPrivacy and uBlock Origin</string>
+    <string name="filters_loading">Loading…</string>
+    <string name="pref_hide_stories_sum">Hide the Stories row at the top of the feed</string>
+    <string name="pref_hide_reels_sum">Hide Reels rows and the Reels tab</string>
+    <string name="pref_hide_rooms">Hide Rooms</string>
+    <string name="pref_hide_marketplace">Hide Marketplace</string>
+    <string name="pref_hide_marketplace_sum">Hide Marketplace links and shortcuts</string>
+    <string name="pref_hide_groups">Hide Groups</string>
+    <string name="pref_hide_watch">Hide Watch / Video</string>
+    <string name="pref_hide_events">Hide Events</string>
+    <string name="pref_hide_gaming">Hide Gaming</string>
+    <string name="pref_hide_memories">Hide Memories</string>
+    <string name="pref_hide_birthdays">Hide Birthdays</string>
+    <string name="pref_hide_pymk_sum">Hide friend suggestions in the feed</string>
+    <string name="pref_hide_pages">Hide Pages suggestions</string>
+    <!-- native chrome -->
+    <string name="brand_wordmark">facebook</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_reels">Reels</string>
+    <string name="nav_notifications">Notifications</string>
+    <string name="nav_profile">Profile</string>
+    <string name="nav_menu">Menu</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_create">Create</string>
+    <string name="nav_messages">Messages</string>
+
+    <!-- offline -->
+    <string name="offline_banner">You\'re offline — showing saved content</string>
+    <string name="view_offline">View saved content</string>
+    <string name="offline_screen_missing">%1$s is not saved for offline yet</string>
+    <string name="offline_nothing_saved">Nothing saved yet. Open Facebook with a connection first.</string>
+    <string name="pref_offline_feed">Keep home feed</string>
+    <string name="pref_offline_feed_sum">Posts from your feed are saved too, so the home screen still has content with no connection</string>
+    <string name="pref_offline_stories">Keep stories</string>
+    <string name="pref_offline_stories_sum">Stories stay viewable with no connection</string>
+    <string name="pref_offline_status">Downloaded</string>
+    <string name="pref_offline_screens">Saved screens</string>
+    <string name="offline_reels_held">%1$d of %2$d reels saved</string>
+    <string name="offline_status_fmt">%1$d of %2$d reels &#183; %3$d posts &#183; %4$d stories &#183; %5$.0f MB\nLast update: %6$s</string>
+    <string name="offline_status_working">Downloading… %1$d of %2$d reels &#183; %3$d posts &#183; %4$d stories &#183; %5$.0f MB\nLast update: %6$s</string>
+    <string name="offline_last_never">never</string>
+    <string name="cat_offline">Offline</string>
+    <string name="cat_offline_sum">Saved content, storage</string>
+    <string name="grp_offline">Offline reading</string>
+    <string name="grp_storage">Storage</string>
+    <string name="pref_offline">Save content for offline</string>
+    <string name="pref_offline_sum">Keep photos and posts so the feed still works with no connection</string>
+    <string name="pref_offline_video">Include videos</string>
+    <string name="pref_offline_video_sum">Also save video for offline playback</string>
+    <string name="pref_offline_reels">Keep reels</string>
+    <string name="pref_offline_reels_sum">Reels are downloaded for you in the background and stay playable with no connection</string>
+    <string name="pref_offline_reel_count">Reels to download</string>
+    <!--
+      These must stay in step with Prefs.offlineReelTarget, which clamps to
+      30..250, and with the defaultValue in settings_offline.xml. A default
+      that is absent from entryValues leaves the ListPreference with no
+      summary and nothing selected.
+    -->
+    <string-array name="reel_count_labels">
+        <item>30 reels</item>
+        <item>50 reels</item>
+        <item>100 reels</item>
+        <item>150 reels</item>
+        <item>200 reels</item>
+        <item>250 reels</item>
+    </string-array>
+    <string-array name="reel_count_values">
+        <item>30</item>
+        <item>50</item>
+        <item>100</item>
+        <item>150</item>
+        <item>200</item>
+        <item>250</item>
+    </string-array>
+    <string name="pref_offline_size">Saved content</string>
+    <string name="offline_size_fmt">%1$d items · %2$.1f MB</string>
+    <string name="pref_clear_offline">Clear saved content</string>
+    <string name="pref_clear_offline_sum">Delete everything saved for offline</string>
+    <string name="confirm_clear_offline">Delete all saved offline content?</string>
+    <string name="offline_cleared">Saved content cleared</string>
+
+    <!-- category summaries -->
+    <string name="cat_blocking_sum">Ads, trackers, app banners</string>
+    <string name="cat_home_sum">Stories, Reels, Marketplace, suggestions</string>
+    <string name="cat_appearance_sum">Theme, dark mode, icon, layout</string>
+    <string name="pref_icon">App icon</string>
+    <string name="pref_icon_sum">Tap to choose from available styles</string>
+    <string name="pref_bg_audio">Background audio</string>
+    <string name="pref_bg_audio_sum">Keep playing reel audio when the app is in the background</string>
+    <string name="grp_icons">Icon</string>
+    <string name="cat_browsing_sum">Zoom, videos, links, start page</string>
+    <string name="cat_data_sum">Session, cache, cookies</string>
+    <string name="cat_about_sum">Version, filters, gesture</string>
+
+    <!-- group headers -->
+    <string name="grp_adblock">Ad blocking</string>
+    <string name="grp_promo">App promotion</string>
+    <string name="grp_stats">Statistics</string>
+    <string name="grp_feed_top">Top of feed</string>
+    <string name="grp_feed_sugg">Suggestions</string>
+    <string name="grp_shortcuts">Shortcuts and tabs</string>
+    <string name="grp_theme">Theme</string>
+    <string name="grp_chrome">Interface</string>
+    <string name="grp_page">Page</string>
+    <string name="grp_media">Media</string>
+    <string name="grp_behaviour">Behaviour</string>
+    <string name="grp_session">Session</string>
+    <string name="grp_clear">Clear data</string>
+
+    <string name="pref_chrome">Native navigation bars</string>
+    <string name="pref_chrome_sum">Facebook-style top bar and bottom tabs</string>
+    <!-- updates -->
+    <string name="grp_update">Updates</string>
+    <string name="pref_check_update">Check for updates</string>
+    <string name="pref_check_update_sum">Look for a newer version now</string>
+    <string name="pref_auto_update">Check automatically</string>
+    <string name="pref_auto_update_sum">Offer new versions automatically, on whichever screen you are on</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_none">You\'re on the latest version</string>
+    <string name="update_none_fmt">You\'re on the latest version (%1$s)</string>
+    <string name="update_no_releases">No releases published yet</string>
+    <string name="update_offline">No connection — try again later</string>
+    <string name="update_failed_fmt">Could not check (%1$s)</string>
+    <string name="update_failed">Could not check for updates</string>
+    <string name="update_available">Update available</string>
+    <string name="update_msg_fmt">Version %1$s is available.\n\nYou have %2$s.</string>
+    <string name="update_download">Download</string>
+    <string name="update_later">Later</string>
+    <string name="update_skip">Skip this version</string>
+    <string name="update_downloading">Downloading update…</string>
+    <!-- native login screen -->
+    <string name="login_locale">English (UK)</string>
+    <string name="login_email_hint">Mobile number or email address</string>
+    <string name="login_password_hint">Password</string>
+    <string name="login_button">Log in</string>
+    <string name="login_forgot">Forgotten password?</string>
+    <string name="login_create">Create new account</string>
+    <string name="login_meta">Meta</string>
+    <string name="login_empty">Enter your email and password</string>
+    <string name="login_wait">Still connecting, try again in a moment</string>
+    <string name="login_failed">Login failed. Check your details and try again.</string>
+    <string name="pref_inapp_msg">Messages in app</string>
+    <string name="pref_inapp_msg_sum">Read and send messages without installing Messenger</string>
+    <string name="update_installing">Installing…</string>
+    <string name="update_progress_fmt">Downloading… %1$d%%</string>
+    <string name="update_need_permission">Allow installing apps from Dustbook, then tap again</string>
+    <string name="grp_debug">Diagnostics</string>
+    <string name="pref_inspect">Inspect ads</string>
+    <string name="pref_inspect_sum">Long-press an ad that got through to copy its markup, so a filter rule can be written for it</string>
+    <string name="inspect_copied">Markup copied. Paste it into the bug report.</string>
+
+    <!-- developer info -->
+    <string name="grp_developer">Developer</string>
+    <string name="pref_developer">Developer Info</string>
+    <string name="pref_developer_sum">Tap to see contact details</string>
+    <string name="dev_name">Rabbi Hossain</string>
+    <string name="dev_title">Software Developer</string>
+    <string name="dev_whatsapp">WhatsApp: +8801731410341</string>
+    <string name="dev_email">Email: rabbihossainltd@gmail.com</string>
+    <string name="dev_website">Website: rabbihossainltd.online</string>
+    <string name="dev_bio">A passionate software developer building tools that make the web better. Creator of Dustbook — a clean, ad-free Facebook experience for Android.</string>
+</resources>

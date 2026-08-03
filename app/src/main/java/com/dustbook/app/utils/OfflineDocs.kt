@@ -1,0 +1,609 @@
+package com.dustbook.app.utils
+
+import android.content.Context
+import android.net.Uri
+import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Keeps the real Facebook pages, so being offline looks like being online.
+ *
+ * The previous approach rendered a screen of our own from a list of saved
+ * items. It worked, but it was obviously not Facebook: no header, no tab bar,
+ * no like or comment controls, and reels laid out by our CSS rather than by
+ * the site.
+ *
+ * m.facebook.com is server-rendered, so the document it returns already
+ * contains the whole shell and the content. Storing that document, and serving
+ * it back for the main frame when there is no connection, gives the real UI
+ * for free - every button in its right place, because it *is* the site. The
+ * images, video, CSS and fonts it references come from [OfflineCache].
+ *
+ * Writes are always on a background thread. Nothing here goes near the bridge:
+ * an earlier attempt passed the rendered DOM through JavaScript and the
+ * documents were far too large to survive the trip.
+ */
+object OfflineDocs {
+
+    private const val DIR = "offline_docs_v1"
+
+    /** A document older than this is refetched as soon as we are online. */
+    private const val STALE_AFTER_MS = 20L * 60 * 1000
+
+    /** Documents are HTML; anything much larger than this is not a page. */
+    private const val MAX_DOC_BYTES = 6 * 1024 * 1024
+    private const val MIN_DOC_BYTES = 20 * 1024
+
+    /** Per-screen ceiling on how many asset URLs are queued for download. */
+    private const val MAX_PREFETCH_URLS = 400
+
+    /** `url(...)` inside a stylesheet - fonts, sprites and masks. */
+    private val CSS_URL = Regex("""url\(\s*["']?(https://[^"'")\s]+)""")
+
+    /**
+     * Screens worth keeping, by first path segment. These are the tabs the
+     * user can reach from the bar at the top, which is what has to work for
+     * offline to feel normal.
+     */
+    private val SCREENS = linkedMapOf(
+        "home" to "https://m.facebook.com/",
+        "reels" to "https://m.facebook.com/reel/",
+        "stories" to "https://m.facebook.com/stories/",
+        "watch" to "https://m.facebook.com/watch/",
+        "notifications" to "https://m.facebook.com/notifications/",
+        "friends" to "https://m.facebook.com/friends/",
+        "marketplace" to "https://m.facebook.com/marketplace/",
+        "menu" to "https://m.facebook.com/menu/"
+    )
+
+    private val pool = Executors.newFixedThreadPool(2)
+    private val inFlight = AtomicInteger(0)
+
+    /** Last outcome per screen, so a missing tab can be diagnosed. */
+    private val outcomes = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    @Volatile private var root: File? = null
+    @Volatile private var appContext: Context? = null
+    @Volatile var enabled: Boolean = true
+
+    /**
+     * The WebView's user agent, set by the app at startup.
+     *
+     * This is not optional. Facebook chooses an entirely different renderer
+     * per user agent, so fetching without one stored a page the WebView would
+     * never have been served - which is why most screens came back empty
+     * offline and only reels had anything.
+     */
+    @Volatile var userAgent: String? = null
+
+    fun init(context: Context) {
+        if (root != null) return
+        synchronized(this) {
+            if (root != null) return
+            appContext = context.applicationContext
+            val d = File(context.filesDir, DIR)
+            if (!d.exists()) d.mkdirs()
+            root = d
+        }
+    }
+
+    /** Which stored screen, if any, answers a request for [url]. */
+    fun screenFor(url: String?): String? {
+        if (url.isNullOrBlank()) return null
+        val host = UrlHelper.hostOf(url) ?: return null
+        if (!host.endsWith("facebook.com")) return null
+        val path = try {
+            Uri.parse(url).path?.lowercase(Locale.ROOT) ?: ""
+        } catch (e: Exception) {
+            return null
+        }
+        val first = path.trim('/').substringBefore('/')
+        return when (first) {
+            "", "home.php" -> "home"
+            "reel", "reels" -> "reels"
+            "stories", "story" -> "stories"
+            "watch", "videos" -> "watch"
+            "notifications" -> "notifications"
+            "friends" -> "friends"
+            "marketplace" -> "marketplace"
+            "menu", "bookmarks" -> "menu"
+            else -> "home"
+        }
+    }
+
+    private fun fileFor(screen: String): File? {
+        val dir = root ?: return null
+        if (!SCREENS.containsKey(screen)) return null
+        return File(dir, "$screen.html")
+    }
+
+    fun has(screen: String): Boolean {
+        val f = fileFor(screen) ?: return false
+        return f.exists() && f.length() > 0
+    }
+
+    fun savedScreens(): List<String> = SCREENS.keys.filter { has(it) }
+
+    /** The URL a stored screen answers on. */
+    fun urlFor(screen: String): String? = SCREENS[screen]
+
+    fun isStale(screen: String): Boolean {
+        val f = fileFor(screen) ?: return true
+        if (!f.exists()) return true
+        return System.currentTimeMillis() - f.lastModified() > STALE_AFTER_MS
+    }
+
+    /**
+     * A cached, ready-to-serve page, keyed by screen.
+     *
+     * Serving used to rebuild the whole document on every navigation, on the
+     * WebView's resource thread: read the stored page, parse the item store,
+     * hash and stat every media URL to decide what is playable, then
+     * concatenate every card's markup. With a couple of hundred reels saved
+     * that is several hundred SHA-256 hashes and filesystem stats per back
+     * press, which is why going back from Reels crawled — and why it got
+     * worse the more was downloaded.
+     *
+     * The result only changes when the stored page or the item store changes,
+     * so it is pre-encoded as bytes and held until someone calls
+     * [invalidate]. This means navigation from the built cache is a single
+     * ConcurrentHashMap lookup and a ByteArrayInputStream — no file I/O,
+     * no string copying, and no hashing on the resource thread.
+     */
+    private class Built(val bytes: ByteArray)
+
+    private val built = java.util.concurrent.ConcurrentHashMap<String, Built>()
+
+    /** Called whenever stored content changes, so the next serve rebuilds. */
+    fun invalidate() {
+        built.clear()
+    }
+
+    fun serve(request: WebResourceRequest): WebResourceResponse? {
+        if (!enabled) return null
+        if (!request.isForMainFrame) return null
+        if (!request.method.equals("GET", true)) return null
+        val screen = screenFor(request.url.toString()) ?: return null
+        val f = fileFor(screen) ?: return null
+
+        if (!f.exists() || f.length() == 0L) {
+            return shellFor(screen)
+        }
+
+        // The built cache is invalidated only when the store changes, so a
+        // hit here is always fresh. No stamp check, no file stat, no copy.
+        built[screen]?.let { b ->
+            return WebResourceResponse(
+                "text/html", "utf-8", 200, "OK",
+                mapOf("Cache-Control" to "no-store"),
+                b.bytes.inputStream()
+            )
+        }
+
+        return try {
+            val section = when (screen) {
+                "reels", "watch" -> OfflineFeed.SECTION_REELS
+                "stories" -> OfflineFeed.SECTION_STORIES
+                "home" -> OfflineFeed.SECTION_FEED
+                else -> null
+            }
+            val cards = section?.let { OfflineFeed.cardsHtml(it) } ?: ""
+
+            // Resume position, so the user picks up where they left off
+            // instead of scrolling from the top every time.
+            val resumeId = when (screen) {
+                "reels", "watch" -> appContext?.let { Prefs(it).offlineResumeReel }
+                "stories" -> appContext?.let { Prefs(it).offlineResumeStories }
+                "home" -> appContext?.let { Prefs(it).offlineResumeFeed }
+                else -> null
+            }
+
+            val html = f.readText() +
+                OfflineBanner.html() +
+                "<script>" + OfflineNav.script(savedScreens()) + "</script>" +
+                (if (cards.isNotBlank()) {
+                    "<script>" +
+                        (if (screen == "stories") storyViewer(cards.replace("\n", "\n---DBSTORY---\n"), resumeId)
+                         else OfflineInject.script(cards, resumeId)) +
+                        "</script>"
+                } else "") +
+                if (screen == "reels" || screen == "watch" || screen == "stories") {
+                    "<script>" + VideoHelper.getOfflineVideoAssistScript() + "</script>"
+                } else ""
+
+            // Encode once, serve many times.
+            val b = html.toByteArray()
+            built[screen] = Built(b)
+
+            WebResourceResponse(
+                "text/html", "utf-8", 200, "OK",
+                mapOf("Cache-Control" to "no-store"),
+                b.inputStream()
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** @see shellFor */
+
+    /**
+     * Full-screen story viewer. Stories are MScreen captures, not inline
+     * cards, so they are shown one at a time. Left-half tap = previous,
+     * right-half tap = next. An overlay hides the page chrome so the
+     * story fills the viewport.
+     */
+    private fun storyViewer(cardsHtml: String, resumeId: String?): String {
+        val stories = cardsHtml
+            .replace("\\", "\\\\")
+            .replace("`", "\\`")
+            .replace("$", "\\$")
+        val resumeJs = if (resumeId != null) {
+            "\nvar START=0;var all=STORIES;for(var i=0;i<all.length;i++){" +
+            "if(all[i].indexOf('" + resumeId + "')>=0){START=i;break;}}\n"
+        } else "\nvar START=0;\n"
+        return """
+        (function(){
+          if(window.__dbStoryViewer)return;
+          window.__dbStoryViewer=true;
+
+          var STORIES = (`$stories`).split('---DBSTORY---').filter(function(s){return s.trim().length>0;});
+          if(!STORIES.length)return;
+          $resumeJs
+          var idx=START;
+
+          var overlay=document.createElement('div');
+          overlay.id='__db_story_overlay';
+          overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#000;overflow:hidden;';
+          document.body.appendChild(overlay);
+
+          var prevZone=document.createElement('div');
+          prevZone.style.cssText='position:absolute;top:0;left:0;width:33%;bottom:0;z-index:1;';
+          overlay.appendChild(prevZone);
+
+          var nextZone=document.createElement('div');
+          nextZone.style.cssText='position:absolute;top:0;right:0;width:33%;bottom:0;z-index:1;';
+          overlay.appendChild(nextZone);
+
+          var content=document.createElement('div');
+          content.id='__db_story_content';
+          content.style.cssText='position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;';
+          overlay.appendChild(content);
+
+          var dots=document.createElement('div');
+          dots.style.cssText='position:absolute;top:12px;left:0;right:0;text-align:center;z-index:2;';
+          overlay.appendChild(dots);
+
+          function updateDots(){
+            var h='';
+            for(var i=0;i<STORIES.length;i++){
+              h+='<span style="display:inline-block;width:8px;height:8px;border-radius:4px;margin:3px;background:'+(i===idx?'#fff':'rgba(255,255,255,0.4)')+'"></span>';
+            }
+            dots.innerHTML=h;
+          }
+
+          function show(n){
+            if(n<0||n>=STORIES.length)return;
+            idx=n;
+            content.innerHTML=STORIES[idx];
+            updateDots();
+          }
+
+          prevZone.addEventListener('click',function(ev){
+            ev.stopPropagation();if(idx>0)show(idx-1);
+          });
+          nextZone.addEventListener('click',function(ev){
+            ev.stopPropagation();if(idx<STORIES.length-1)show(idx+1);
+          });
+
+          var close=document.createElement('div');
+          close.style.cssText='position:absolute;top:12px;right:16px;z-index:3;color:#fff;font-size:14px;padding:8px;cursor:pointer;';
+          close.textContent='\u2715';
+          close.addEventListener('click',function(ev){
+            ev.stopPropagation();
+            overlay.remove();
+            window.__dbStoryViewer=false;
+          });
+          overlay.appendChild(close);
+
+          updateDots();
+          show(START);
+        })();
+        """.trimIndent()
+    }
+
+
+    /**
+     * When no stored Facebook document exists but we have saved cards,
+     * build the lightest possible page that shows them instead of
+     * returning null (which would hand the request to a WebView with no
+     * connection — the raw ERR_INTERNET_DISCONNECTED page).
+     */
+    private fun shellFor(screen: String): WebResourceResponse? {
+        val section = when (screen) {
+            "reels", "watch" -> OfflineFeed.SECTION_REELS
+            "stories" -> OfflineFeed.SECTION_STORIES
+            else -> OfflineFeed.SECTION_FEED
+        }
+        val cards = OfflineFeed.cardsHtml(section)
+        val use = if (cards.isNotBlank()) cards else
+            listOf(OfflineFeed.SECTION_REELS, OfflineFeed.SECTION_FEED,
+                   OfflineFeed.SECTION_STORIES)
+            .firstNotNullOfOrNull { s ->
+                OfflineFeed.cardsHtml(s).takeIf { it.isNotBlank() }
+            } ?: return offlineFallbackPage()
+
+        val html = "<!DOCTYPE html><html lang=\"en\"><head>" +
+            "<meta charset=\"utf-8\"><meta name=\"viewport\" " +
+            "content=\"width=device-width,initial-scale=1,user-scalable=no\">" +
+            "<style>body{margin:0;background:#18191a;color:#e4e6eb;" +
+            "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
+            "sans-serif}</style></head><body><div>" + use + "</div>" +
+            "<script>" + OfflineNav.script(savedScreens()) + "</script>" +
+            (if (screen == "reels" || screen == "watch" || screen == "stories") {
+                "<script>" + VideoHelper.getOfflineVideoAssistScript() +
+                    "</script>"
+            } else "") +
+            (if (screen == "stories") {
+                "<script>" + storyViewer(use.replace("\n", "\n---DBSTORY---\n"), null) + "</script>"
+            } else "") +
+            "</body></html>"
+
+        return WebResourceResponse("text/html", "utf-8", 200, "OK",
+            mapOf("Cache-Control" to "no-store"), html.byteInputStream())
+    }
+
+    /**
+     * Store a page captured from a live WebView.
+     *
+     * This is the only way these documents can be obtained. Facebook answers
+     * m.facebook.com with HTTP 400 to any plain HTTP client - verified against
+     * the live site with five different header combinations, logged out and
+     * with a cookie, and every one was refused. [fetchScreen] therefore never
+     * stored anything, savedScreens() stayed empty, and going offline showed
+     * the bare "Can't load the page" screen with no saved content at all.
+     *
+     * A real WebView is not refused, and [OfflineSync] already runs one that
+     * is signed in and has these very screens open, so the document is taken
+     * from there instead of re-requesting a URL that will not be answered.
+     */
+    fun storeFromPage(screen: String, html: String): Boolean {
+        if (!enabled) return false
+        val f = fileFor(screen) ?: return false
+        if (html.length < MIN_DOC_BYTES) {
+            outcomes[screen] = "tiny${html.length / 1024}k"
+            return false
+        }
+        if (html.length > MAX_DOC_BYTES) {
+            outcomes[screen] = "size${html.length / 1024}k"
+            return false
+        }
+        // A logged-out page must never be stored: serving it offline would
+        // show the login screen to a signed-in user.
+        if (html.contains("name=\"login\"", true) &&
+            html.contains("type=\"password\"", true)
+        ) {
+            outcomes[screen] = "loggedout"
+            return false
+        }
+        // Reject Facebook error pages. Bare paths like /reel/ or /stories/
+        // without an ID return this page, and storing it makes offline show
+        // "The link you followed may be broken" for every request.
+        if (html.contains("The link you followed may be broken", true)) {
+            outcomes[screen] = "brokenlink"
+            return false
+        }
+
+        return try {
+            val tmp = File(f.parentFile, f.name + ".part")
+            tmp.writeText(rewriteForOffline(html))
+            if (tmp.renameTo(f)) {
+                outcomes[screen] = "ok${html.length / 1024}k"
+                true
+            } else {
+                tmp.delete()
+                outcomes[screen] = "writefail"
+                false
+            }
+        } catch (e: Exception) {
+            outcomes[screen] = e.javaClass.simpleName
+            false
+        }
+    }
+
+    /**
+     * Fetch and store the screens the user has enabled.
+     *
+     * Runs entirely on [pool]. The request carries the session cookies, so
+     * what we store is the signed-in page, not a logged-out one.
+     */
+    /**
+     * Kept for the screens a WebView never visits.
+     *
+     * Note that m.facebook.com answers HTTP 400 to a plain client, so this
+     * will not succeed there - the pages that matter are captured from a live
+     * WebView by [storeFromPage] instead. This is left in place because it
+     * costs nothing when it fails and still records an outcome, which is what
+     * the diagnostics line reports.
+     */
+    fun refresh(screens: List<String> = SCREENS.keys.toList(), force: Boolean = false) {
+        if (!enabled) return
+        if (inFlight.get() > 0) return
+        for (screen in screens) {
+            val url = SCREENS[screen] ?: continue
+            if (!force && !isStale(screen)) continue
+            inFlight.incrementAndGet()
+            pool.execute {
+                try {
+                    fetchScreen(screen, url)
+                } catch (e: Exception) {
+                    outcomes[screen] = e.javaClass.simpleName
+                } finally {
+                    inFlight.decrementAndGet()
+                }
+            }
+        }
+    }
+
+    fun isRefreshing(): Boolean = inFlight.get() > 0
+
+    fun statusLine(): String {
+        if (SCREENS.keys.none { outcomes.containsKey(it) }) return "not run yet"
+        return SCREENS.keys.joinToString(", ") { s ->
+            s + "=" + (outcomes[s] ?: "-")
+        }
+    }
+
+    private fun fetchScreen(screen: String, url: String) {
+        val f = fileFor(screen) ?: return
+        var conn: HttpURLConnection? = null
+        try {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 12_000
+                readTimeout = 25_000
+                instanceFollowRedirects = true
+                setRequestProperty("Accept-Encoding", "identity")
+                setRequestProperty("Accept", "text/html,application/xhtml+xml")
+                userAgent?.let { setRequestProperty("User-Agent", it) }
+                setRequestProperty("Accept-Language", "en-GB,en;q=0.9")
+                CookieManager.getInstance().getCookie(url)?.let {
+                    setRequestProperty("Cookie", it)
+                }
+            }
+            if (conn.responseCode != 200) {
+                outcomes[screen] = "http${conn.responseCode}"
+                return
+            }
+            val enc = conn.getHeaderField("Content-Encoding")
+            if (enc != null && !enc.equals("identity", true)) {
+                outcomes[screen] = "encoded"
+                return
+            }
+            val type = conn.contentType?.lowercase(Locale.ROOT) ?: ""
+            if (!type.contains("html")) {
+                outcomes[screen] = "nothtml"
+                return
+            }
+
+            val bytes = conn.inputStream.use { it.readBytes() }
+            if (bytes.isEmpty() || bytes.size > MAX_DOC_BYTES) {
+                outcomes[screen] = "size${bytes.size / 1024}k"
+                return
+            }
+            if (bytes.size < MIN_DOC_BYTES) {
+                outcomes[screen] = "tiny${bytes.size / 1024}k"
+                return
+            }
+
+            var html = String(bytes, Charsets.UTF_8)
+            if (html.contains("name=\"login\"", true) &&
+                html.contains("type=\"password\"", true)
+            ) {
+                outcomes[screen] = "loggedout"
+                return
+            }
+
+            html = rewriteForOffline(html)
+
+            val tmp = File(f.parentFile, f.name + ".part")
+            tmp.writeText(html)
+            if (tmp.renameTo(f)) {
+                outcomes[screen] = "ok${bytes.size / 1024}k"
+            } else {
+                tmp.delete()
+                outcomes[screen] = "writefail"
+            }
+        } finally {
+            try { conn?.disconnect() } catch (e: Exception) {}
+        }
+    }
+
+    /**
+     * Make the stored copy absolute.
+     *
+     * A stored document is replayed at whatever URL the user navigated to, so
+     * root-relative asset paths would resolve differently and miss the cache.
+     */
+    private fun rewriteForOffline(html: String): String = html
+        .replace("src=\"/", "src=\"https://m.facebook.com/")
+        .replace("href=\"/", "href=\"https://m.facebook.com/")
+        .replace("src='\\/", "src='https://m.facebook.com/")
+        .replace("href='\\/", "href='https://m.facebook.com/")
+
+    /** Every media URL a stored page references, for the asset prefetch. */
+    fun mediaUrls(screen: String): List<String> {
+        val f = fileFor(screen) ?: return emptyList()
+        if (!f.exists()) return emptyList()
+        return try {
+            val html = f.readText()
+            val re = Regex("""https://[^"'\s\\\)]+?(?:fbcdn\.net|fbsbx\.com)[^"'\s\\\)]*""")
+            val all = re.findAll(html)
+                .map { it.value.replace("&amp;", "&") }
+                .distinct()
+                .toList()
+
+            val (chrome, media) = all.partition { it.contains("/rsrc.php/") }
+
+            val fonts = chrome.filter { it.contains(".css") || !it.contains(".") }
+                .asSequence()
+                .mapNotNull { OfflineCache.textOf(it) }
+                .flatMap { css -> CSS_URL.findAll(css) }
+                .map { it.groupValues[1].replace("&amp;", "&") }
+                .filter { it.startsWith("https://") }
+                .distinct()
+                .take(80)
+                .toList()
+
+            val (avatars, photos) = media.partition {
+                it.contains("/t39.30808-1/") || it.contains("_n.jpg?stp=c")
+            }
+            (fonts + chrome + avatars + photos).distinct().take(MAX_PREFETCH_URLS)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun sizeBytes(): Long {
+        val dir = root ?: return 0
+        return try { dir.listFiles()?.sumOf { it.length() } ?: 0 } catch (e: Exception) { 0 }
+    }
+
+    fun clear() {
+        invalidate()
+        val dir = root ?: return
+        try { dir.listFiles()?.forEach { it.delete() } } catch (e: Exception) {}
+    }
+
+    /**
+     * Story pager: shows stored story cards one at a time with tap-based
+     * navigation (left half = previous, right half = next). Stories are
+     * full MScreen captures, not inline cards, so they cannot be injected
+     * alongside feed content.
+     */
+    
+
+
+    /** Basic page served when there is literally nothing saved. */
+    private fun offlineFallbackPage(): WebResourceResponse {
+        val html = "<!DOCTYPE html><html lang=\"en\"><head>" +
+            "<meta charset=\"utf-8\"><meta name=\"viewport\" " +
+            "content=\"width=device-width,initial-scale=1\">" +
+            "<style>body{margin:0;background:#18191a;color:#e4e6eb;" +
+            "font-family:sans-serif;display:flex;align-items:center;" +
+            "justify-content:center;height:100vh;text-align:center}" +
+            "</style></head><body><div><h2>No saved content</h2>" +
+            "<p>Nothing has been downloaded for offline yet.</p>" +
+            "<p>Open Facebook with a connection first.</p></div>" +
+            "</body></html>"
+        return WebResourceResponse("text/html", "utf-8", 200, "OK",
+            mapOf("Cache-Control" to "no-store"), html.byteInputStream())
+    }
+}

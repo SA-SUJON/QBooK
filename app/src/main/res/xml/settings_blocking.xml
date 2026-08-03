@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory android:title="@string/grp_adblock" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="ad_block_enabled"
+            android:title="@string/pref_adblock" android:summary="@string/pref_adblock_sum"
+            android:defaultValue="true" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="cosmetic_filter_enabled"
+            android:title="@string/pref_cosmetic" android:summary="@string/pref_cosmetic_sum"
+            android:defaultValue="true" android:dependency="ad_block_enabled"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_stats" app:iconSpaceReserved="false">
+        <Preference android:key="block_stats" android:title="@string/pref_stats"
+            android:selectable="false" app:iconSpaceReserved="false" />
+        <Preference android:key="filter_info" android:title="@string/pref_filters"
+            android:selectable="false" app:iconSpaceReserved="false" />
+        <Preference android:key="reset_stats" android:title="@string/pref_reset_stats"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+</PreferenceScreen>

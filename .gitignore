@@ -1,0 +1,57 @@
+# Build output, IDE state, and dependencies that are fetched, not stored.
+# Kept flat and de-duplicated: this file had been sorted at some point,
+# which scattered every comment away from the entry it described.
+
+*.aab
+*.aar
+*.ap_
+*.apk
+*.class
+*.dex
+*.hprof
+*.iml
+*.log
+.DS_Store
+.cxx/
+.externalNativeBuild
+.gradle/
+.idea/assetWizardSettings.xml
+.idea/caches
+.idea/dictionaries
+.idea/gradle.xml
+.idea/libraries
+.idea/modules.xml
+.idea/tasks.xml
+.idea/workspace.xml
+.navigation/
+bin/
+build/
+captures/
+fastlane/Preview.html
+fastlane/readme.md
+fastlane/report.xml
+fastlane/screenshots
+fastlane/test_output
+freeline.py
+freeline/
+freeline_project_description.json
+gen/
+lint/generated/
+lint/intermediates/
+lint/outputs/
+lint/tmp/
+local.properties
+node_modules/
+out/
+proguard/
+release/
+signing/
+temp/local.properties
+tmp/
+vcs.xml
+
+# Signing material. Supplied locally via keystore.properties, or on CI from
+# repository secrets. Never committed.
+*.jks
+*.keystore
+keystore.properties

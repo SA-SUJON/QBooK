@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory android:title="@string/grp_theme" app:iconSpaceReserved="false">
+        <ListPreference android:key="dark_mode" android:title="@string/pref_dark"
+            android:defaultValue="system" android:entries="@array/dark_entries"
+            android:entryValues="@array/dark_values"
+            app:useSimpleSummaryProvider="true" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="amoled_black"
+            android:title="@string/pref_amoled" android:summary="@string/pref_amoled_sum"
+            android:defaultValue="true" app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_icons" app:iconSpaceReserved="false">
+        <Preference android:key="app_icon"
+            android:title="@string/pref_icon"
+            android:summary="@string/pref_icon_sum"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_chrome" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="show_progress_bar"
+            android:title="@string/pref_progress" android:summary="@string/pref_progress_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+</PreferenceScreen>

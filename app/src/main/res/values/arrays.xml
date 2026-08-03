@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="dark_entries">
+        <item>Follow system</item>
+        <item>Light</item>
+        <item>Dark</item>
+    </string-array>
+    <string-array name="dark_values">
+        <item>system</item>
+        <item>light</item>
+        <item>dark</item>
+    </string-array>
+
+    <string-array name="icon_entries">
+        <item>Custom Blue</item>
+        <item>Custom Dark</item>
+        <item>Custom Crimson</item>
+        <item>Custom Violet</item>
+        <item>Custom Emerald</item>
+        <item>Custom Gold</item>
+        <item>Custom Teal</item>
+        <item>Custom Rose</item>
+        <item>Default Blue</item>
+        <item>Midnight Blue</item>
+        <item>Amber Glow</item>
+        <item>Forest Green</item>
+        <item>Royal Purple</item>
+    </string-array>
+    <string-array name="icon_values">
+        <item>5</item>
+        <item>6</item>
+        <item>7</item>
+        <item>8</item>
+        <item>9</item>
+        <item>10</item>
+        <item>11</item>
+        <item>12</item>
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+    </string-array>
+</resources>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory android:title="@string/grp_feed_top" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="hide_stories"
+            android:title="@string/pref_hide_stories" android:summary="@string/pref_hide_stories_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_reels"
+            android:title="@string/pref_hide_reels" android:summary="@string/pref_hide_reels_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_rooms"
+            android:title="@string/pref_hide_rooms" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_feed_sugg" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="hide_pymk"
+            android:title="@string/pref_hide_pymk" android:summary="@string/pref_hide_pymk_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_pages"
+            android:title="@string/pref_hide_pages" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_memories"
+            android:title="@string/pref_hide_memories" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_birthdays"
+            android:title="@string/pref_hide_birthdays" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_shortcuts" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="hide_marketplace"
+            android:title="@string/pref_hide_marketplace" android:summary="@string/pref_hide_marketplace_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_groups"
+            android:title="@string/pref_hide_groups" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_watch"
+            android:title="@string/pref_hide_watch" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_events"
+            android:title="@string/pref_hide_events" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="hide_gaming"
+            android:title="@string/pref_hide_gaming" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+</PreferenceScreen>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory android:title="@string/grp_page" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="desktop_mode"
+            android:title="@string/pref_desktop" android:summary="@string/pref_desktop_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="allow_zoom"
+            android:title="@string/pref_zoom" android:summary="@string/pref_zoom_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="pull_to_refresh"
+            android:title="@string/pref_pull" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_media" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="autoplay_video"
+            android:title="@string/pref_autoplay" android:summary="@string/pref_autoplay_sum"
+            android:defaultValue="true" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="keep_screen_on"
+            android:title="@string/pref_screen_on" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="background_audio"
+            android:title="@string/pref_bg_audio" android:summary="@string/pref_bg_audio_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_behaviour" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="inapp_messaging"
+            android:title="@string/pref_inapp_msg" android:summary="@string/pref_inapp_msg_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="open_links_external"
+            android:title="@string/pref_external" android:summary="@string/pref_external_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="haptics_enabled"
+            android:title="@string/pref_haptics" android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+</PreferenceScreen>

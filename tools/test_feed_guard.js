@@ -1,0 +1,186 @@
+#!/usr/bin/env node
+/**
+ * Regression guard for the "remove app download banner blanks the page" bug.
+ *
+ * History: this broke three separate times. Each fix tried to recognise the
+ * feed by shape - ids, class names, child counts, story markers - and none of
+ * those exist reliably on Facebook's obfuscated mobile DOM. Too strict and the
+ * ad survived, too loose and the whole page disappeared.
+ *
+ * The working approach measures instead: a card is a small fraction of the
+ * page's text, so the walk stops before it can swallow the feed.
+ *
+ * This runs the real cosmetic script, extracted from AdBlocker.kt, against
+ * several DOM shapes. If a future edit reintroduces either failure mode, this
+ * exits non-zero and CI fails.
+ */
+const fs = require('fs');
+const path = require('path');
+const { JSDOM } = require('jsdom');
+
+const KT = path.join(__dirname, '..', 'app/src/main/java/com/dustbook/app/utils/AdBlocker.kt');
+
+function extract(fnName, flags) {
+  const src = fs.readFileSync(KT, 'utf8');
+  const i = src.indexOf('fun ' + fnName);
+  if (i < 0) throw new Error('function not found: ' + fnName);
+  const start = src.indexOf('return """', i) + 'return """'.length;
+  const end = src.indexOf('""".trimIndent()', start);
+  return src.slice(start, end)
+    .replace(/\$\{'"'\}/g, '"')
+    .replace(/\$flagsJs/g, flags)
+    .replace(/\$blockAds/g, 'true')
+    .replace(/\$blockAppPromos/g, 'true');
+}
+
+const script = extract('getCosmeticScript', 'stories:false');
+
+function run(html) {
+  const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window;
+  w.requestIdleCallback = undefined;
+  w.requestAnimationFrame = (f) => setTimeout(f, 0);
+  w.FBPro = {
+    onAuthState() {}, onScrollState() {},
+    onLoginFormReady() {}, onBlobDownload() {},
+  };
+  w.eval(script);
+  return new Promise((res) => setTimeout(() => res(w), 900));
+}
+
+function hidden(w, sel) {
+  const el = w.document.querySelector(sel);
+  if (!el) return 'MISSING';
+  if (el.getAttribute('data-fbpro-hidden') === '1') return true;
+  let p = el.parentElement;
+  while (p) {
+    if (p.getAttribute && p.getAttribute('data-fbpro-hidden') === '1') return true;
+    p = p.parentElement;
+  }
+  return false;
+}
+
+let pass = 0, fail = 0;
+function check(name, got, want) {
+  const ok = got === want;
+  ok ? pass++ : fail++;
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : ` (got ${got}, want ${want})`}`);
+}
+
+function posts(n, prefix) {
+  let s = '';
+  for (let i = 0; i < n; i++) {
+    s += `<div class="card" id="${prefix}${i}"><div><span>User${i}</span><span>${i}h</span></div>` +
+         `<div>a genuine post with a reasonable amount of body text number ${i}</div></div>`;
+  }
+  return s;
+}
+
+(async () => {
+  console.log('feed guard: the page must never disappear, the banner must go\n');
+
+  // 1. Pinned "Open app" bar beside a normal feed
+  let w = await run(`<div><div role="main"><div class="wrap">${posts(8, 'p')}</div></div>
+    <div id="bar" style="position:fixed;bottom:0"><a href="/lite/?entry=bookmark">Open app</a></div></div>`);
+  console.log('A) pinned Open app bar');
+  check('bar removed', hidden(w, '#bar'), true);
+  check('feed survives', hidden(w, '.wrap'), false);
+  check('first post survives', hidden(w, '#p0'), false);
+  check('last post survives', hidden(w, '#p7'), false);
+
+  // 2. Store link inside a feed card
+  w = await run(`<div role="main"><div class="wrap">
+    <div class="card" id="promo"><div>Get the app</div>
+      <a href="https://play.google.com/store/apps/details?id=com.facebook.katana">Install</a></div>
+    ${posts(6, 'q')}</div></div>`);
+  console.log('B) store link inside a card');
+  check('promo card removed', hidden(w, '#promo'), true);
+  check('feed survives', hidden(w, '.wrap'), false);
+  check('real posts survive', hidden(w, '#q0'), false);
+
+  // 3. Ad label plus a banner in the same feed
+  w = await run(`<div role="main"><div class="wrap">
+    <div class="card" id="ad"><div><span>Brand</span><span>Ad</span></div><div>advert body</div></div>
+    ${posts(6, 'r')}
+    <div id="bar2"><a href="fb://feed">Open in app</a></div></div></div>`);
+  console.log('C) ad label and banner together');
+  check('ad removed', hidden(w, '#ad'), true);
+  check('banner removed', hidden(w, '#bar2'), true);
+  check('feed survives', hidden(w, '.wrap'), false);
+  check('real posts survive', hidden(w, '#r5'), false);
+
+  // 4. Obfuscated DOM: no ids, no roles, no article tags
+  w = await run(`<div class="x9f619"><div class="x1qjc9v5"><div class="x78zum5">
+    <div class="x1lliihq"><div><span>Spa</span><span>Ad</span></div><div>promo body text</div>
+      <div><a href="/lite/?entry=bookmark">Open app</a></div></div>
+    <div class="x1lliihq" id="s1"><div><span>Friend</span><span>2h</span></div><div>a real post with body text</div></div>
+    <div class="x1lliihq" id="s2"><div><span>Other</span><span>3h</span></div><div>another real post with body text</div></div>
+    </div></div></div>`);
+  console.log('D) obfuscated DOM, no markers at all');
+  check('feed wrapper survives', hidden(w, '.x78zum5'), false);
+  check('real post 1 survives', hidden(w, '#s1'), false);
+  check('real post 2 survives', hidden(w, '#s2'), false);
+
+  // 5. Content that merely mentions apps must never be touched
+  w = await run(`<div role="main"><div class="wrap">
+    <div class="card" id="t1"><div>I am building a weather app this weekend, feedback welcome</div></div>
+    <div class="card" id="t2"><div>Ad astra per aspera has always been my favourite motto</div></div>
+    <div class="card" id="t3"><div><span>Dhaka Ad Agency</span></div><div>we are hiring designers</div></div>
+    ${posts(4, 'u')}</div></div>`);
+  console.log('E) false positives');
+  check('post about building an app stays', hidden(w, '#t1'), false);
+  check('"Ad astra" post stays', hidden(w, '#t2'), false);
+  check('"Dhaka Ad Agency" page stays', hidden(w, '#t3'), false);
+  check('feed survives', hidden(w, '.wrap'), false);
+
+  // 6. The login page banner. Facebook serves this above the sign-in form:
+  //
+  //      "Get Facebook for Android and browse faster."
+  //
+  //    It is a plain <div> with no role, no class and no store link, and the
+  //    wording never contains the word "app" -- it is the product name plus a
+  //    platform. That defeated both passes at once: the literal PROMO_TEXT
+  //    list only ran over a/button/[role=*], and the structural sweep's
+  //    PROMO_RE is anchored on "app". The banner therefore survived on the
+  //    one screen a new user sees first.
+  w = await run(`<div><div id="pageArea">
+    <div id="banner"><a href="/lite/?entry=login"><img alt=""></a>
+      <div>Get Facebook for Android and browse faster.</div></div>
+    <div id="loginForm"><form method="post" action="/login/">
+      <input type="email" name="email" placeholder="Mobile number or email address">
+      <input type="password" name="pass" placeholder="Password">
+      <button type="submit">Log in</button>
+      </form>
+      <div id="forgot"><a href="/recover/initiate/">Forgotten password?</a></div>
+      <div id="create"><a href="/reg/">Create new account</a></div>
+    </div></div></div>`);
+  console.log('F) login page app banner');
+  check('banner removed', hidden(w, '#banner'), true);
+  check('login form survives', hidden(w, '#loginForm'), false);
+  check('email field survives', hidden(w, 'input[type="email"]'), false);
+  check('password field survives', hidden(w, 'input[type="password"]'), false);
+  check('log in button survives', hidden(w, 'button[type="submit"]'), false);
+  check('forgotten password survives', hidden(w, '#forgot'), false);
+  check('create account survives', hidden(w, '#create'), false);
+  check('page wrapper survives', hidden(w, '#pageArea'), false);
+
+  // 7. Widening the text pass to bare <div>s must not start eating posts that
+  //    merely name a platform. These all contain "Android" or "Facebook" and
+  //    must be left alone.
+  w = await run(`<div role="main"><div class="wrap">
+    <div class="card" id="v1"><div>Just got Facebook for Android working on my old tablet</div></div>
+    <div class="card" id="v2"><div>Does anyone develop for Android here?</div></div>
+    <div class="card" id="v3"><div>Facebook for Business has a new dashboard</div></div>
+    ${posts(4, 'w')}</div></div>`);
+  console.log('G) platform names in real content');
+  check('post naming the Android app stays', hidden(w, '#v1'), false);
+  check('post asking about Android stays', hidden(w, '#v2'), false);
+  check('Facebook for Business post stays', hidden(w, '#v3'), false);
+  check('feed survives', hidden(w, '.wrap'), false);
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  if (fail) {
+    console.log('\n::error::feed guard failed - the blank-page or unblocked-ad bug is back');
+    process.exit(1);
+  }
+})();

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Deliberately short. This screen had grown to nine entries, several of them
+  reporting the same thing in different words. What is left is the three
+  things to keep, how many reels to keep, what is downloaded, and a way to
+  clear it.
+-->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="@string/grp_offline"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat android:key="offline_reels"
+            android:title="@string/pref_offline_reels"
+            android:defaultValue="true" app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat android:key="offline_feed"
+            android:title="@string/pref_offline_feed"
+            android:defaultValue="true" app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat android:key="offline_stories"
+            android:title="@string/pref_offline_stories"
+            android:defaultValue="true" app:iconSpaceReserved="false" />
+
+        <!-- Only meaningful when reels are being kept, so it follows the
+             switch above rather than standing on its own. -->
+        <ListPreference android:key="offline_reel_count"
+            android:title="@string/pref_offline_reel_count"
+            android:entries="@array/reel_count_labels"
+            android:entryValues="@array/reel_count_values"
+            android:defaultValue="30"
+            android:summary="%s"
+            android:dependency="offline_reels"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/grp_storage"
+        app:iconSpaceReserved="false">
+
+        <Preference android:key="offline_status"
+            android:title="@string/pref_offline_status"
+            android:selectable="false" app:iconSpaceReserved="false" />
+
+        <Preference android:key="clear_offline"
+            android:title="@string/pref_clear_offline"
+            android:summary="@string/pref_clear_offline_sum"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+</PreferenceScreen>

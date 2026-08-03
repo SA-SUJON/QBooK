@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Flat fill, sampled from the artwork's own corner. An adaptive icon's
+  background has to cover the entire tile: the launcher crops it to whatever
+  shape the device uses, and any detail near the edge is shaved off.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#000000" />
+</shape>

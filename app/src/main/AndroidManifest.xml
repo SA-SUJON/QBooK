@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- In-app updates: download the APK and hand it to the package installer
+         so the user never leaves the app for a browser. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen.multitouch"
+        android:required="true" />
+
+    <!-- Needed so the browser fallback for external links resolves on API 30+ -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".DustbookApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Dustbook"
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:enableOnBackInvokedCallback="true"
+        tools:targetApi="34">
+
+        <activity
+            android:name=".ui.SplashActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Dustbook.Splash"
+            android:noHistory="true">
+        </activity>
+
+        <!-- Icon-switching aliases. Each provides one launcher icon.
+             Only one is enabled at a time via PackageManager. -->
+        <activity-alias
+            android:name=".ui.SplashActivityIcon0"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon1"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt1"
+            android:roundIcon="@mipmap/ic_launcher_alt1"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon2"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt2"
+            android:roundIcon="@mipmap/ic_launcher_alt2"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon3"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt3"
+            android:roundIcon="@mipmap/ic_launcher_alt3"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon4"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt4"
+            android:roundIcon="@mipmap/ic_launcher_alt4"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon5"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt5"
+            android:roundIcon="@mipmap/ic_launcher_alt5"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon6"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt6"
+            android:roundIcon="@mipmap/ic_launcher_alt6"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon7"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt7"
+            android:roundIcon="@mipmap/ic_launcher_alt7"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon8"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt8"
+            android:roundIcon="@mipmap/ic_launcher_alt8"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon9"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt9"
+            android:roundIcon="@mipmap/ic_launcher_alt9"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon10"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt10"
+            android:roundIcon="@mipmap/ic_launcher_alt10"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon11"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt11"
+            android:roundIcon="@mipmap/ic_launcher_alt11"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon12"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt12"
+            android:roundIcon="@mipmap/ic_launcher_alt12"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|locale|layoutDirection|smallestScreenSize"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:resizeableActivity="true"
+            android:screenOrientation="unspecified">
+
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="facebook.com" />
+                <data android:scheme="https" android:host="www.facebook.com" />
+                <data android:scheme="https" android:host="m.facebook.com" />
+                <data android:scheme="https" android:host="fb.watch" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Hidden: no launcher entry, not exported, only reachable via the
+             three finger double tap gesture inside MainActivity. -->
+        <activity
+            android:name=".ui.SettingsActivity"
+            android:exported="false"
+            android:label="@string/hidden_settings"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".ui.MainActivity"
+            android:theme="@style/Theme.Dustbook" />
+
+        <service
+            android:name=".ui.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+</manifest>

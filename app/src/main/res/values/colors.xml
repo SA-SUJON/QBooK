@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#0A66C2</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="secondary">#1A8CFF</color>
+    <color name="on_secondary">#FFFFFF</color>
+    <color name="error">#B3261E</color>
+    <color name="on_error">#FFFFFF</color>
+
+    <color name="background">#FFFFFF</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="on_background">#1C1B1F</color>
+    <color name="on_surface">#1C1B1F</color>
+
+    <color name="splash_background">#FFFFFF</color>
+    <!-- Native Facebook chrome (light) -->
+    <color name="fb_bg">#F0F2F5</color>
+    <color name="fb_surface">#FFFFFF</color>
+    <color name="fb_brand">#0866FF</color>
+    <color name="fb_icon">#050505</color>
+    <color name="fb_text">#050505</color>
+    <color name="fb_text_dim">#65676B</color>
+    <color name="fb_circle">#E4E6EB</color>
+    <color name="fb_offline">#65676B</color>
+    <color name="fb_field">#FFFFFF</color>
+    <color name="fb_field_stroke">#CCD0D5</color>
+    <color name="fb_error">#E41E3F</color>
+</resources>

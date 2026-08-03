@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory android:title="@string/grp_update" app:iconSpaceReserved="false">
+        <Preference android:key="check_update" android:title="@string/pref_check_update"
+            android:summary="@string/pref_check_update_sum" app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_debug" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="inspect_ads"
+            android:title="@string/pref_inspect" android:summary="@string/pref_inspect_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/cat_about" app:iconSpaceReserved="false">
+        <Preference android:key="app_version" android:title="@string/pref_version"
+            android:selectable="false" app:iconSpaceReserved="false" />
+        <Preference android:key="filter_info" android:title="@string/pref_filters"
+            android:selectable="false" app:iconSpaceReserved="false" />
+        <Preference android:key="gesture_info" android:title="@string/pref_gesture"
+            android:summary="@string/pref_gesture_sum"
+            android:selectable="false" app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_developer" app:iconSpaceReserved="false">
+        <Preference android:key="dev_info" android:title="@string/pref_developer"
+            android:summary="@string/pref_developer_sum"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+</PreferenceScreen>

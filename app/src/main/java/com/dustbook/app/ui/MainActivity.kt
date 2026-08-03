@@ -1,0 +1,1934 @@
+package com.dustbook.app.ui
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
+import android.util.Base64
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
+import android.webkit.JavascriptInterface
+import android.webkit.PermissionRequest
+import android.webkit.URLUtil
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updatePadding
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import com.dustbook.app.R
+import com.dustbook.app.databinding.ActivityMainBinding
+import com.dustbook.app.utils.AdBlocker
+import com.dustbook.app.utils.AdInspector
+import com.dustbook.app.utils.BlockList
+import com.dustbook.app.utils.CosmeticFilters
+import com.dustbook.app.utils.MFacebookAds
+import com.dustbook.app.utils.BackgroundSyncManager
+import com.dustbook.app.utils.OfflineCache
+import com.dustbook.app.utils.OfflineCapture
+import com.dustbook.app.utils.OfflineDocs
+import com.dustbook.app.utils.OfflineFeed
+import com.dustbook.app.utils.AppExecutors
+import com.dustbook.app.utils.OfflineManager
+import com.dustbook.app.utils.OfflineSync
+import com.dustbook.app.utils.Prefs
+import com.dustbook.app.utils.VideoHelper
+import com.dustbook.app.utils.SessionState
+import com.dustbook.app.utils.SoftRefresh
+import com.dustbook.app.utils.ThreeFingerDoubleTapDetector
+import com.dustbook.app.utils.UpdateWatcher
+import com.dustbook.app.utils.UrlHelper
+import com.dustbook.app.viewmodel.MainViewModel
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private val viewModel: MainViewModel by viewModels()
+    private lateinit var prefs: Prefs
+
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraPhotoUri: Uri? = null
+
+    // Fullscreen video state
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var originalOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+    // Pending geolocation request, retried after the permission dialog.
+    private var pendingGeoOrigin: String? = null
+    private var pendingGeoCallback: GeolocationPermissions.Callback? = null
+    private var pendingWebRtcRequest: PermissionRequest? = null
+
+    private var settingsPromptShown = false
+    private var earlyScriptHandle: androidx.webkit.ScriptHandler? = null
+
+    /** Live network state, updated by the ConnectivityManager callback. */
+    @Volatile private var isOnline: Boolean = true
+    private var connectivityCallback: ConnectivityManager.NetworkCallback? = null
+
+    /** False when the page's own scroll container is scrolled away from top. */
+    @Volatile private var pageAtTop: Boolean = true
+
+    /** True while a login / signup / checkpoint page is showing. */
+    private var onAuthPage: Boolean = false
+
+    /** Set by the page probe when a password field or login form is present. */
+    @Volatile private var domSaysLoggedOut: Boolean = false
+
+    /** Reels currently held offline, reported by the page. */
+    @Volatile private var offlineReelCount: Int = 0
+
+    /** True while a soft refresh is waiting for the page to answer. */
+    @Volatile private var softRefreshPending: Boolean = false
+
+    private val gestureDetector by lazy {
+        ThreeFingerDoubleTapDetector { openHiddenSettings() }
+    }
+
+    // ---------------------------------------------------------------- launchers
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        // Retry any WebRTC request that was waiting on these permissions.
+        pendingWebRtcRequest?.let { req ->
+            val granted = result.values.all { it }
+            runOnUiThread { if (granted) req.grant(req.resources) else req.deny() }
+            pendingWebRtcRequest = null
+        }
+        // Retry a pending geolocation request.
+        pendingGeoCallback?.let { cb ->
+            val ok = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            cb.invoke(pendingGeoOrigin, ok, false)
+            pendingGeoCallback = null
+            pendingGeoOrigin = null
+        }
+        if (result.values.any { !it } && !settingsPromptShown) {
+            settingsPromptShown = true
+            showPermissionDialog()
+        }
+    }
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val cb = filePathCallback
+        filePathCallback = null
+        if (cb == null) return@registerForActivityResult
+
+        if (result.resultCode != RESULT_OK) {
+            cb.onReceiveValue(null)
+            cameraPhotoUri = null
+            return@registerForActivityResult
+        }
+
+        val data = result.data
+        // Camera capture returns no data; fall back to the file we created.
+        val uris: Array<Uri>? = when {
+            data?.data != null || data?.clipData != null ->
+                WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+            cameraPhotoUri != null -> arrayOf(cameraPhotoUri!!)
+            else -> null
+        }
+        cb.onReceiveValue(uris)
+        cameraPhotoUri = null
+    }
+
+    // ---------------------------------------------------------------- lifecycle
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        prefs = Prefs(this)
+        AppCompatDelegate.setDefaultNightMode(prefs.nightMode())
+        if (prefs.amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
+        super.onCreate(savedInstanceState)
+
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Blocklist + offline store load off the main thread.
+        OfflineCache.init(applicationContext)
+        OfflineCache.enabled = prefs.offlineMode
+        OfflineFeed.init(applicationContext)
+        OfflineFeed.enabled = prefs.offlineMode
+        OfflineDocs.init(applicationContext)
+        OfflineDocs.enabled = prefs.offlineMode
+        AppExecutors.diskIO.execute {
+            BlockList.load(applicationContext)
+            CosmeticFilters.load(applicationContext)
+            OfflineCache.trimIfNeeded()
+        }
+
+        // Updates are watched for the whole process, not just this screen, so
+        // a release published while the app is open is offered straight away
+        // instead of waiting for the next cold start.
+        UpdateWatcher.presenter = { activity, rel, local ->
+            UpdatePrompt.show(activity, rel, local)
+        }
+
+        // Whether a session exists still decides what the app may do in the
+        // background (offline sync must not run on a signed-out shell), but it
+        // no longer selects between two different sign-in screens: there is
+        // only Facebook's own form now.
+        onAuthPage = !UrlHelper.isLoggedIn()
+
+        BackgroundSyncManager.init(applicationContext, prefs)
+        applyBlockerFlags()
+        setupEdgeToEdge()
+        setupWebView()
+        setupSwipeRefresh()
+        setupDownloadManager()
+        setupBackHandling()
+        setupErrorView()
+        setupConnectivity()
+        observeViewModel()
+
+        updateChromeVisibility()
+
+        // Restore in-memory state first, then the on-disk copy. The bundle
+        // only exists when Android killed the activity; after a swipe-away or
+        // a process reclaim it is gone, and without the disk copy the app
+        // would rebuild Facebook's whole shell on every launch.
+        val restored = savedInstanceState
+            ?: if (prefs.saveSession) SessionState.restore(this) else null
+
+        if (restored != null && binding.webView.restoreState(restored) != null) {
+            // History came back. Nothing to load: the WebView repaints the
+            // page it was on, header and tab bar included.
+        } else {
+            val target = if (onAuthPage) {
+                // Signed out: go straight to Facebook's own sign-in form.
+                // Nothing is stacked in front of it any more, so this is the
+                // form the user actually types into -- one surface, one
+                // submit. The "Get Facebook for Android" banner it carries is
+                // removed by the cosmetic pass before first paint.
+                "https://www.facebook.com/login/"
+            } else {
+                resolveStartUrl(intent)
+            }
+            binding.webView.loadUrl(target)
+        }
+
+        applyRuntimeOptions()
+
+        // =====================================================
+        // V4: PROACTIVE OFFLINE PREPARATION
+        // Start preparing fresh offline content immediately
+        // (no user scrolling required). This is the core of V4.
+        // =====================================================
+        // Nothing is started here. Preparation begins from onPageFinished,
+        // once the Home page has genuinely finished loading - a fixed timer
+        // fired while the page was still coming up and competed with it.
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val url = urlFromIntent(intent)
+        if (url != null) binding.webView.loadUrl(url)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        binding.webView.saveState(outState)
+    }
+
+    /**
+     * Mirror the WebView's state to disk so it survives the process being
+     * killed, not just the activity being recreated.
+     */
+    private fun persistSession() {
+        if (!prefs.saveSession) {
+            SessionState.clear(this)
+            return
+        }
+        val b = Bundle()
+        if (binding.webView.saveState(b) != null) {
+            SessionState.save(this, b)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        stopBgAudioService()
+        binding.webView.onResume()
+        binding.webView.resumeTimers()
+        applyBlockerFlags()
+        applyRuntimeOptions()
+        OfflineCache.enabled = prefs.offlineMode
+        OfflineFeed.enabled = prefs.offlineMode
+        OfflineDocs.enabled = prefs.offlineMode
+        // Settings may have changed while we were away.
+        // V4: Trigger proactive offline preparation on every resume
+        // (lightweight if already running).
+        binding.root.postDelayed({
+            if (!isFinishing && !isDestroyed) {
+                maybeSyncOffline(force = false)
+            }
+        }, 4500)
+
+        if (MainViewModel.pendingUpdateCheck) {
+            MainViewModel.pendingUpdateCheck = false
+            UpdateWatcher.checkNow(force = true)
+        }
+
+        if (viewModel.settingsDirty) {
+            viewModel.settingsDirty = false
+            applyWebSettings()
+            registerEarlyScript()
+            if (viewModel.needsReload) {
+                viewModel.needsReload = false
+                binding.webView.reload()
+            } else {
+                // Apply cosmetic changes live, without losing scroll position.
+                injectAll(binding.webView)
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+
+        saveOfflinePosition()
+
+        val url = binding.webView.url ?: ""
+        // Any Facebook video surface, not just Reels - a Watch tab video
+        // (m.facebook.com/watch/?v=...) never matched "/reel" or "/reels",
+        // so background audio silently did nothing for anyone playing a
+        // video from Watch instead of the Reels feed.
+        val isReelPage = url.contains("/reel") || url.contains("/reels") ||
+            url.contains("/watch") || url.contains("/videos") ||
+            url.contains("fb.watch")
+
+        if (prefs.backgroundAudio && isReelPage) {
+            // Keep WebView alive so media continues in background.
+            // A foreground service tells Android this is active media
+            // playback, preventing Chromium from throttling timers.
+            startBgAudioService()
+        } else {
+            binding.webView.onPause()
+            binding.webView.pauseTimers()
+        }
+
+        CookieManager.getInstance().flush()
+        persistSession()
+        viewModel.blockedCount.value?.let { if (it > 0) prefs.blockCount = it }
+    }
+
+    /**
+     * Facebook's shell is expensive to rebuild. Keeping the process warm makes
+     * the next launch paint from memory instead of re-running the whole
+     * bootstrap, which is the difference between an app and a browser tab.
+     */
+    override fun onDestroy() {
+        connectivityCallback?.let {
+            try {
+                (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
+                    .unregisterNetworkCallback(it)
+            } catch (e: Exception) {}
+        }
+        connectivityCallback = null
+        AppExecutors.diskIO.execute { OfflineCache.trimIfNeeded() }
+        try { earlyScriptHandle?.remove() } catch (e: Exception) {}
+        earlyScriptHandle = null
+        CookieManager.getInstance().flush()
+        binding.webView.apply {
+            stopLoading()
+            webChromeClient = null
+            (parent as? android.view.ViewGroup)?.removeView(this)
+            removeAllViews()
+            destroy()
+        }
+        super.onDestroy()
+    }
+
+    // ---------------------------------------------------------------- gestures
+
+    /**
+     * Three finger double tap anywhere -> hidden settings.
+     * Purely observational, never consumes the event, so normal scrolling and
+     * tapping are completely unaffected.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        gestureDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun openHiddenSettings() {
+        if (prefs.haptics) {
+            binding.root.performHapticFeedback(
+                android.view.HapticFeedbackConstants.LONG_PRESS
+            )
+        }
+        startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    // ---------------------------------------------------------------- setup
+
+    /** True while system bar visibility is being changed, so insets updates
+     *  during the transition are ignored — they would otherwise momentarily
+     *  resize the WebView and visually bounce content under the player. */
+    /** True while any layout-affecting transition is in progress:
+     *  fullscreen enter/exit, page load, or navigation. */
+    private var suppressInsets = false
+
+    private var inFullscreenTransition = false
+
+    private fun setupEdgeToEdge() {
+        // Apply insets to the root FrameLayout, never to contentRoot.
+        // contentRoot visibility toggles (GONE ↔ VISIBLE) during fullscreen
+        // transitions, and each toggle triggered a fresh insets pass that
+        // shifted all content — which is why the title, description and
+        // publisher under a playing video bounced up and then settled.
+        // The root FrameLayout is always VISIBLE, so its padding only moves
+        // when the keyboard or system bars genuinely change.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
+            if (suppressInsets) return@setOnApplyWindowInsetsListener windowInsets
+            val bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+            view.updatePadding(
+                top = bars.top,
+                bottom = maxOf(bars.bottom, ime.bottom)
+            )
+            windowInsets
+        }
+        updateSystemBarIcons()
+    }
+
+    private fun updateSystemBarIcons() {
+        val isNight = (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        WindowInsetsControllerCompat(window, binding.root).apply {
+            isAppearanceLightStatusBars = !isNight
+            isAppearanceLightNavigationBars = !isNight
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun setupWebView() {
+        binding.webView.apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addJavascriptInterface(JsBridge(), "FBPro")
+            webViewClient = createWebViewClient()
+            webChromeClient = createWebChromeClient()
+        }
+        applyWebSettings()
+        registerEarlyScript()
+
+        // V4 Step 3: Apply video playback optimizations
+        VideoHelper.applyVideoOptimizations(binding.webView)
+
+        // Facebook picks a different renderer per user agent, so a stored page
+        // must be fetched with the same one the WebView uses. Read it after
+        // applyWebSettings, not before, or it is the stock UA and the pages we
+        // store are ones the WebView would never have been served.
+        OfflineDocs.userAgent = binding.webView.settings.userAgentString
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(binding.webView, true)
+        }
+    }
+
+    /**
+     * Register the GraphQL ad-stripper to run at document start, before any of
+     * Facebook's own scripts. This is what lets us delete sponsored posts from
+     * the API response instead of hiding them after they render.
+     */
+    private fun registerEarlyScript() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        try {
+            earlyScriptHandle?.remove()
+            earlyScriptHandle = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
+                binding.webView,
+                AdBlocker.getEarlyScript(prefs.adBlock, prefs.blockAppPromo) + "\n" +
+                    (if (prefs.adBlock && prefs.cosmeticFilter) MFacebookAds.script() else ""),
+                setOf("https://*.facebook.com", "https://*.messenger.com")
+            )
+        } catch (e: Exception) {
+            earlyScriptHandle = null
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun applyWebSettings() {
+        binding.webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+
+            // Zoom is user configurable now (accessibility).
+            val zoom = prefs.allowZoom
+            setSupportZoom(zoom)
+            builtInZoomControls = zoom
+            displayZoomControls = false
+
+            // Popups are handled by onCreateWindow, never silently dropped.
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = !prefs.blockPopups
+
+            // Prefer the HTTP cache so a relaunch paints from disk instead of
+            // refetching everything, which is what made the app feel like a
+            // browser rather than an installed app.
+            cacheMode = if (isOnline) {
+                WebSettings.LOAD_DEFAULT
+            } else {
+                WebSettings.LOAD_CACHE_ELSE_NETWORK
+            }
+            // Keep the rendering pipeline warm.
+            setRenderPriority(WebSettings.RenderPriority.HIGH)
+            domStorageEnabled = true
+            databaseEnabled = true
+            loadsImagesAutomatically = true
+            blockNetworkImage = false
+            // Do not wait for the full layout before painting text.
+            layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
+            allowFileAccess = false          // security: was true
+            allowContentAccess = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            mediaPlaybackRequiresUserGesture = !prefs.autoplayVideo
+            safeBrowsingEnabled = true
+
+            userAgentString = buildUserAgent(userAgentString)
+
+            // Native-feel tuning
+            setGeolocationEnabled(true)
+            defaultTextEncodingName = "utf-8"
+        }
+
+        // Follow the app theme inside the page so Facebook renders dark mode
+        // natively instead of flashing a white background.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            try {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(
+                    binding.webView.settings, true
+                )
+            } catch (e: Exception) { /* not fatal */ }
+        }
+    }
+
+    /**
+     * Present as an ordinary Android Chrome browser.
+     *
+     * We strip only the "wv" token, which marks the client as an embedded
+     * WebView. Nothing is invented: the Chrome version, Android version and
+     * device string all stay as they really are. Spoofing the official
+     * Facebook app's user agent was considered and rejected - a WebView
+     * cannot back up that claim, and the mismatch is exactly what triggers
+     * checkpoints. A normal mobile browser is a genuine, supported way to
+     * use Facebook.
+     */
+    private fun buildUserAgent(current: String): String {
+        val clean = current
+            .replace("; wv", "")
+            .replace(" wv", "")
+            .replace(Regex("\\bwv\\b"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return if (prefs.desktopMode) {
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/122.0.0.0 Safari/537.36"
+        } else {
+            clean
+        }
+    }
+
+    private fun applyBlockerFlags() {
+        AdBlocker.enabled = prefs.adBlock
+        AdBlocker.cosmeticEnabled = prefs.cosmeticFilter
+    }
+
+    /**
+     * The real Facebook app shows no navigation chrome until you are signed
+     * in, so the login screen must be the bare page. Chrome is therefore
+     * hidden whenever an auth page is showing, regardless of the setting.
+     */
+    /**
+     * Decide whether we are on a logged-out screen.
+     *
+     * Three signals, because no single one is enough:
+     *  - the URL (explicit /login, /reg, /checkpoint pages)
+     *  - the session cookie (c_user only exists when signed in)
+     *  - the DOM (Facebook serves the login form at / itself, so a password
+     *    field on screen is the decisive marker)
+     */
+    private fun evaluateAuthState(url: String?) {
+        val byUrl = UrlHelper.isAuthPage(url)
+        val signedIn = UrlHelper.isLoggedIn()
+
+        // The session cookie is authoritative, and that has to include the
+        // URL test. Facebook posts the sign-in form to
+        // /login/device-based/regular/login/ and redirects through
+        // /login/?next=..., whose first path segment is "login", so
+        // isAuthPage() returns true for the very page that is handing us the
+        // session. Checking byUrl first therefore re-latched onAuthPage to
+        // true immediately after a successful login: the native screen came
+        // back with the fields already cleared and the user had to type the
+        // credentials and press Log in a second time.
+        //
+        // c_user only exists once Facebook has accepted the credentials, so
+        // when it is present the URL cannot mean "not signed in" - it only
+        // means the redirect is still in flight.
+        val auth = when {
+            signedIn -> false
+            byUrl -> true
+            else -> domSaysLoggedOut || !signedIn
+        }
+
+        if (auth != onAuthPage) {
+            val wasAuth = onAuthPage
+            onAuthPage = auth
+            updateChromeVisibility()
+
+            // Just signed in: leave the login screen behind for good and make
+            // sure we land on the feed rather than a leftover login URL.
+            if (wasAuth && !auth) {
+                // Always load homepage on auth→non-auth transition.
+                // If Facebook's redirect lands the WebView on an
+                // intermediate page (e.g. /login/?next=), that page
+                // can still have "Get the app" banners. Loading the
+                // homepage ensures the first visible frame is clean.
+                binding.webView.loadUrl(prefs.homepage)
+            }
+        }
+    }
+
+    /** Re-run the auth probe a few times after a load or a navigation. */
+    private fun scheduleAuthProbes(view: WebView?) {
+        val target = view ?: binding.webView
+        target.evaluateJavascript(AdBlocker.getAuthProbeScript(), null)
+        for (delay in longArrayOf(400, 1200, 2500, 4000)) {
+            target.postDelayed({
+                if (!isFinishing && !isDestroyed) {
+                    target.evaluateJavascript(AdBlocker.getAuthProbeScript(), null)
+                }
+            }, delay)
+        }
+    }
+
+    /**
+     * The WebView is the only surface. Facebook renders its own login form,
+     * its own header and its own tabs, and the app draws none of them.
+     *
+     * There used to be a native login screen stacked on top of this, mirroring
+     * Facebook's layout, with the real page loading hidden behind it. Keeping
+     * two sign-in surfaces in agreement needed a timer, and when the timer was
+     * wrong the native screen was pulled away to reveal Facebook's own form
+     * underneath -- which is what made people log in twice. One surface cannot
+     * disagree with itself.
+     */
+    private fun updateChromeVisibility() {
+        binding.swipeRefresh.visibility = View.VISIBLE
+    }
+
+    private fun applyRuntimeOptions() {
+        updateChromeVisibility()
+        binding.swipeRefresh.isEnabled = prefs.pullToRefresh
+        if (prefs.keepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        if (!prefs.showProgress) binding.progressBar.visibility = View.GONE
+    }
+
+    private fun setupSwipeRefresh() {
+        binding.swipeRefresh.apply {
+            setColorSchemeResources(R.color.primary, R.color.secondary)
+            setOnRefreshListener { softRefresh() }
+
+            // V4 Step 4: More robust scroll detection
+            setOnChildScrollUpCallback { _, _ ->
+                binding.webView.canScrollVertically(-1) ||
+                    binding.webView.scrollY > 0 ||
+                    !pageAtTop
+            }
+        }
+    }
+
+    /**
+     * Refresh the content without reloading the document.
+     *
+     * A real reload makes Facebook re-run its bootstrap, which paints its own
+     * blue splash screen - the app looks like a browser tab every time the
+     * user pulls down. Asking the page to refresh itself keeps the shell on
+     * screen, which is what the native app does. If the page cannot do it we
+     * fall back to a reload, so pull-to-refresh always works.
+     */
+    private fun softRefresh() {
+        // Offline: a live refresh is impossible. Rebuild the stored page so
+        // the latest saved cards appear, then dismiss the spinner instantly.
+        if (!isOnline) {
+            OfflineDocs.invalidate()
+            binding.swipeRefresh.isRefreshing = false
+            if (!hasAnythingOffline()) return
+            val saved = OfflineDocs.savedScreens()
+            val cur = OfflineDocs.screenFor(binding.webView.url ?: "")
+            if (cur != null && saved.contains(cur)) {
+                binding.webView.loadUrl(OfflineDocs.urlFor(cur)
+                    ?: binding.webView.url ?: "https://www.facebook.com")
+            } else {
+                binding.webView.reload()
+            }
+            return
+        }
+
+        softRefreshPending = true
+        binding.webView.evaluateJavascript(SoftRefresh.script(), null)
+        binding.webView.postDelayed({
+            if (softRefreshPending) {
+                softRefreshPending = false
+                binding.swipeRefresh.isRefreshing = false
+                binding.webView.reload()
+            }
+        }, 2500)
+    }
+
+    private fun setupErrorView() {
+        binding.errorRetry.setOnClickListener {
+            binding.errorView.visibility = View.GONE
+            binding.webView.visibility = View.VISIBLE
+            binding.webView.reload()
+        }
+
+        // Browse the cached copy of the last page without a connection.
+        // Show what we actually saved.
+        //
+        // This used to reload the last Facebook URL from the HTTP cache and
+        // hope for the best, which is why the button appeared to do nothing:
+        // with no connection the document request simply failed again. Now we
+        // render our own page from the stored items.
+        binding.errorOffline.setOnClickListener { showSavedContent() }
+    }
+
+    /**
+     * Open the offline screen built from the items we hold. Prefers whichever
+     * section the user was on; falls back to whichever has content.
+     */
+    /** True when there is any offline content at all - a page, or cards. */
+    /**
+     * True when there is a stored Facebook page to show.
+     *
+     * Cards on their own no longer count: without a stored document there is
+     * no Facebook chrome to put them in, and the alternative - drawing a page
+     * of our own around them - is what made offline look different from
+     * online. Better to show nothing than something we invented.
+     */
+    private fun hasAnythingOffline(): Boolean =
+        OfflineDocs.savedScreens().isNotEmpty() ||
+        OfflineFeed.hasAnything()
+
+    private fun showSavedContent() {
+        val saved = OfflineDocs.savedScreens()
+        val last = OfflineDocs.screenFor(prefs.lastUrl)
+
+        val target = when {
+            last != null && saved.contains(last) -> prefs.lastUrl
+            saved.contains("home") -> "https://m.facebook.com/"
+            saved.contains("reels") -> "https://m.facebook.com/reel/"
+            saved.contains("stories") -> "https://m.facebook.com/stories/"
+            saved.isNotEmpty() -> OfflineDocs.urlFor(saved.first())
+            // No stored Facebook document, but we have cards. Load the
+            // home URL anyway — shellFor() will serve them.
+            OfflineFeed.hasAnything() -> prefs.homepage
+            else -> null
+        }
+
+        if (target == null) {
+            toast(getString(R.string.offline_nothing_saved))
+            return
+        }
+
+        binding.errorView.visibility = View.GONE
+        binding.webView.visibility = View.VISIBLE
+        // A toast, not a permanent bar. The bar sat across the bottom of
+        // every screen and covered the video while it played.
+        toast(getString(R.string.offline_banner))
+        binding.webView.loadUrl(target)
+    }
+
+    /**
+     * Fill the offline store by itself.
+     *
+     * The user should not have to scroll through content, or press a button,
+     * for "keep this offline" to mean anything - so this runs on its own once
+     * the visible page has settled, for whichever sections are enabled.
+     */
+    /** 
+     * V4: Delegates heavy lifting to the new proactive OfflineManager.
+     * Legacy path kept for compatibility (e.g. network restored callbacks).
+     * The main automatic fresh content preparation now happens on launch.
+     */
+    private fun maybeSyncOffline(force: Boolean = false) {
+        if (!prefs.offlineMode || !isOnline) return
+
+        // V4: Use the new central proactive preparation engine
+        OfflineManager.startProactivePreparation(
+            context = applicationContext,
+            prefs = prefs,
+            force = force
+        )
+
+        // Still refresh the current visible page's documents lightly
+        AppExecutors.background.execute {
+            try {
+                OfflineDocs.refresh(force = force)
+
+                val screens = OfflineDocs.savedScreens()
+                val media = screens.flatMap { OfflineDocs.mediaUrls(it) }.distinct()
+                OfflineFeed.prefetchUrls(media, includeVideo = prefs.offlineVideo)
+
+                // A second pass, once the stylesheets are on disk.
+                //
+                // The icon font's URL lives inside the CSS, so it can only be
+                // discovered by reading a stylesheet we have already stored.
+                // On the first pass those files were still downloading, which
+                // is why the font was never found and every icon rendered as
+                // a tofu box. Sweeping again afterwards picks it up.
+                OfflineFeed.awaitPrefetch(45_000)
+                val second = screens.flatMap { OfflineDocs.mediaUrls(it) }
+                    .distinct()
+                    .filterNot { OfflineCache.has(it) }
+                if (second.isNotEmpty()) {
+                    OfflineFeed.prefetchUrls(second, includeVideo = prefs.offlineVideo)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun setupBackHandling() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when {
+                    customView != null ->
+                        (binding.webView.webChromeClient)?.onHideCustomView()
+
+                    binding.webView.canGoBack() -> {
+                        binding.webView.goBack()
+                        if (prefs.haptics) {
+                            binding.root.performHapticFeedback(
+                                android.view.HapticFeedbackConstants.VIRTUAL_KEY
+                            )
+                        }
+                    }
+
+                    else -> {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+            }
+        })
+    }
+
+    private fun observeViewModel() {
+        viewModel.progress.observe(this) { p ->
+            if (!prefs.showProgress) {
+                binding.progressBar.visibility = View.GONE
+                return@observe
+            }
+            binding.progressBar.progress = p
+            binding.progressBar.visibility = if (p in 1..99) View.VISIBLE else View.GONE
+        }
+    }
+
+    // ---------------------------------------------------------------- start url
+
+    private fun resolveStartUrl(intent: Intent?): String {
+        urlFromIntent(intent)?.let { return it }
+        if (prefs.saveSession) {
+            val last = prefs.lastUrl
+            if (!last.isNullOrBlank() && UrlHelper.isInternal(last)) return last
+        }
+        return prefs.homepage
+    }
+
+    private fun urlFromIntent(intent: Intent?): String? {
+        intent ?: return null
+        // Deep link: fixes the old bug where intent.data was never read.
+        if (intent.action == Intent.ACTION_VIEW) {
+            val data = intent.dataString
+            if (!data.isNullOrBlank() && UrlHelper.isInternal(data)) return data
+        }
+        if (intent.action == Intent.ACTION_SEND) {
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (!text.isNullOrBlank()) {
+                return "https://www.facebook.com/sharer/sharer.php?u=${Uri.encode(text)}"
+            }
+        }
+        return null
+    }
+
+    // ---------------------------------------------------------------- clients
+
+    private fun createWebViewClient(): android.webkit.WebViewClient {
+        return object : android.webkit.WebViewClient() {
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                suppressInsets = true
+                binding.errorView.visibility = View.GONE
+                binding.webView.visibility = View.VISIBLE
+
+                // Decide chrome visibility before the page paints, so the
+                // login screen never flashes a top bar.
+                evaluateAuthState(url)
+
+                // Inject the CSS blocks as early as possible.
+                view?.evaluateJavascript(
+                    AdBlocker.getStyleScript(prefs.blockAppPromo, prefs.adBlock), null
+                )
+                // Fallback for devices without DOCUMENT_START_SCRIPT support.
+                if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                    view?.evaluateJavascript(
+                        AdBlocker.getEarlyScript(prefs.adBlock, prefs.blockAppPromo), null
+                    )
+                }
+                // Start the m.facebook ad remover as early as possible so a
+                // sponsored video never gets to autoplay.
+                if (prefs.adBlock && prefs.cosmeticFilter) {
+                    view?.evaluateJavascript(CosmeticFilters.styleScript(), null)
+                    view?.evaluateJavascript(MFacebookAds.script(), null)
+                }
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                suppressInsets = false
+                binding.swipeRefresh.isRefreshing = false
+                if (prefs.saveSession && UrlHelper.isInternal(url)) prefs.lastUrl = url
+                injectAll(view)
+                view?.postDelayed({ warmOfflineCache(url) }, 2500)
+
+                // Offline preparation starts here, and only here: the Home
+                // page has finished loading, so the user is looking at real
+                // content and nothing is competing for the first paint.
+                // Silent, background, never blocks scrolling.
+                if (!onAuthPage && UrlHelper.isInternal(url)) {
+                    BackgroundSyncManager.start()
+                    view?.postDelayed({ maybeSyncOffline() }, 8_000)
+                }
+                // Re-probe several times: after a login submit Facebook swaps
+                // the shell client-side, so the password field disappears
+                // without another page load. A single probe would leave the
+                // logged-out state latched.
+                scheduleAuthProbes(view)
+            }
+
+            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                // SPA navigation - re-run the blocker.
+                injectAll(view)
+                scheduleAuthProbes(view)
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                super.onReceivedError(view, request, error)
+                binding.swipeRefresh.isRefreshing = false
+                if (request?.isForMainFrame != true) return
+
+                // Offline: go straight to whatever is stored. Showing an
+                // error and asking the user to press "View saved content" is
+                // browser behaviour; the app just shows what it has.
+                //
+                // The home screen counts as available if there is either a
+                // stored document or saved cards to put in one - requiring a
+                // stored document alone meant a store full of reels still
+                // showed "Can't load the page".
+                if (prefs.offlineMode && !isOnline && hasAnythingOffline()) {
+                    showSavedContent()
+                    return
+                }
+                showErrorPage()
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val url = request?.url?.toString() ?: return false
+                return handleUrl(url)
+            }
+
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                request ?: return null
+
+                if (AdBlocker.shouldBlockRequest(request)) {
+                    viewModel.incrementBlocked()
+                    return AdBlocker.createEmptyResponse()
+                }
+
+                // Offline main frame. Serve the real Facebook document we
+                // stored while online, so the header, tab bar, counts and
+                // post controls are all exactly where they are online -
+                // because it is the same page. Without this the WebView's own
+                // error page wins before a single cached asset is requested.
+                if (prefs.offlineMode && !isOnline && request.isForMainFrame) {
+                    OfflineDocs.serve(request)?.let { return it }
+                }
+
+                if (!prefs.offlineMode) return null
+                if (!OfflineCache.isInterceptable(request)) return null
+
+                // While online we never touch the request. shouldInterceptRequest
+                // runs on the WebView's resource thread, so doing our own
+                // synchronous HTTP here serialised every image behind a blocking
+                // connection and made the whole app crawl. Returning null lets
+                // the WebView use its native, parallel HTTP stack.
+                if (isOnline) return null
+
+                // Offline only: serve whatever we already stored.
+                // V4 Step 3: Try range first for video, fallback to normal get
+                if (request.requestHeaders.keys.any { it.equals("Range", true) }) {
+                    OfflineCache.range(request)?.let { return it }
+                }
+                return OfflineCache.get(request, offlineOnly = true)
+            }
+        }
+    }
+
+    /** @return true if the app consumed the navigation. */
+    private fun handleUrl(url: String): Boolean {
+        // 1. Play Store / app install links are killed outright.
+        if (prefs.blockAppPromo && UrlHelper.isAppStoreLink(url)) {
+            return true // swallow silently, no store, no chooser
+        }
+        // 2. tel:/mailto:/sms:
+        if (UrlHelper.isSpecialScheme(url)) {
+            return openExternally(url)
+        }
+        // 3. Messaging is deliberately left alone. The desktop-UA switch
+        //    leaked into the rest of the session and broke the home feed
+        //    ("Something went wrong"), so it was removed in 3.6.2.
+
+        // 4. Facebook + auth providers stay inside.
+        if (UrlHelper.isInternal(url)) return false
+        // 5. Everything else, per user setting.
+        return if (prefs.openLinksExternal) openExternally(url) else false
+    }
+
+
+    private fun openExternally(url: String): Boolean {
+        return try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            true
+        } catch (e: ActivityNotFoundException) {
+            toast(getString(R.string.no_app_to_open))
+            true
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    private fun injectAll(view: WebView?) {
+        view ?: return
+        if (prefs.inspectAds) {
+            view.evaluateJavascript(AdInspector.script(), null)
+        }
+        if (prefs.adBlock && prefs.cosmeticFilter) {
+            view.evaluateJavascript(CosmeticFilters.styleScript(), null)
+            view.evaluateJavascript(CosmeticFilters.proceduralScript(), null)
+            view.evaluateJavascript(MFacebookAds.script(), null)
+        }
+        if (prefs.offlineMode) {
+            // Capture only runs via OfflineSync background WebView.
+            // The visible page never populates the offline store —
+            // this ensures online-viewed content is never saved.
+            if (!isOnline) {
+                view.evaluateJavascript(VideoHelper.getOfflineVideoAssistScript(), null)
+            }
+        }
+        view.evaluateJavascript(
+            AdBlocker.getNativeFeelScript(), null
+        )
+        view.evaluateJavascript(
+            AdBlocker.getCosmeticScript(
+                blockAds = prefs.adBlock && prefs.cosmeticFilter,
+                blockAppPromos = prefs.blockAppPromo,
+                hideFlags = prefs.sectionFlags()
+            ),
+            null
+        )
+    }
+
+    private fun createWebChromeClient(): WebChromeClient {
+        return object : WebChromeClient() {
+
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                super.onProgressChanged(view, newProgress)
+                viewModel.setProgress(newProgress)
+            }
+
+            /**
+             * Popups. The old build set window.open = null in JS and never
+             * implemented this, so every target=_blank link was a dead tap.
+             */
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                if (prefs.blockPopups && !isUserGesture) return false
+
+                // Load the popup target in the main WebView instead of a new one.
+                val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                val temp = WebView(this@MainActivity)
+                temp.webViewClient = object : android.webkit.WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        v: WebView?, request: WebResourceRequest?
+                    ): Boolean {
+                        val url = request?.url?.toString() ?: return true
+                        if (!handleUrl(url)) binding.webView.loadUrl(url)
+                        // Destroy off the callback stack, never from inside it.
+                        v?.post { temp.destroy() }
+                        return true
+                    }
+                }
+                transport.webView = temp
+                resultMsg.sendToTarget()
+                return true
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView?,
+                callback: ValueCallback<Array<Uri>>?,
+                params: FileChooserParams?
+            ): Boolean {
+                // Always release a previous callback, never leave the input locked.
+                filePathCallback?.onReceiveValue(null)
+                filePathCallback = callback
+                cameraPhotoUri = null
+
+                val contentIntent = params?.createIntent() ?: run {
+                    filePathCallback = null
+                    return false
+                }
+
+                val chooser = Intent(Intent.ACTION_CHOOSER).apply {
+                    putExtra(Intent.EXTRA_INTENT, contentIntent)
+                    putExtra(Intent.EXTRA_TITLE, getString(R.string.choose_file))
+                    val extras = buildCaptureIntents(params)
+                    if (extras.isNotEmpty()) {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, extras.toTypedArray())
+                    }
+                }
+
+                return try {
+                    fileChooserLauncher.launch(chooser)
+                    true
+                } catch (e: Exception) {
+                    // Critical: unlock the <input type=file> before bailing out.
+                    filePathCallback?.onReceiveValue(null)
+                    filePathCallback = null
+                    false
+                }
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                request ?: return
+                val resources = request.resources
+                val needed = mutableListOf<String>()
+
+                if (resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+                    !hasPermission(Manifest.permission.CAMERA)
+                ) needed += Manifest.permission.CAMERA
+
+                if (resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+                    !hasPermission(Manifest.permission.RECORD_AUDIO)
+                ) needed += Manifest.permission.RECORD_AUDIO
+
+                if (needed.isEmpty()) {
+                    // Grant capture permissions plus protected-media playback.
+                    // RESOURCE_PROTECTED_MEDIA_ID is required for EME/DRM video
+                    // decoding — Facebook's video and Reels content needs this to
+                    // actually start playing. Without it the WebView can request
+                    // the resource but never receives a grant, so the video stays
+                    // stuck buffering and only the loading placeholder shows.
+                    val safe = resources.filter {
+                        it == PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
+                            it == PermissionRequest.RESOURCE_AUDIO_CAPTURE ||
+                            it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
+                    }.toTypedArray()
+                    request.grant(if (safe.isEmpty()) resources else safe)
+                } else {
+                    // Retry after the dialog instead of denying forever.
+                    pendingWebRtcRequest = request
+                    permissionLauncher.launch(needed.toTypedArray())
+                }
+            }
+
+            override fun onPermissionRequestCanceled(request: PermissionRequest?) {
+                super.onPermissionRequestCanceled(request)
+                pendingWebRtcRequest = null
+            }
+
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                // Guard against a second call
+                if (customView != null) {
+                    callback?.onCustomViewHidden()
+                    return
+                }
+                customView = view
+                customViewCallback = callback
+                originalOrientation = requestedOrientation
+
+                // The system's default video poster (the large play-triangle-in-a-ring
+                // icon) is drawn by the platform's VideoView/MediaPlayer before the
+                // first real frame decodes. Giving the view and its container an
+                // opaque black background papers over that placeholder without
+                // touching Facebook's own player UI or using any CSS/overlay hack —
+                // it's just how the native container is normally painted.
+                view?.setBackgroundColor(android.graphics.Color.BLACK)
+
+                binding.customViewContainer.apply {
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                    addView(
+                        view,
+                        android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                        )
+                    )
+                    visibility = View.VISIBLE
+                }
+                inFullscreenTransition = true; suppressInsets = true
+                binding.contentRoot.visibility = View.GONE
+                enterImmersive(true)
+                // Reels/Stories are vertical (9:16) video. Forcing landscape here
+                // shrinks/letterboxes that content instead of filling the screen.
+                // Let the system rotate freely based on the device sensor instead
+                // of locking to landscape, so vertical video stays fullscreen and
+                // horizontal video (e.g. shared long-form clips) can still rotate.
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                binding.root.postDelayed({
+                    inFullscreenTransition = false
+                    suppressInsets = false
+                    // Insets may have changed while suppressed (system bars
+                    // hiding/showing), and there is no guarantee a fresh
+                    // dispatch arrives right after we stop suppressing. Ask
+                    // for one explicitly so root padding can't be left stale
+                    // from whatever insets were current before this point -
+                    // that staleness is what let content sit a bit high.
+                    ViewCompat.requestApplyInsets(binding.root)
+                }, 500)
+            }
+
+            override fun onHideCustomView() {
+                if (customView == null) return
+                inFullscreenTransition = true; suppressInsets = true
+                binding.customViewContainer.apply {
+                    removeAllViews()
+                    visibility = View.GONE
+                }
+                binding.contentRoot.visibility = View.VISIBLE
+                customView = null
+                customViewCallback?.onCustomViewHidden()
+                customViewCallback = null
+                enterImmersive(false)
+                requestedOrientation = originalOrientation
+                binding.root.postDelayed({
+                    inFullscreenTransition = false
+                    suppressInsets = false
+                    ViewCompat.requestApplyInsets(binding.root)
+                }, 500)
+
+                // V4 Step 3: Re-inject after exiting fullscreen (helps restore feed state)
+                binding.root.postDelayed({
+                    if (!isFinishing && !isDestroyed) {
+                        injectAll(binding.webView)
+                    }
+                }, 300)
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?,
+                callback: GeolocationPermissions.Callback?
+            ) {
+                if (hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                    hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                ) {
+                    callback?.invoke(origin, true, false)
+                } else {
+                    // Keep the callback and answer it once the user decides.
+                    pendingGeoOrigin = origin
+                    pendingGeoCallback = callback
+                    permissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun enterImmersive(on: Boolean) {
+        val controller = WindowInsetsControllerCompat(window, binding.root)
+        if (on) {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            updateSystemBarIcons()
+        }
+    }
+
+    // ---------------------------------------------------------------- camera
+
+    private fun buildCaptureIntents(params: WebChromeClient.FileChooserParams?): List<Intent> {
+        if (!hasPermission(Manifest.permission.CAMERA)) return emptyList()
+        val accept = params?.acceptTypes?.joinToString(",")?.lowercase(Locale.ROOT) ?: ""
+        val wantsImage = accept.isEmpty() || accept.contains("image") || accept.contains("*/*")
+        if (!wantsImage) return emptyList()
+
+        return try {
+            val dir = File(cacheDir, "captures").apply { mkdirs() }
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val file = File(dir, "IMG_$stamp.jpg")
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            cameraPhotoUri = uri
+            listOf(
+                Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                    putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                }
+            )
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    // ---------------------------------------------------------------- downloads
+
+    private fun setupDownloadManager() {
+        binding.webView.setDownloadListener { url, userAgent, disposition, mimetype, _ ->
+            when {
+                url.startsWith("blob:") -> {
+                    // Handled by the JS bridge; ask the page to convert it.
+                    binding.webView.evaluateJavascript(blobFetchScript(url), null)
+                }
+                url.startsWith("data:") -> saveDataUrl(url)
+                else -> enqueueDownload(url, userAgent, disposition, mimetype)
+            }
+        }
+    }
+
+    private fun enqueueDownload(
+        url: String,
+        userAgent: String?,
+        disposition: String?,
+        mimetype: String?
+    ) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+            ) {
+                permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+            }
+
+            val name = uniqueName(URLUtil.guessFileName(url, disposition, mimetype))
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                addRequestHeader("User-Agent", userAgent ?: "")
+                // Without cookies the Facebook CDN answers 403.
+                CookieManager.getInstance().getCookie(url)?.let {
+                    addRequestHeader("Cookie", it)
+                }
+                binding.webView.url?.let { addRequestHeader("Referer", it) }
+                setTitle(name)
+                setDescription(getString(R.string.download_started))
+                setMimeType(mimetype)
+                setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                )
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+            }
+            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            toast(getString(R.string.download_started))
+        } catch (e: Exception) {
+            toast(getString(R.string.download_failed))
+        }
+    }
+
+    private fun uniqueName(base: String): String {
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        var candidate = base
+        var i = 1
+        val dot = base.lastIndexOf('.')
+        val stem = if (dot > 0) base.substring(0, dot) else base
+        val ext = if (dot > 0) base.substring(dot) else ""
+        while (File(dir, candidate).exists() && i < 500) {
+            candidate = "$stem($i)$ext"
+            i++
+        }
+        return candidate
+    }
+
+    private fun blobFetchScript(url: String) = """
+        (function(){
+          var x=new XMLHttpRequest();
+          x.open('GET','$url',true);x.responseType='blob';
+          x.onload=function(){
+            var r=new FileReader();
+            r.onloadend=function(){ FBPro.onBlobDownload(r.result,''); };
+            r.readAsDataURL(x.response);
+          };
+          x.send();
+        })();
+    """.trimIndent()
+
+    private fun saveDataUrl(dataUrl: String, suggested: String = "") {
+        try {
+            val comma = dataUrl.indexOf(',')
+            if (comma < 0) return
+            val meta = dataUrl.substring(5, comma)
+            val mime = meta.substringBefore(';').ifBlank { "application/octet-stream" }
+            val bytes = Base64.decode(dataUrl.substring(comma + 1), Base64.DEFAULT)
+            val ext = android.webkit.MimeTypeMap.getSingleton()
+                .getExtensionFromMimeType(mime) ?: "bin"
+            val name = uniqueName(
+                suggested.ifBlank { "FBPro_${System.currentTimeMillis()}.$ext" }
+            )
+            val dir = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+            ).apply { mkdirs() }
+            File(dir, name).outputStream().use { it.write(bytes) }
+            toast(getString(R.string.download_completed))
+        } catch (e: Exception) {
+            toast(getString(R.string.download_failed))
+        }
+    }
+
+    inner class JsBridge {
+        @JavascriptInterface
+        fun onBlobDownload(dataUrl: String, filename: String) {
+            runOnUiThread { saveDataUrl(dataUrl, filename) }
+        }
+
+        /**
+         * Reported by the page whenever its scroll position changes. Covers
+         * the case where Facebook scrolls an inner div and the WebView's own
+         * scrollY never moves.
+         */
+        @JavascriptInterface
+        fun onScrollState(atTop: Boolean) {
+            pageAtTop = atTop
+        }
+
+        /**
+         * Inspect mode captured an element. Copy it to the clipboard and tell
+         * the user, so it can be pasted straight into a bug report.
+         */
+        @JavascriptInterface
+        fun onAdHtml(text: String) {
+            runOnUiThread {
+                try {
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText("Dustbook ad markup", text)
+                    )
+                    if (prefs.haptics) {
+                        binding.root.performHapticFeedback(
+                            android.view.HapticFeedbackConstants.LONG_PRESS
+                        )
+                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.inspect_copied),
+                        Toast.LENGTH_LONG
+                    ).show()
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        this@MainActivity, e.message ?: "copy failed", Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+
+        /**
+         * The page finished a soft refresh. handled=false means it found no
+         * way to refresh itself, so we do a real reload after all.
+         */
+        @JavascriptInterface
+        fun onSoftRefresh(handled: Boolean) {
+            if (!softRefreshPending) return
+            softRefreshPending = false
+            runOnUiThread {
+                if (handled) {
+                    binding.swipeRefresh.isRefreshing = false
+                } else {
+                    binding.webView.reload()
+                }
+            }
+        }
+
+        /**
+         * The page reported the posts or reels it is showing. Merge them into
+         * the offline store and pull their media down.
+         */
+        @JavascriptInterface
+        fun onOfflineItems(section: String, json: String, done: Boolean) {
+            if (!prefs.offlineMode || !isOnline) return
+            val target = prefs.offlineReelTarget.coerceAtLeast(30)
+            val items = OfflineSync.parseItems(json)
+            if (items.isEmpty()) return
+
+            // Only save genuinely NEW content — skip everything we already
+            // hold so viewed reels are never re-saved and served offline.
+            val existingIds = OfflineFeed.knownIds(section).toSet()
+            val newItems = items.filter {
+                it.id.isBlank() || it.id !in existingIds
+            }
+            if (newItems.isEmpty()) return
+
+            OfflineFeed.addItems(section, newItems, target)
+            OfflineFeed.prefetch(newItems, includeVideo = prefs.offlineVideo)
+        }
+
+
+        /**
+         * The page hands us its own document so it can be stored.
+         *
+         * Facebook answers m.facebook.com with HTTP 400 to any plain HTTP
+         * client, so the app cannot fetch these pages itself - a live WebView
+         * is the only place they exist.
+         */
+        @JavascriptInterface
+        fun onOfflinePage(section: String, html: String) {
+            if (!prefs.offlineMode || !isOnline) return
+            AppExecutors.background.execute {
+                OfflineDocs.storeFromPage(
+                    when (section) {
+                        OfflineFeed.SECTION_REELS -> "reels"
+                        OfflineFeed.SECTION_STORIES -> "stories"
+                        else -> "home"
+                    },
+                    html
+                )
+            }
+        }
+
+        /**
+         * Offline, the user tapped one of Facebook's own tabs. Load the
+         * stored copy of that screen - it is served from disk by
+         * [OfflineDocs] through shouldInterceptRequest, exactly as the first
+         * screen was.
+         */
+        @JavascriptInterface
+        fun onOfflineNav(screen: String, url: String) {
+            runOnUiThread { binding.webView.loadUrl(url) }
+        }
+
+        /**
+         * Offline, the user tapped a tab we hold nothing for. Say so rather
+         * than leaving the tap silently doing nothing, which is what the dead
+         * action id did.
+         */
+        @JavascriptInterface
+        fun onOfflineNavMissing(screen: String) {
+            // Deliberately silent. A toast here was ours, not Facebook's, and
+            // online no such message exists - the tap simply does nothing when
+            // there is nothing to show. The app's own offline banner, outside
+            // the WebView, already says why.
+        }
+
+        /**
+         * Page reports a fillable login form is present.
+         *
+         * Nothing acts on this any more -- the native login screen it used to
+         * gate is gone. The probe script still calls it on every load, so the
+         * method has to stay: an injected script calling a missing
+         * @JavascriptInterface method throws inside the page.
+         */
+        @JavascriptInterface
+        fun onLoginFormReady(ready: Boolean) {
+            // no-op
+        }
+
+        /** Page reports a password field / login form is on screen. */
+        @JavascriptInterface
+        fun onAuthState(loggedOut: Boolean) {
+            if (domSaysLoggedOut == loggedOut) return
+            domSaysLoggedOut = loggedOut
+            runOnUiThread { evaluateAuthState(binding.webView.url) }
+        }
+
+        /**
+         * The offline page reports where the user is so the next session can
+         * resume from the same point. Called periodically while the user
+         * scrolls through offline content.
+         */
+        @JavascriptInterface
+        fun reportPosition(type: String, id: String) {
+            if (isOnline) return
+            when (type) {
+                "reel" -> if (id.isNotBlank()) prefs.offlineResumeReel = id
+                "stories", "story" -> if (id.isNotBlank()) prefs.offlineResumeStories = id
+                "feed" -> prefs.offlineResumeFeed = "SCROLL:$id"
+            }
+        }
+    }
+
+
+    /**
+     * Silent background update check, at most once every 12 hours.
+     * Runs on the blocklist thread; never blocks startup and stays quiet
+     * unless there is genuinely a newer release the user has not skipped.
+     */
+    /**
+     * @param force true when the user asked for it from settings, which must
+     *              bypass the 12-hour throttle.
+     */
+    // ================= connectivity / offline =================
+
+    private fun setupConnectivity() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        isOnline = hasNetwork(cm)
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                val was = isOnline
+                isOnline = true
+                runOnUiThread {
+                    // Coming back online: refresh only if we were showing the
+                    // offline error page, never yank a page the user is reading.
+                    if (!was && binding.errorView.visibility == View.VISIBLE) {
+                        binding.errorView.visibility = View.GONE
+                        binding.webView.visibility = View.VISIBLE
+                        binding.webView.reload()
+                    }
+                    // V4: Back online → aggressively refresh fresh offline content
+                    if (!was) {
+                        BackgroundSyncManager.onNetworkRestored()
+                        binding.root.postDelayed({ 
+                            OfflineManager.onNetworkRestored(applicationContext, prefs) 
+                        }, 2800)
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                isOnline = hasNetwork(cm)
+                if (!isOnline) runOnUiThread {
+                    toast(getString(R.string.offline_banner))
+                }
+            }
+        }
+        connectivityCallback = cb
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+        } catch (e: Exception) {
+            connectivityCallback = null
+        }
+    }
+
+    private fun hasNetwork(cm: ConnectivityManager): Boolean = try {
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    } catch (e: Exception) {
+        true
+    }
+
+    /**
+     * Warm the offline store for the page we are on, on a background thread.
+     * This runs after the page is already displayed, so it never delays
+     * rendering the way the old inline fetch did.
+     */
+    private fun warmOfflineCache(url: String?) {
+        if (!prefs.offlineMode || url == null || !isOnline) return
+        AppExecutors.background.execute {
+            try {
+                binding.webView.post {
+                    binding.webView.evaluateJavascript(
+                        """
+                        (function(){
+                          var out=[];
+                          var im=document.images;
+                          for(var i=0;i<im.length && out.length<40;i++)
+                            if(im[i].currentSrc) out.push(im[i].currentSrc);
+                          var ls=document.querySelectorAll('link[rel=stylesheet][href]');
+                          for(var j=0;j<ls.length && out.length<60;j++) out.push(ls[j].href);
+                          return out.join('\n');
+                        })();
+                        """.trimIndent()
+                    ) { res -> cacheUrlsAsync(res) }
+                }
+            } catch (e: Exception) { /* best effort */ }
+        }
+    }
+
+    private fun cacheUrlsAsync(jsResult: String?) {
+        val raw = jsResult ?: return
+        if (raw.length < 4) return
+        AppExecutors.heavyBackground.execute {
+            val list = raw.trim('"').split("\\n").map {
+                it.replace("\\/", "/").trim()
+            }.filter { it.startsWith("http") }
+            for (u in list.take(60)) {
+                if (!isOnline) break
+                try {
+                    if (OfflineCache.has(u)) continue
+                    val conn = (URL(u).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 8000
+                        readTimeout = 10000
+                        setRequestProperty("Accept-Encoding", "identity")
+                        setRequestProperty("User-Agent", binding.webView.settings.userAgentString)
+                        CookieManager.getInstance().getCookie(u)?.let {
+                            setRequestProperty("Cookie", it)
+                        }
+                    }
+                    if (conn.responseCode != 200) { conn.disconnect(); continue }
+                    val enc = conn.contentEncoding
+                    if (enc != null && !enc.equals("identity", true)) {
+                        conn.disconnect(); continue
+                    }
+                    val mime = conn.contentType ?: "application/octet-stream"
+                    val bytes = conn.inputStream.use { it.readBytes() }
+                    conn.disconnect()
+                    OfflineCache.put(u, mime, bytes)
+                } catch (e: Exception) { /* skip this asset */ }
+            }
+            OfflineCache.trimIfNeeded()
+        }
+    }
+
+    /**
+     * Fetch a resource ourselves so the bytes can be stored for offline use.
+     * Only runs for cacheable media; everything else falls through to the
+     * WebView's own networking.
+     */
+    private fun fetchAndCache(request: WebResourceRequest): WebResourceResponse? {
+        val url = request.url.toString()
+        return try {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 12000
+                readTimeout = 15000
+                instanceFollowRedirects = true
+                for ((k, v) in request.requestHeaders) {
+                    // Never forward Accept-Encoding. If we do, the CDN returns
+                    // gzip bytes which we would store verbatim and later replay
+                    // without a Content-Encoding header - the WebView then reads
+                    // compressed bytes as text, every stylesheet and script
+                    // fails to parse, and the page comes up blank on the second
+                    // launch. Asking for identity keeps the cache readable.
+                    if (!k.equals("Accept-Encoding", true) &&
+                        !k.equals("Range", true) &&
+                        !k.equals("If-None-Match", true) &&
+                        !k.equals("If-Modified-Since", true)
+                    ) {
+                        setRequestProperty(k, v)
+                    }
+                }
+                setRequestProperty("Accept-Encoding", "identity")
+                CookieManager.getInstance().getCookie(url)?.let {
+                    setRequestProperty("Cookie", it)
+                }
+            }
+            // Only a plain 200 is cacheable. 206 partial content and 304 are not.
+            if (conn.responseCode != 200) { conn.disconnect(); return null }
+
+            // If the server compressed anyway, do not cache it: we cannot
+            // replay it correctly.
+            val encoding = conn.contentEncoding
+            if (encoding != null && !encoding.equals("identity", true)) {
+                conn.disconnect()
+                return null
+            }
+
+            val mime = conn.contentType ?: "application/octet-stream"
+            val buf = ByteArrayOutputStream()
+            conn.inputStream.use { input ->
+                val chunk = ByteArray(16 * 1024)
+                var n = input.read(chunk)
+                var total = 0
+                while (n > 0) {
+                    buf.write(chunk, 0, n)
+                    total += n
+                    if (total > 25 * 1024 * 1024) { conn.disconnect(); return null }
+                    n = input.read(chunk)
+                }
+            }
+            conn.disconnect()
+            val bytes = buf.toByteArray()
+            OfflineCache.put(url, mime, bytes)
+            WebResourceResponse(
+                mime.substringBefore(';'),
+                "utf-8",
+                200,
+                "OK",
+                mapOf("Access-Control-Allow-Origin" to "*"),
+                java.io.ByteArrayInputStream(bytes)
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // ---------------------------------------------------------------- misc
+
+    private fun hasPermission(p: String) =
+        ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    private fun showPermissionDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.permission_required))
+            .setMessage(getString(R.string.permission_rationale))
+            .setPositiveButton(getString(R.string.grant_permission)) { _, _ ->
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", packageName, null)
+                    }
+                )
+            }
+            .setNegativeButton(getString(R.string.dismiss), null)
+            .show()
+    }
+
+    private fun showErrorPage() {
+        // Recoverable: the WebView comes back on retry.
+        binding.webView.visibility = View.GONE
+        binding.errorView.visibility = View.VISIBLE
+        binding.progressBar.visibility = View.GONE
+
+        // Offer saved content only when we hold items whose media is really
+        // on disk. Counting cache files was wrong: a store full of icons and
+        // stylesheets made the button appear with nothing behind it.
+        val canOffline = prefs.offlineMode && hasAnythingOffline()
+        binding.errorOffline.visibility = if (canOffline) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * Remember where the user was in the offline content so the next session
+     * picks up from the same point instead of starting from the beginning.
+     *
+     * Called from onPause, so it runs while the WebView is still alive and
+     * the page can answer. Uses evaluateJavascript whose callback may not
+     * complete before the process is killed, but the best-effort save is
+     * enough: on the rare miss the user simply starts from the top (which
+     * is what always happened before).
+     */
+    private fun saveOfflinePosition() {
+        if (isOnline) return
+        val url = binding.webView.url ?: return
+        val isReel = url.contains("/reel") || url.contains("/reels") ||
+            url.contains("fb.watch")
+        val isStory = url.contains("/stories/") || url.contains("/story/")
+
+        binding.webView.evaluateJavascript("""
+        (function(){
+          var container = document.querySelector('[data-type="vscroller"]');
+          if (!container) return '';
+          var mid = container.clientHeight / 2;
+          if (container.scrollTop > 0) {
+            return 'FEED:' + container.scrollTop;
+          }
+          var cards = container.querySelectorAll(
+            '[data-video-id],[data-story-id]');
+          var best = '', bestDist = 999999;
+          for (var i = 0; i < cards.length; i++) {
+            var r = cards[i].getBoundingClientRect();
+            var dist = Math.abs((r.top + r.bottom) / 2 - mid);
+            if (dist < bestDist) {
+              bestDist = dist;
+              best = cards[i].getAttribute('data-video-id') ||
+                     cards[i].getAttribute('data-story-id') || '';
+            }
+          }
+          return best;
+        })();
+        """.trimIndent()) { result ->
+            val raw = result?.trim('"')?.takeIf { it.isNotBlank() } ?: return@evaluateJavascript
+            if (raw.startsWith("FEED:")) {
+                prefs.offlineResumeFeed = "SCROLL:" + raw.removePrefix("FEED:")
+            } else if (isReel && raw.isNotBlank()) {
+                prefs.offlineResumeReel = raw
+            } else if (isStory && raw.isNotBlank()) {
+                prefs.offlineResumeStories = raw
+            }
+        }
+    }
+
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    private fun startBgAudioService() {
+        if (AudioService.running) return
+        val intent = Intent(this, AudioService::class.java)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) { /* permission may be denied */ }
+    }
+
+    private fun stopBgAudioService() {
+        if (!AudioService.running) return
+        val intent = Intent(this, AudioService::class.java).apply {
+            action = AudioService.ACTION_STOP
+        }
+        try { startService(intent) } catch (e: Exception) {}
+    }
+}
