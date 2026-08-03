@@ -242,7 +242,8 @@ object OfflineDocs {
                 else -> null
             }
 
-            val html = f.readText() +
+            val html = promoHideCss() +
+                f.readText() +
                 unmuteStripScript() +
                 OfflineBanner.html() +
                 "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
@@ -429,7 +430,8 @@ object OfflineDocs {
             "content=\"width=device-width,initial-scale=1,user-scalable=no\">" +
             "<style>body{margin:0;background:#18191a;color:#e4e6eb;" +
             "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
-            "sans-serif}</style></head><body><div>" + use + "</div>" +
+            "sans-serif}</style>" + promoHideCss() +
+            "</head><body><div>" + use + "</div>" +
             unmuteStripScript() +
             "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
             (if (screen == "reels" || screen == "watch" || screen == "stories") {
@@ -751,6 +753,37 @@ object OfflineDocs {
           document.addEventListener('DOMContentLoaded', sweep);
         })();
         </script>
+    """.trimIndent()
+
+    /**
+     * Hides app-promotion banners before the stored page paints.
+     *
+     * Online this is done from onPageStarted, before first paint. An offline
+     * page is answered by shouldInterceptRequest, so that hook has already
+     * run against the previous document and everything we append lands
+     * *after* the stored markup — by which time the "Open in app" bar has
+     * been on screen for a frame. That is the flash: it appeared, then the
+     * scripted sweep removed it.
+     *
+     * Prepending a plain stylesheet fixes it. The rule is parsed before the
+     * body it applies to, so the bar never gets a frame to paint in, and no
+     * script has to run first.
+     */
+    private fun promoHideCss(): String = """
+        <style id="__db_promo_hide">
+        #header-notices,div[id^="header-notice"],
+        [data-testid*="app_download"],[data-testid*="install_app"],
+        [data-testid*="open_in_app"],[data-testid*="app_upsell"],
+        [data-nt="FB:APP_INSTALL"],[data-sigil*="app_install"],
+        [data-sigil*="appinstall"],[data-sigil*="mUpsellBanner"],
+        #mobile_app_install_banner,#appManifestBanner,#MComposerAppInstallBanner,
+        a[href*="play.google.com/store"],a[href*="apps.apple.com"],
+        a[href^="market://"],a[href^="fb://"],a[href^="intent://"],
+        a[href*="/mobile/download"],a[href*="messenger.com/download"],
+        .mobile-app-banner,.app-install-banner,.app-download-banner,
+        .smartbanner,.smart-banner,.get-app-banner
+        {display:none !important;}
+        </style>
     """.trimIndent()
 
     /** Basic page served when there is literally nothing saved. */

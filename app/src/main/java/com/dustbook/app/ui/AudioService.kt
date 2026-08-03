@@ -36,12 +36,24 @@ class AudioService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(android.app.NotificationManager::class.java)
             nm.createNotificationChannel(
+                // IMPORTANCE_MIN is as close to hidden as Android permits.
+                //
+                // A foreground service must post a notification — the system
+                // refuses to keep the service alive otherwise, and since API
+                // 26 there is no way to suppress it. MIN keeps it out of the
+                // status bar entirely: no icon, no sound, no badge. It sits
+                // silently at the bottom of the shade, which is the quietest
+                // the platform allows.
                 android.app.NotificationChannel(
                     CHANNEL_ID, "Background audio",
-                    android.app.NotificationManager.IMPORTANCE_LOW
+                    android.app.NotificationManager.IMPORTANCE_MIN
                 ).apply {
                     description = "Shown while reel audio plays in the background"
                     setShowBadge(false)
+                    enableVibration(false)
+                    enableLights(false)
+                    setSound(null, null)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
                 }
             )
         }
@@ -73,12 +85,15 @@ class AudioService : Service() {
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Dustbook")
-            .setContentText("Reel audio playing in background")
+            .setContentText("Audio playing")
             .setSmallIcon(R.drawable.ic_reels)
             .setContentIntent(pendingTap)
             .addAction(android.R.drawable.ic_media_pause, "Stop", pendingStop)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 
         // Foreground first, then focus: the system refuses a focus request

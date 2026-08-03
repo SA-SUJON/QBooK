@@ -100,7 +100,9 @@ class SyncService : Service() {
                     description = "Shown while content is being saved for offline reading"
                     setShowBadge(false)
                     enableVibration(false)
+                    enableLights(false)
                     setSound(null, null)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
                 }
             )
         }
@@ -138,6 +140,8 @@ class SyncService : Service() {
             .addAction(0, "Stop", pendingStop)
             .setOngoing(true)
             .setSilent(true)
+            .setShowWhen(false)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 

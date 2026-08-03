@@ -720,5 +720,26 @@ console.log('\nEvery saved card reaches the page');
      /android:key="pull_to_refresh"[\s\S]{0,120}android:defaultValue="true"/.test(xml));
 }
 
+console.log('\nNo app-promo bar flashes on an offline page');
+{
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+
+  // Online the hiding CSS goes in from onPageStarted, before first paint. An
+  // offline page is answered by shouldInterceptRequest, so everything
+  // appended lands after the stored markup — the bar got a frame to paint in
+  // and was then removed, which is the flash.
+  ok('a hiding stylesheet exists', /private fun promoHideCss/.test(docs));
+  ok('it is plain CSS, not a script that must run first',
+     /<style id="__db_promo_hide">/.test(docs));
+  ok('it is prepended to the stored document, not appended',
+     /val html = promoHideCss\(\) \+\s*\n\s*f\.readText\(\)/.test(docs));
+  ok('the assembled page gets it inside head',
+     /promoHideCss\(\) \+\s*\n\s*"<\/head>/.test(docs));
+  ok('it covers the store links and the known banner ids',
+     /play\.google\.com\/store/.test(docs) &&
+     /mobile_app_install_banner/.test(docs) &&
+     /display:none !important/.test(docs));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -827,5 +827,32 @@ console.log('\nOnly one thing competes with the feed');
   ok('it is still bounded per pass', /j < 3000/.test(docs));
 }
 
+console.log('\nService notifications stay out of the way');
+{
+  const as = fs.existsSync(KT('ui/AudioService.kt'))
+    ? fs.readFileSync(KT('ui/AudioService.kt'), 'utf8') : '';
+  const ss = fs.existsSync(KT('ui/SyncService.kt'))
+    ? fs.readFileSync(KT('ui/SyncService.kt'), 'utf8') : '';
+
+  // A foreground service must post a notification; since API 26 there is no
+  // way to suppress it. MIN keeps it out of the status bar entirely.
+  for (const [name, src] of [['audio', as], ['sync', ss]]) {
+    ok(name + ': channel importance is the lowest available',
+       /IMPORTANCE_MIN/.test(src));
+    ok(name + ': no status-bar priority',
+       /PRIORITY_MIN/.test(src) && !/PRIORITY_LOW/.test(src));
+    ok(name + ': silent, no vibration, no light',
+       /setSilent\(true\)/.test(src) && /enableVibration\(false\)/.test(src) &&
+       /enableLights\(false\)/.test(src));
+    ok(name + ': hidden on the lock screen',
+       /VISIBILITY_SECRET/.test(src));
+    ok(name + ': no badge and no timestamp',
+       /setShowBadge\(false\)/.test(src) && /setShowWhen\(false\)/.test(src));
+  }
+  ok('both still call startForeground, or the service is killed',
+     /startForeground\(NOTIFICATION_ID/.test(as) &&
+     /startForeground\(NOTIFICATION_ID/.test(ss));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
