@@ -236,10 +236,27 @@ class MainActivity : AppCompatActivity() {
         val restored = savedInstanceState
             ?: if (prefs.saveSession) SessionState.restore(this) else null
 
-        if (restored != null && binding.webView.restoreState(restored) != null) {
+        // Restoring paints from the WebView's own history and issues no
+        // request, so whatever page was showing when the app closed is what
+        // comes back — including Facebook's "Can't load the page" screen if
+        // the connection happened to be down at the time. That then survived
+        // every relaunch, with a perfectly good connection, because nothing
+        // ever went back to the network. Only accept a state that actually
+        // points at Facebook; anything else falls through to a normal load.
+        val restoredUrl = restored
+            ?.let { binding.webView.restoreState(it) }
+            ?.let { binding.webView.url }
+
+        if (restoredUrl != null && SessionState.isUsable(restoredUrl)) {
             // History came back. Nothing to load: the WebView repaints the
             // page it was on, header and tab bar included.
         } else {
+            if (restoredUrl != null) {
+                // The restore already put a dead page in the WebView. Drop it
+                // and the file behind it before loading properly.
+                binding.webView.clearHistory()
+                SessionState.clear(this)
+            }
             val target = if (onAuthPage) {
                 // Signed out: go straight to Facebook's own sign-in form.
                 // Nothing is stacked in front of it any more, so this is the
@@ -283,6 +300,13 @@ class MainActivity : AppCompatActivity() {
      */
     private fun persistSession() {
         if (!prefs.saveSession) {
+            SessionState.clear(this)
+            return
+        }
+        // Never write a state we would refuse to restore. Saving an error
+        // page here is what created the loop: the bad page went to disk on
+        // pause and came back on every launch afterwards.
+        if (!SessionState.isUsable(binding.webView.url)) {
             SessionState.clear(this)
             return
         }

@@ -27,6 +27,7 @@ import com.dustbook.app.utils.OfflineFeed
 import com.dustbook.app.utils.OfflineManager
 import com.dustbook.app.utils.OfflineSync
 import com.dustbook.app.utils.Prefs
+import com.dustbook.app.utils.SessionState
 import com.dustbook.app.utils.UpdateChecker
 import com.dustbook.app.utils.UpdateWatcher
 import com.dustbook.app.viewmodel.MainViewModel
@@ -456,6 +457,11 @@ class SettingsActivity : AppCompatActivity() {
             webView().apply { clearCache(true); clearFormData(); clearHistory(); destroy() }
             WebStorage.getInstance().deleteAllData()
             OfflineCache.clear()
+            // The saved WebView history lives in filesDir, not cacheDir, so
+            // deleting the cache left it behind. A reset that leaves the old
+            // back-forward list on disk is not a reset: the next cold start
+            // restores whatever page was showing when the app last closed.
+            SessionState.clear(ctx)
             androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
                 .edit().clear().apply()
             ctx.cacheDir.deleteRecursively()

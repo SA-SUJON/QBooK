@@ -78,6 +78,35 @@ object SessionState {
         }
     }
 
+    /**
+     * Whether a restored state is worth showing.
+     *
+     * Restoring bypasses loadUrl entirely: the WebView repaints from its own
+     * history and no request is made. That is the point — but it also means a
+     * bad page is permanent. If the app was last closed while Facebook was
+     * serving its "Can't load the page" screen, or on any non-Facebook URL,
+     * that screen is what came back on every launch afterwards, with a working
+     * connection, because nothing ever asked the network again. The only way
+     * out was Reset app.
+     *
+     * A restore is therefore only accepted when the state points at a real
+     * Facebook page. Anything else falls through to a normal load.
+     */
+    fun isUsable(url: String?): Boolean {
+        val u = url?.trim().orEmpty()
+        if (u.isEmpty()) return false
+        if (u == "about:blank" || u.startsWith("data:") || u.startsWith("file:")) return false
+        if (!u.startsWith("https://")) return false
+        val host = try {
+            android.net.Uri.parse(u).host?.lowercase()?.removePrefix("www.").orEmpty()
+        } catch (e: Exception) {
+            return false
+        }
+        if (host.isEmpty()) return false
+        return host == "facebook.com" || host.endsWith(".facebook.com") ||
+            host == "messenger.com" || host.endsWith(".messenger.com")
+    }
+
     fun clear(context: Context) {
         try { file(context).delete() } catch (e: Exception) {}
     }

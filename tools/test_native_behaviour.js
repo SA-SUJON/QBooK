@@ -164,6 +164,35 @@ console.log('\nSessionState');
   ok('restores from disk when the bundle is gone',
      ma.includes('SessionState.restore(this)'));
   ok('persists on pause', /onPause[\s\S]{0,600}persistSession\(\)/.test(ma));
+
+  // A restore repaints from history and issues no request, so a page saved
+  // while the connection was down came back on every launch afterwards --
+  // Facebook's own "Can't load the page" screen, with a working connection,
+  // escapable only by Reset app. Both ends are now guarded.
+  ok('a restored state is validated before it is trusted',
+     /fun isUsable\(/.test(ss));
+  ok('only Facebook pages count as usable',
+     /facebook\.com/.test(ss.slice(ss.indexOf('fun isUsable'))));
+  ok('about:blank and data: are rejected',
+     /about:blank/.test(ss) && /startsWith\("data:"\)/.test(ss));
+  ok('cold start checks the restored url',
+     /SessionState\.isUsable\(restoredUrl\)/.test(ma));
+  ok('an unusable restore falls through to a real load',
+     /if \(restoredUrl != null\)[\s\S]{0,300}SessionState\.clear\(this\)/.test(ma) &&
+     /binding\.webView\.loadUrl\(target\)/.test(ma));
+  ok('an unusable page is never written to disk',
+     /persistSession[\s\S]{0,500}!SessionState\.isUsable\(binding\.webView\.url\)/.test(ma));
+
+  // Reset app has to remove the saved history too. It lives in filesDir, so
+  // deleting cacheDir left it behind and the reset was not a reset.
+  {
+    const sa = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
+    const body = sa.slice(sa.indexOf('private fun clearAllData'));
+    ok('Reset app clears the saved WebView history',
+       /SessionState\.clear\(ctx\)/.test(body.slice(0, 900)));
+    ok('SettingsActivity imports SessionState',
+       /import com\.dustbook\.app\.utils\.SessionState/.test(sa));
+  }
   ok('pull-to-refresh no longer reloads directly',
      !/setOnRefreshListener\s*\{\s*binding\.webView\.reload\(\)/.test(ma));
   // The offline screen is Facebook's stored document now, not a page of ours.
