@@ -875,8 +875,39 @@ object AdBlocker {
     }
 
     /** CSS hard-blocks applied before first paint. */
-    fun getStyleScript(blockPromos: Boolean, blockAds: Boolean): String {
+    fun getStyleScript(
+        blockPromos: Boolean,
+        blockAds: Boolean,
+        hideSiteLoadingBar: Boolean = false
+    ): String {
         val rules = mutableListOf<String>()
+        if (hideSiteLoadingBar) {
+            // Turning the app's own loading bar off did not remove the thin
+            // blue line at the top of the screen, because that line is not
+            // ours. Facebook's lite renderer draws its own, from its own
+            // stylesheet:
+            //
+            //   .loading-bar-animation{position:fixed;top:0;left:0;height:2px;
+            //     width:100%;animation:prog 15s linear forwards;z-index:1}
+            //   .revamped-progress-bar-color .loading-bar-animation{
+            //     background:linear-gradient(90deg,#004cc6,#0079ff)}
+            //
+            // and builds it in JS on every screen swap:
+            //
+            //   a.e.className='loading-bar-animation';
+            //   a.f.className='loading-bar-background';
+            //
+            // So the setting has to hide Facebook's element too, or it only
+            // ever removed a bar the user was not looking at.
+            //
+            // Only the bar itself is hidden. loading-overlay is the dimming
+            // layer that carries it and is also used on its own, so touching
+            // it here would change unrelated screens.
+            rules += listOf(
+                ".loading-bar-animation",
+                ".loading-bar-background"
+            )
+        }
         if (blockPromos) {
             rules += listOf(
                 // classic m.facebook.com install notice above the login form
@@ -906,7 +937,18 @@ object AdBlocker {
                 "[data-pagelet^=\"FeedAdUnit\"]"
             )
         }
-        if (rules.isEmpty()) return "(function(){})();"
+        // Nothing to hide any more. This has to actively empty the sheet
+        // rather than do nothing: the element survives from the previous
+        // injection, so returning a no-op left the last set of rules in force
+        // and a setting that had just been switched off went on applying.
+        if (rules.isEmpty()) {
+            return """
+                (function() {
+                  var s = document.getElementById('fbpro-style');
+                  if (s) s.textContent = '';
+                })();
+            """.trimIndent()
+        }
         // Selectors contain double quotes, so the CSS is emitted as a single
         // quoted JS string with quotes escaped. Building it with plain double
         // quotes produced a SyntaxError and the whole style layer silently

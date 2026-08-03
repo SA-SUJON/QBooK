@@ -1068,7 +1068,12 @@ class MainActivity : AppCompatActivity() {
 
                 // Inject the CSS blocks as early as possible.
                 view?.evaluateJavascript(
-                    AdBlocker.getStyleScript(prefs.blockAppPromo, prefs.adBlock), null
+                    AdBlocker.getStyleScript(
+                        prefs.blockAppPromo,
+                        prefs.adBlock,
+                        hideSiteLoadingBar = !prefs.showProgress
+                    ),
+                    null
                 )
                 // Fallback for devices without DOCUMENT_START_SCRIPT support.
                 if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -1261,6 +1266,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun injectAll(view: WebView?) {
         view ?: return
+
+        // Re-apply the static sheet as well. It used to run only from
+        // onPageStarted, so switching the loading bar off did nothing until
+        // the next navigation — and switching it back on left Facebook's own
+        // bar hidden for the rest of the session.
+        view.evaluateJavascript(
+            AdBlocker.getStyleScript(
+                prefs.blockAppPromo,
+                prefs.adBlock,
+                hideSiteLoadingBar = !prefs.showProgress
+            ),
+            null
+        )
         if (prefs.inspectAds) {
             view.evaluateJavascript(AdInspector.script(), null)
         }

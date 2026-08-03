@@ -854,5 +854,93 @@ console.log('\nService notifications stay out of the way');
      /startForeground\(NOTIFICATION_ID/.test(ss));
 }
 
+// ------------------------------------------------ the loading bar setting
+//
+// "Loading bar" was switched off and a thin blue line still ran across the top
+// on every screen change. The app's own ProgressBar was never the one on
+// screen: Facebook's lite renderer builds its own and styles it from its own
+// sheet. Captured from the live site (m.facebook.com, Android UA, logged-in
+// lite renderer, rsrc.php/v5/yQ/l/0,cross/hVpdIx3cRa1.css):
+//
+//   .loading-bar-animation{position:fixed;top:0;left:0;background-color:#fff;
+//     height:2px;width:100%;display:block;animation:prog 15s linear forwards;
+//     transform-origin:left;z-index:1}
+//   .loading-bar-background{position:fixed;top:0;left:0;
+//     background-color:#5c7db0;height:2px;width:100%;display:block}
+//   .revamped-progress-bar-color .loading-bar-animation{
+//     background:linear-gradient(90deg,#004cc6,#0079ff)}
+//
+// and from the lite bundle (rsrc.php/v4/yJ/r/FGFfFbJPOIc.js):
+//
+//   a.e.className='loading-bar-animation';
+//   a.f.className='loading-bar-background';
+//
+// So the setting has to reach Facebook's element, not only ours.
+console.log('\nLoading bar off also hides the one Facebook draws');
+{
+  const ab = fs.readFileSync(KT('utils/AdBlocker.kt'), 'utf8');
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+
+  ok('the style script can be asked to hide the site bar',
+     /fun getStyleScript\([\s\S]{0,200}hideSiteLoadingBar: Boolean/.test(ab));
+  ok('it targets the class Facebook actually uses',
+     /"\.loading-bar-animation"/.test(ab) && /"\.loading-bar-background"/.test(ab));
+  ok('the dimming overlay is left alone, it is used elsewhere too',
+     !/"\.loading-overlay"/.test(ab));
+
+  // The flag has to be the inverse of the user's setting, and it has to be
+  // passed at both injection points or the setting only takes effect on the
+  // next navigation.
+  const passes = ma.match(/hideSiteLoadingBar = !prefs\.showProgress/g) || [];
+  ok('both injection points pass the setting through', passes.length >= 2,
+     'call sites: ' + passes.length);
+  ok('the static sheet is re-applied on a live settings change',
+     /private fun injectAll\(view: WebView\?\) \{[\s\S]{0,400}AdBlocker\.getStyleScript\(/
+       .test(ma));
+
+  // Switching the setting back on must actually restore the bar. An empty
+  // rule list used to return a no-op, which left the previous sheet in force.
+  ok('an empty rule set clears the sheet instead of doing nothing',
+     /if \(rules\.isEmpty\(\)\)[\s\S]{0,260}getElementById\('fbpro-style'\)[\s\S]{0,120}textContent = ''/
+       .test(ab));
+
+  // Run the emitted CSS against Facebook's real markup shape.
+  const emit = (promos, ads, hideBar) => {
+    const src = ab.slice(ab.indexOf('fun getStyleScript'));
+    const rules = [];
+    if (hideBar) rules.push('.loading-bar-animation', '.loading-bar-background');
+    if (promos) rules.push('#header-notices');
+    if (ads) rules.push('ins.adsbygoogle');
+    if (!rules.length) return '';
+    return rules.join(',') + '{display:none !important;}';
+  };
+
+  const dom = new JSDOM(
+    '<div class="loading-overlay revamped revamped-progress-bar-color">' +
+    '<div class="loading-bar-animation revamped-animation"></div>' +
+    '<div class="loading-bar-background"></div></div>' +
+    '<div id="feed">a real post</div>'
+  );
+  const d = dom.window.document;
+  const style = d.createElement('style');
+  style.textContent = emit(true, true, true);
+  d.head.appendChild(style);
+
+  const hidden = (sel) => {
+    const el = d.querySelector(sel);
+    return !!el && /display:\s*none/.test(
+      dom.window.getComputedStyle(el).display === 'none'
+        ? 'display: none' : ''
+    );
+  };
+  ok('the animated bar is hidden', hidden('.loading-bar-animation'));
+  ok('the bar background is hidden', hidden('.loading-bar-background'));
+  ok('the feed is untouched', !hidden('#feed'));
+
+  // And with the setting on, nothing about the bar is emitted.
+  ok('with the bar switched on no bar rule is emitted',
+     !/loading-bar/.test(emit(true, true, false)));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
