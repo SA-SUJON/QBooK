@@ -86,6 +86,68 @@ const check = (n, got, want) => {
   check('page named "Dhaka Ad Agency"', removed(ctx, '#p3'), false);
   check('feed container', removed(ctx, '#m_newsfeed_stream'), false);
 
+  // ------------------------------------------------------------------
+  // "Hide ad elements" must not take Facebook's own bottom sheets.
+  //
+  // The rule used to be an unqualified
+  //   div[data-mcomponent="MContainer"][class="m fixed-container bottom"]
+  // which reads as "the promo bar pinned to the bottom". It is not. The lite
+  // renderer draws every bottom sheet with that same class - the comment
+  // composer, the account switcher, the login prompt. Measured on a captured
+  // m.facebook.com screen, the one node matching it was 737px tall and held
+  // the whole "Get the full experience" sheet, so with the switch ON those
+  // surfaces were removed and tapping them left only the dimmed backdrop.
+  //
+  // The promo bar is now told apart by what it links to: an app-store or
+  // app-scheme link. Facebook's own sheets link to /login/ and /reg/.
+  const sheets = await run(`<div id="scr" data-mcomponent="MScreen">
+    <div data-mcomponent="MContainer" class="m fixed-container bottom" id="promoBar"
+         data-actual-height="53"><a href="/lite/?entry=bookmark">Open app</a></div>
+    <div data-mcomponent="MContainer" class="m fixed-container bottom" id="storeBar">
+      <a href="https://play.google.com/store/apps/details?id=com.facebook.katana">Get the app</a></div>
+    <div data-mcomponent="MContainer" class="m fixed-container bottom" id="loginSheet"
+         data-actual-height="737">
+      <div>Get the full experience</div>
+      <div>Log in to see the latest content and explore your interests.</div>
+      <a href="https://m.facebook.com/login/?next=x" data-action-id="32721">Log in</a>
+      <a href="https://m.facebook.com/reg/?next=x" data-action-id="32722">Create new account</a>
+    </div>
+    <div data-mcomponent="MContainer" class="m fixed-container bottom" id="commentSheet"
+         data-actual-height="612">
+      <div>Comments</div>
+      <textarea placeholder="Write a comment"></textarea>
+      <div data-action-id="4401">Post</div>
+    </div>
+    <div data-mcomponent="MContainer" class="m fixed-container bottom" id="switcherSheet"
+         data-actual-height="480">
+      <div>Switch profile</div>
+      <div data-action-id="5501">Rabbi</div>
+      <div data-action-id="5502">Add account</div>
+    </div>
+  </div>`);
+
+  console.log('bottom bars: the promo goes, Facebook\u2019s own sheets stay');
+  check('app-scheme promo bar removed', removed(sheets, '#promoBar'), true);
+  check('play-store promo bar removed', removed(sheets, '#storeBar'), true);
+  check('login sheet survives', removed(sheets, '#loginSheet'), false);
+  check('comment composer survives', removed(sheets, '#commentSheet'), false);
+  check('profile switcher survives', removed(sheets, '#switcherSheet'), false);
+  check('the screen root survives', removed(sheets, '#scr'), false);
+
+  {
+    const all = sheets.w.document.querySelectorAll('[data-action-id]');
+    let lost = 0;
+    for (const el of all) {
+      let p = el;
+      while (p) {
+        if (sheets.styled.has(p) ||
+            (p.getAttribute && p.getAttribute('data-db-hidden') === '1')) { lost++; break; }
+        p = p.parentElement;
+      }
+    }
+    check(`sheet controls stay reachable (lost ${lost} of ${all.length})`, lost === 0, true);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) {
     console.log('\n::error::cosmetic filter engine regression');
