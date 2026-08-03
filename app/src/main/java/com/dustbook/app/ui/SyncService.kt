@@ -161,6 +161,27 @@ class SyncService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /**
+     * The task being swiped away must not take the download with it.
+     *
+     * A foreground service survives that on its own, but the default
+     * behaviour for a service started from an activity is ambiguous across
+     * OEM builds -- several aggressively kill the process with the task
+     * unless the service says otherwise. Returning here without stopping,
+     * and keeping the notification up, is what marks the work as still
+     * wanted.
+     *
+     * The pipeline itself holds only the application context, so it has
+     * nothing left pointing at the dead activity.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (!BackgroundSyncManager.isRunning) {
+            stopSelf()
+            return
+        }
+        // Deliberately not calling super and not stopping: the pass continues.
+    }
+
     override fun onDestroy() {
         running = false
         main.removeCallbacks(watchdog)

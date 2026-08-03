@@ -652,6 +652,19 @@ class MainActivity : AppCompatActivity() {
      * back on made it reappear -- so the app was simply refusing to show
      * something it still had.
      */
+    /**
+     * Re-apply window insets once a page has finished loading.
+     *
+     * Insets are suppressed from onPageStarted, so any change that arrives
+     * during the load is dropped and root padding is left stale — content
+     * then sits high, with the header and action row clipped. The fullscreen
+     * handlers already ask for a fresh dispatch when they stop suppressing;
+     * this is the same thing for an ordinary navigation.
+     */
+    private fun refreshInsetsAfterLoad() {
+        ViewCompat.requestApplyInsets(binding.root)
+    }
+
     private fun applyOfflineFlags() {
         val read = prefs.offlineRead
         val write = prefs.offlineMode
@@ -1039,8 +1052,8 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 suppressInsets = false
                 binding.swipeRefresh.isRefreshing = false
-                // A page came through: the next failure starts from zero.
                 mainFrameRetries = 0
+                refreshInsetsAfterLoad()
                 if (prefs.saveSession && UrlHelper.isInternal(url)) prefs.lastUrl = url
                 injectAll(view)
                 view?.postDelayed({ warmOfflineCache(url) }, 2500)
@@ -1151,15 +1164,19 @@ class MainActivity : AppCompatActivity() {
                     OfflineDocs.serve(request)?.let { return it }
                 }
 
+                // Online, hand every subresource straight back to the WebView.
+                //
+                // This test has to come before isInterceptable(), not after.
+                // isInterceptable() calls has(), which hashes the URL and stats
+                // a file — disk work on the WebView's resource thread, for every
+                // image, script and stylesheet on the page. It used to be
+                // unreachable online because the store was disabled whenever
+                // saving was off; now that reading is always enabled, leaving it
+                // in front of this line made the whole feed crawl.
+                if (isOnline) return null
+
                 if (!prefs.offlineRead) return null
                 if (!OfflineCache.isInterceptable(request)) return null
-
-                // While online we never touch the request. shouldInterceptRequest
-                // runs on the WebView's resource thread, so doing our own
-                // synchronous HTTP here serialised every image behind a blocking
-                // connection and made the whole app crawl. Returning null lets
-                // the WebView use its native, parallel HTTP stack.
-                if (isOnline) return null
 
                 // Offline only: serve whatever we already stored.
                 // V4 Step 3: Try range first for video, fallback to normal get

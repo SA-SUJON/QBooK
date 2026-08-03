@@ -647,34 +647,72 @@ console.log('\nDownloading survives the app closing');
      /START_NOT_STICKY/.test(ss));
 }
 
-// ------------------------------------ background audio needs the audio focus
+// -------------------------------- background audio must not steal the focus
 //
-// Reported: sound plays for about five seconds after leaving the app, then
-// stops, with the notification still showing. The foreground service keeps the
-// process alive but says nothing about who owns the audio output, so the
-// system reclaims the stream shortly after the app leaves the foreground.
-console.log('\nBackground audio holds the audio focus');
+// Requesting AUDIOFOCUS_GAIN here looked like the fix for "stops after a few
+// seconds" and made it stop instantly instead: AudioManager does not
+// special-case two requesters in one process, so granting focus to the service
+// sent AUDIOFOCUS_LOSS to the WebView's own player, which paused itself.
+console.log('\nBackground audio leaves the focus alone');
 {
   const as = fs.existsSync(KT('ui/AudioService.kt'))
     ? fs.readFileSync(KT('ui/AudioService.kt'), 'utf8') : '';
+  ok('the service does not request audio focus',
+     !/requestAudioFocus/.test(as));
+  ok('nor abandons it', !/abandonAudioFocus/.test(as));
+  ok('the reason is recorded so it is not tried again',
+     /AUDIOFOCUS_LOSS/.test(as));
+  ok('it still runs as a media foreground service',
+     /startForeground\(NOTIFICATION_ID/.test(as));
+}
 
-  ok('focus is requested', /requestAudioFocus/.test(as));
-  ok('with a durable gain, not a transient one',
-     /AUDIOFOCUS_GAIN\b/.test(as) && !/AUDIOFOCUS_GAIN_TRANSIENT/.test(as));
-  ok('as media usage',
-     /USAGE_MEDIA/.test(as));
-  // Compare the call sites, not the function definition: a background focus
-  // request is refused, and the promotion is what lifts that.
-  ok('foreground is promoted before focus is asked for',
-     /startForeground\(NOTIFICATION_ID, notification\)\s*\n\s*acquireAudioFocus\(\)/.test(as));
-  ok('focus is released when stopping',
-     /ACTION_STOP[\s\S]{0,200}releaseAudioFocus\(\)/.test(as));
-  ok('and on destroy',
-     /onDestroy[\s\S]{0,160}releaseAudioFocus\(\)/.test(as));
-  ok('a refused request cannot crash the service',
-     /catch \(e: Exception\)[\s\S]{0,120}focusRequest = null/.test(as));
-  ok('the pre-O path is handled too',
-     /STREAM_MUSIC/.test(as));
+console.log('\nDownloading survives the task being swiped away');
+{
+  const ss = fs.existsSync(KT('ui/SyncService.kt'))
+    ? fs.readFileSync(KT('ui/SyncService.kt'), 'utf8') : '';
+  ok('the service handles the task being removed',
+     /override fun onTaskRemoved/.test(ss));
+  ok('and keeps going while a pass is running',
+     /onTaskRemoved[\s\S]{0,400}if \(!BackgroundSyncManager\.isRunning\)[\s\S]{0,80}stopSelf/.test(ss));
+  ok('it does not call through to the default behaviour',
+     !/onTaskRemoved[\s\S]{0,400}super\.onTaskRemoved/.test(ss));
+}
+
+console.log('\nVideo starts audible');
+{
+  const ab = fs.readFileSync(KT('utils/AdBlocker.kt'), 'utf8');
+  ok('the page clears the muted flag', /v\.muted = false/.test(ab));
+  ok('only before playback has begun',
+     /if \(v\.paused \|\| v\.currentTime === 0\)/.test(ab));
+  ok('a running muted video is deferred, never unmuted in place',
+     /pendingGesture = true/.test(ab));
+  ok('and picked up on the next real gesture',
+     /touchend/.test(ab) && /function onGesture/.test(ab));
+  ok('metadata events are used, which fire before playback',
+     /loadedmetadata/.test(ab));
+}
+
+console.log('\nOnline layout is not left with stale insets');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  ok('a finished page asks for a fresh inset pass',
+     /onPageFinished[\s\S]{0,400}refreshInsetsAfterLoad\(\)/.test(ma) &&
+     /fun refreshInsetsAfterLoad\(\)[\s\S]{0,200}requestApplyInsets\(binding\.root\)/.test(ma));
+  const n = (ma.match(/ViewCompat\.requestApplyInsets/g) || []).length;
+  ok('every un-suppress point does so', n >= 3, 'found ' + n);
+}
+
+console.log('\nOnline requests are never delayed by the offline store');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const body = ma.slice(ma.indexOf('override fun shouldInterceptRequest'));
+  const online = body.indexOf('if (isOnline) return null');
+  const check = body.indexOf('OfflineCache.isInterceptable');
+  ok('the online short-circuit comes first',
+     online >= 0 && check >= 0 && online < check,
+     'isOnline at ' + online + ', isInterceptable at ' + check);
+  ok('so no disk lookup happens on the resource thread while online',
+     /if \(isOnline\) return null[\s\S]{0,400}OfflineCache\.isInterceptable/.test(body));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

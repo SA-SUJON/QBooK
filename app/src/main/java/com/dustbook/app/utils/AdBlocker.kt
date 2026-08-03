@@ -1021,6 +1021,72 @@ object AdBlocker {
                 report();
               })();
 
+              // ---- keep video audible ----------------------------------------
+              // Facebook starts feed and reel video muted and shows a "Tap to
+              // unmute" prompt. That prompt is removed offline, which left no
+              // way to get the sound back at all, so the video has to start
+              // unmounted instead.
+              //
+              // The historical warning still applies and is respected here: a
+              // clip that was only allowed to autoplay *because* it is muted
+              // is stopped by the browser the instant sound comes on. So this
+              // never unmutes a video that is already running. It clears the
+              // flag before playback begins, and if a running video is muted
+              // it waits for the next user gesture -- by then the gesture
+              // itself authorises audible playback, so nothing is paused.
+              (function() {
+                var pendingGesture = false;
+
+                function unmute(v) {
+                  if (!v || v.__dbUnmuted) return;
+                  try {
+                    if (v.paused || v.currentTime === 0) {
+                      // Not yet playing: safe to clear now.
+                      v.muted = false;
+                      v.defaultMuted = false;
+                      v.removeAttribute('muted');
+                      v.__dbUnmuted = true;
+                    } else if (v.muted) {
+                      // Already running and muted. Touching it here would
+                      // pause it, so defer to the next real interaction.
+                      pendingGesture = true;
+                    }
+                  } catch (e) {}
+                }
+
+                function sweep() {
+                  var v = document.getElementsByTagName('video');
+                  for (var i = 0; i < v.length; i++) unmute(v[i]);
+                }
+
+                function onGesture() {
+                  if (!pendingGesture) return;
+                  pendingGesture = false;
+                  var v = document.getElementsByTagName('video');
+                  for (var i = 0; i < v.length; i++) {
+                    try {
+                      if (!v[i].paused && v[i].muted) {
+                        v[i].muted = false;
+                        v[i].__dbUnmuted = true;
+                      }
+                    } catch (e) {}
+                  }
+                }
+
+                // loadedmetadata fires before playback, which is the moment
+                // the flag can be cleared without interrupting anything.
+                ['loadstart', 'loadedmetadata', 'canplay'].forEach(function(e) {
+                  document.addEventListener(e, function(ev) {
+                    if (ev.target && ev.target.tagName === 'VIDEO') unmute(ev.target);
+                  }, true);
+                });
+                ['touchend', 'click'].forEach(function(e) {
+                  document.addEventListener(e, onGesture, true);
+                });
+                setInterval(sweep, 1000);
+                sweep();
+              })();
+
               // ---- is anything actually playing? -----------------------------
               // Background audio used to be decided from the URL, but the lite
               // renderer swaps the Reels screen in without navigating, so the
