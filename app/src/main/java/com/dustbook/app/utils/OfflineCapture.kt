@@ -198,8 +198,16 @@ object OfflineCapture {
             // <video> tag itself often has no src (set by JS) or a dead
             // blob:. Rewrite it so the stored markup actually plays
             // without Facebook's own runtime.
-            var dv = card.getAttribute &&
-                     card.getAttribute('data-video-url');
+            // The attribute is usually on a child wrapper (MVideo), not on
+            // the card root — the URL collector above already searches for it
+            // that way. Reading only the root meant a reel's <video> kept its
+            // dead blob: src, so offline it showed the poster and a play
+            // button that did nothing.
+            var dv = (card.getAttribute && card.getAttribute('data-video-url'));
+            if (!dv && card.querySelector) {
+              var holder = card.querySelector('[data-video-url]');
+              if (holder) dv = holder.getAttribute('data-video-url');
+            }
             if (dv && dv.indexOf('https://') === 0) {
               // Strip <source> children so the browser does not try
               // their dead URLs before the cached video src.

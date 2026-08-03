@@ -262,10 +262,38 @@ object OfflineFeed {
      */
     fun isFullyDownloaded(item: Item): Boolean {
         if (item.media.isEmpty()) return true
-        return item.media.all { u ->
-            if (isVideoUrl(u)) OfflineCache.hasMinSize(u, MIN_VIDEO_BYTES)
-            else OfflineCache.has(u)
+
+        val videos = item.media.filter { isVideoUrl(it) }
+        val images = item.media.filter { !isVideoUrl(it) }
+
+        // A video item is ready when its video is really on disk. Requiring
+        // every URL was too strict and left reels permanently "incomplete":
+        // capture records every srcset variant of the poster image, and only
+        // the one the renderer actually chose is ever fetched, so the rest
+        // could never arrive.
+        if (videos.isNotEmpty()) {
+            return videos.any { OfflineCache.hasMinSize(it, MIN_VIDEO_BYTES) }
         }
+
+        // A picture post is ready when its pictures are here. Same reasoning:
+        // the alternates are alternates, not additional content, so one cached
+        // image per item is what "the photo is saved" actually means. This is
+        // still far stricter than the old rule, which counted an item whose
+        // only cached file was a 4 KB avatar.
+        return images.any { OfflineCache.has(it) && !isAvatar(it) } ||
+            images.all { OfflineCache.has(it) }
+    }
+
+    /**
+     * Profile pictures and other chrome, which arrive first and are tiny.
+     *
+     * Counting an item because its avatar downloaded is the mistake this
+     * whole rule exists to avoid.
+     */
+    private fun isAvatar(url: String): Boolean {
+        val clean = url.substringBefore('?')
+        return clean.contains("/t39.30808-1/") ||
+            (clean.contains("profile") && clean.contains("_s."))
     }
 
     /**

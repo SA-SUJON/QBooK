@@ -487,12 +487,15 @@ console.log('\nCounting waits for the whole item');
 
   ok('there is one rule for what counts',
      /fun isFullyDownloaded\(item: Item\): Boolean/.test(feed));
-  ok('every asset must be present, not just one',
-     /item\.media\.all \{/.test(feed));
+  // Not "every URL": that was tried and left every item permanently
+  // incomplete, because capture records srcset variants that are never all
+  // fetched. The rule is per-kind — see the section below.
+  ok('the item is judged by kind, not by URL count',
+     /val videos = item\.media\.filter \{ isVideoUrl\(it\) \}/.test(feed));
   ok('the loose any-of test is gone',
      !/item\.media\.any \{ u ->[\s\S]{0,120}OfflineCache\.has\(u\)/.test(feed));
   ok('a video must also be a plausible size, not merely present',
-     /if \(isVideoUrl\(u\)\) OfflineCache\.hasMinSize\(u, MIN_VIDEO_BYTES\)/.test(feed));
+     /OfflineCache\.hasMinSize\(it, MIN_VIDEO_BYTES\)/.test(feed));
   ok('a text post with no media still counts',
      /if \(item\.media\.isEmpty\(\)\) return true/.test(feed));
 
@@ -610,6 +613,59 @@ console.log('\nFullscreen video is not restarted by a layout pass');
      /fun refreshInsetsAfterLoad[\s\S]{0,400}if \(customView != null \|\| inFullscreenTransition\) return/.test(ma));
   ok('the fullscreen handlers still request their own',
      (ma.match(/ViewCompat\.requestApplyInsets/g) || []).length >= 3);
+}
+
+console.log('\nCompleteness allows for srcset alternates');
+{
+  const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+
+  // Requiring every URL was too strict. Capture records each srcset variant,
+  // but only the one the renderer chose is ever fetched, so an item could
+  // never reach "complete" and nothing was served offline at all.
+  ok('a video item is judged on its video',
+     /if \(videos\.isNotEmpty\(\)\)[\s\S]{0,160}videos\.any \{ OfflineCache\.hasMinSize/.test(feed));
+  ok('the all-URLs rule is gone',
+     !/item\.media\.all \{ u ->/.test(feed));
+  ok('an avatar alone still does not count',
+     /private fun isAvatar/.test(feed) &&
+     /images\.any \{ OfflineCache\.has\(it\) && !isAvatar\(it\) \}/.test(feed));
+
+  const MIN = 500000; const disk = {};
+  const isVideo = (u) => /\/o1\/v\/|\.mp4|video/.test(u);
+  const isAvatar = (u) => { const c = u.split('?')[0];
+    return c.includes('/t39.30808-1/') || (c.includes('profile') && c.includes('_s.')); };
+  const has = (u) => disk[u] !== undefined;
+  const full = (m) => { if (!m.length) return true;
+    const v = m.filter(isVideo), i = m.filter((u) => !isVideo(u));
+    if (v.length) return v.some((u) => has(u) && disk[u] >= MIN);
+    return i.some((u) => has(u) && !isAvatar(u)) || i.every(has); };
+  const set = (o) => { for (const k of Object.keys(disk)) delete disk[k]; Object.assign(disk, o); };
+
+  set({ 'p_640.jpg': 50000 });
+  ok('a photo post counts on one real variant',
+     full(['p_640.jpg', 'p_960.jpg', 'p_1280.jpg']) === true);
+  set({ 'r_320.jpg': 9000, '/o1/v/v.mp4': 9000000 });
+  ok('a reel counts once its video is on disk',
+     full(['r_320.jpg', 'r_640.jpg', '/o1/v/v.mp4']) === true);
+  set({ 'av/t39.30808-1/a.jpg': 4000 });
+  ok('but not on an avatar alone',
+     full(['av/t39.30808-1/a.jpg', '/o1/v/v.mp4']) === false);
+  set({ '/o1/v/v.mp4': 1000 });
+  ok('nor on a truncated video', full(['/o1/v/v.mp4']) === false);
+}
+
+console.log('\nA reel keeps a playable video URL offline');
+{
+  const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+  // data-video-url normally sits on a child MVideo wrapper. Reading only the
+  // card root left the <video> on its dead blob:, so offline showed a poster
+  // and a play button that did nothing.
+  ok('the wrapper is searched, not just the card root',
+     /card\.querySelector\('\[data-video-url\]'\)/.test(cap));
+  ok('the dead blob src is replaced',
+     /src\s*=\s*\\?"' \+ dv|' \+ dv \+ '/.test(cap));
+  ok('and source children are stripped first',
+     /<source\\b\[\^>\]\*>/.test(cap));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
