@@ -820,9 +820,65 @@ console.log('\nInset holds are counted, and stale settles are cancelled');
     ok('so the padding is correct at every step', newPad === BAR);
   }
 
-  ok('the listener ignores passes taken while fullscreen',
-     /setOnApplyWindowInsetsListener[\s\S]{0,900}if \(customView != null\) return@setOnApplyWindowInsetsListener/
-       .test(ma));
+  // Stronger than the old guard, which had the listener bail out while a
+  // video was fullscreen. That was only needed because the padding lived on
+  // root, which is the parent of BOTH the feed and the fullscreen container -
+  // so it had to drop to zero for fullscreen and be put back afterwards, and
+  // any missed pass left the feed padded with zero. Scrolling appeared to fix
+  // it because a scroll forces a fresh layout.
+  //
+  // The padding now sits on contentRoot, a sibling of the video container, so
+  // it never has to move at all.
+  ok('the feed is padded, not the root that also holds the video',
+     /setOnApplyWindowInsetsListener\(binding\.contentRoot\)/.test(ma));
+  ok('the error screen is padded too, being a sibling as well',
+     /setOnApplyWindowInsetsListener\(binding\.errorView\)/.test(ma));
+  ok('and its own layout padding is added to, not thrown away',
+     /val errorBasePadding = binding\.errorView\.paddingTop/.test(ma) &&
+     /top = errorBasePadding \+ bars\.top/.test(ma));
+  ok('root itself is never padded any more',
+     !/setOnApplyWindowInsetsListener\(binding\.root\)/.test(ma));
+
+  // GONE un-measures the feed, so it is re-measured on the way back - while
+  // the bars are still animating in, which gives it the full screen height.
+  // The page then stays laid out for a viewport it does not have.
+  ok('the feed stays measured while the video is fullscreen',
+     /binding\.contentRoot\.visibility = View\.INVISIBLE/.test(ma) &&
+     !/binding\.contentRoot\.visibility = View\.GONE/.test(ma));
+
+  {
+    // Model the two arrangements across one fullscreen episode.
+    const SCREEN = 2400, STATUS = 63, NAV = 48;
+    const correct = SCREEN - STATUS - NAV;
+
+    // Padding on root: it must fall to zero for fullscreen, and the restore
+    // is a moving part that can be missed.
+    const onRoot = (restorePassArrives) => {
+      let pad = { top: STATUS, bottom: NAV };
+      pad = { top: 0, bottom: 0 };                 // fullscreen needs it gone
+      if (restorePassArrives) pad = { top: STATUS, bottom: NAV };
+      return SCREEN - pad.top - pad.bottom;
+    };
+    ok('with padding on root a missed pass leaves the feed wrong',
+       onRoot(false) !== correct);
+    ok('and it is only right when the restore happens to land',
+       onRoot(true) === correct);
+
+    // Padding on contentRoot: never changes, so there is nothing to miss.
+    const onContent = (restorePassArrives) => {
+      const pad = { top: STATUS, bottom: NAV };    // untouched by fullscreen
+      return SCREEN - pad.top - pad.bottom;
+    };
+    ok('with padding on the feed it is right either way',
+       onContent(false) === correct && onContent(true) === correct);
+
+    // GONE vs INVISIBLE for the feed itself.
+    const height = (mode) => mode === 'GONE' ? SCREEN : correct;
+    ok('GONE brings the feed back at the wrong height',
+       height('GONE') !== correct);
+    ok('INVISIBLE brings it back at the height it left at',
+       height('INVISIBLE') === correct);
+  }
 
   // Behavioural: run the real ordering.
   const App = class {

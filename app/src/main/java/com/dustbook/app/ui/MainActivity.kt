@@ -537,39 +537,35 @@ class MainActivity : AppCompatActivity() {
     private var pageLoadHoldsInsets = false
 
     private fun setupEdgeToEdge() {
-        // Apply insets to the root FrameLayout, never to contentRoot.
-        // contentRoot visibility toggles (GONE ↔ VISIBLE) during fullscreen
-        // transitions, and each toggle triggered a fresh insets pass that
-        // shifted all content — which is why the title, description and
-        // publisher under a playing video bounced up and then settled.
-        // The root FrameLayout is always VISIBLE, so its padding only moves
-        // when the keyboard or system bars genuinely change.
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
-            if (suppressInsets) return@setOnApplyWindowInsetsListener windowInsets
-            // Never record insets while a video is fullscreen. The system bars
-            // are hidden then, so the measurement is top = 0; writing that into
-            // the root means the feed keeps zero padding after the bars come
-            // back, and every row sits up underneath the status bar. The
-            // suppression flags do not cover this on their own - the system
-            // dispatches its own passes when the bars animate away, long after
-            // any transition has settled.
-            if (customView != null) return@setOnApplyWindowInsetsListener windowInsets
-
+        // Pad contentRoot - the feed - and not the root FrameLayout.
+        //
+        // This is the whole bug, and every earlier attempt was working around
+        // it rather than removing it. root holds two children: contentRoot
+        // (the feed) and customViewContainer (the fullscreen video). Padding
+        // on root therefore applies to the video as well, so it *had* to drop
+        // to zero for fullscreen and be restored on the way out. That restore
+        // is a moving part, and any missed pass leaves the feed padded with
+        // zero, sitting up under the status bar with an unpainted strip at the
+        // bottom. Scrolling appeared to fix it only because a scroll forces a
+        // fresh layout.
+        //
+        // customViewContainer is a sibling, so padding here never touches the
+        // video: fullscreen is genuinely fullscreen and the feed's padding
+        // never has to change. Nothing to restore means nothing to get wrong.
+        //
+        // The earlier comment here warned that contentRoot's visibility
+        // toggles during fullscreen and that each toggle triggered a pass.
+        // That is true, and it is why the container is now hidden with
+        // INVISIBLE rather than GONE - see onShowCustomView. INVISIBLE keeps
+        // the feed measured, so it comes back at the size it left at.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.contentRoot) { view, windowInsets ->
             // getInsetsIgnoringVisibility, not getInsets.
             //
-            // getInsets reports zero the moment the bars are hidden, so every
-            // measurement taken during immersive playback - or during the
-            // animation on the way in or out - said "no status bar" and that
-            // is what got written into the padding. When the bars came back
-            // the padding stayed at zero and the whole page sat up underneath
-            // them. All the suppression flags in the world cannot fix that,
-            // because the system keeps dispatching passes of its own long
-            // after any transition has settled; the measurement itself was
-            // the wrong one.
-            //
-            // This asks instead for the space the bars occupy when they are
-            // shown, which does not change while they are hidden. The layout
-            // therefore stays still, which is the entire point.
+            // getInsets reports zero the moment the bars are hidden, so a pass
+            // taken during immersive playback - or during either animation -
+            // says "no status bar". Asking for the space the bars occupy when
+            // shown gives the same answer throughout, so a pass arriving at an
+            // awkward moment cannot record the wrong thing.
             //
             // The keyboard genuinely does come and go, so the IME is still
             // read normally.
@@ -580,6 +576,26 @@ class MainActivity : AppCompatActivity() {
             view.updatePadding(
                 top = bars.top,
                 bottom = maxOf(bars.bottom, ime.bottom)
+            )
+            windowInsets
+        }
+
+        // The offline / error screen is a sibling of contentRoot, not a child,
+        // so it needs the same treatment or its message and buttons would sit
+        // under the status bar.
+        //
+        // It carries 32dp of its own padding from the layout, which is what
+        // keeps the text off the screen edges. Add the bars to that rather
+        // than replacing it, and read the base once so repeated passes cannot
+        // accumulate.
+        val errorBasePadding = binding.errorView.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(binding.errorView) { view, windowInsets ->
+            val bars = windowInsets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars()
+            )
+            view.updatePadding(
+                top = errorBasePadding + bars.top,
+                bottom = errorBasePadding + bars.bottom
             )
             windowInsets
         }
@@ -770,10 +786,13 @@ class MainActivity : AppCompatActivity() {
                 inFullscreenTransition = false
                 releaseInsets()
             }
-            // Only ask for a pass once nothing is suppressing, and never while
-            // a video is still fullscreen: measuring then captures the
-            // immersive insets (top = 0) and writes them into the root, which
-            // is what left the feed sitting under the status bar afterwards.
+            // Requested on root, which dispatches down to the listeners on
+            // contentRoot and errorView.
+            //
+            // With the padding moved off root and measured ignoring bar
+            // visibility, a badly-timed pass can no longer record the wrong
+            // thing - this guard and the suppression counter are now belt and
+            // braces rather than the thing holding the layout together.
             if (!suppressInsets && customView == null) {
                 ViewCompat.requestApplyInsets(binding.root)
             }
@@ -1560,7 +1579,19 @@ class MainActivity : AppCompatActivity() {
                     visibility = View.VISIBLE
                 }
                 beginFullscreenTransition()
-                binding.contentRoot.visibility = View.GONE
+                // INVISIBLE, not GONE.
+                //
+                // GONE removes the feed from layout, so it is re-measured from
+                // scratch on the way back - and that measurement happens while
+                // the system bars are still animating in, giving it the full
+                // screen height. The page then stays laid out for a taller
+                // viewport than it has: content sits shifted up with a dead
+                // strip at the bottom until a scroll forces a relayout.
+                //
+                // INVISIBLE keeps it measured at the size it had, so it comes
+                // back exactly as it left. It costs nothing: the WebView is
+                // covered by the fullscreen container and is not drawn.
+                binding.contentRoot.visibility = View.INVISIBLE
                 enterImmersive(true)
                 // Reels/Stories are vertical (9:16) video. Forcing landscape here
                 // shrinks/letterboxes that content instead of filling the screen.
