@@ -889,7 +889,9 @@ class MainActivity : AppCompatActivity() {
         OfflineFeed.hasAnything()
 
     private fun showSavedContent() {
-        val saved = OfflineDocs.savedScreens()
+        // navigableScreens, not savedScreens: a screen held only as cards is
+        // still reachable, because shellFor() builds a page from them.
+        val saved = OfflineDocs.navigableScreens()
         val last = OfflineDocs.screenFor(prefs.lastUrl)
 
         val target = when {

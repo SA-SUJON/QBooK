@@ -241,15 +241,32 @@ object OfflineFeed {
      * item has no media at all, i.e. a text post).
      */
     fun realPlayableItems(section: String): List<Item> =
-        playableItems(section).filter { item ->
-            if (section == SECTION_REELS) {
-                item.media.any { u -> isVideoUrl(u) && OfflineCache.hasMinSize(u, MIN_VIDEO_BYTES) }
-            } else {
-                item.media.isEmpty() || item.media.any { u ->
-                    !isTinyAsset(u) && OfflineCache.has(u)
-                }
-            }
+        loadItems(section).filter { isFullyDownloaded(it) }
+
+    /**
+     * True when everything this item needs is already on disk.
+     *
+     * The old rule was `any {}`: one cached asset was enough. A post with five
+     * photos counted as saved when one had arrived, so the number climbed
+     * while the content behind it was still downloading and could fall again
+     * on the next pass. An item is either ready to read offline or it is not.
+     *
+     * Every media URL must therefore be present, with two qualifications that
+     * are about correctness rather than leniency:
+     *
+     *  - a video must also be a plausible size. A truncated or still-writing
+     *    file exists but does not play, and counting it is the same mistake in
+     *    a different place.
+     *  - an item carrying no media at all — a text post — is complete as soon
+     *    as its markup is stored, because there is nothing else to fetch.
+     */
+    fun isFullyDownloaded(item: Item): Boolean {
+        if (item.media.isEmpty()) return true
+        return item.media.all { u ->
+            if (isVideoUrl(u)) OfflineCache.hasMinSize(u, MIN_VIDEO_BYTES)
+            else OfflineCache.has(u)
         }
+    }
 
     /**
      * Strict count: only counts an item when its *primary* media is on disk.
@@ -263,24 +280,8 @@ object OfflineFeed {
      * were still queued. A reel you cannot watch is not saved.
      */
     fun realPlayableCount(section: String): Int =
-        playableItems(section).count { item ->
-            if (section == SECTION_REELS) {
-                // Must have a cached video to count as really playable.
-                item.media.any { u -> isVideoUrl(u) && OfflineCache.hasMinSize(u, MIN_VIDEO_BYTES) }
-            } else {
-                // Must have at least one non-avatar cached asset (or no media).
-                item.media.isEmpty() || item.media.any { u ->
-                    !isTinyAsset(u) && OfflineCache.has(u)
-                }
-            }
-        }
+        loadItems(section).count { isFullyDownloaded(it) }
 
-    private fun isTinyAsset(url: String): Boolean {
-        val clean = url.substringBefore('?')
-        return clean.contains("/t39.30808-1/") ||
-            clean.endsWith("_n.jpg") ||
-            (clean.contains("profiles") && clean.contains("_s."))
-    }
 
     /** V4 helper */
     fun freshCount(section: String): Int = realPlayableCount(section)

@@ -141,6 +141,27 @@ object OfflineDocs {
 
     fun savedScreens(): List<String> = SCREENS.keys.filter { has(it) }
 
+    /**
+     * Screens the offline navigation may route to.
+     *
+     * Not [savedScreens]: that lists screens with a stored *document*, and a
+     * screen can be perfectly usable without one. Stories are captured as
+     * cards and rendered by the story viewer, so stories.html frequently does
+     * not exist — the tab was therefore treated as unavailable and tapping it
+     * did nothing at all. shellFor() builds a page from the cards in exactly
+     * that case, so the route is valid whenever either exists.
+     */
+    fun navigableScreens(): List<String> = SCREENS.keys.filter { screen ->
+        if (has(screen)) return@filter true
+        val section = when (screen) {
+            "reels", "watch" -> OfflineFeed.SECTION_REELS
+            "stories" -> OfflineFeed.SECTION_STORIES
+            "home" -> OfflineFeed.SECTION_FEED
+            else -> return@filter false
+        }
+        OfflineFeed.realPlayableCount(section) > 0
+    }
+
     /** The URL a stored screen answers on. */
     fun urlFor(screen: String): String? = SCREENS[screen]
 
@@ -218,7 +239,7 @@ object OfflineDocs {
             val html = f.readText() +
                 unmuteStripScript() +
                 OfflineBanner.html() +
-                "<script>" + OfflineNav.script(savedScreens()) + "</script>" +
+                "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
                 (if (cards.isNotBlank()) {
                     "<script>" +
                         (if (screen == "stories") storyViewer(cards.replace("\n", "\n---DBSTORY---\n"), resumeId)
@@ -401,7 +422,7 @@ object OfflineDocs {
             "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
             "sans-serif}</style></head><body><div>" + use + "</div>" +
             unmuteStripScript() +
-            "<script>" + OfflineNav.script(savedScreens()) + "</script>" +
+            "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
             (if (screen == "reels" || screen == "watch" || screen == "stories") {
                 "<script>" + VideoHelper.getOfflineVideoAssistScript() +
                     "</script>"

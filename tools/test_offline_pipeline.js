@@ -476,5 +476,77 @@ console.log('\nThe unmute label is stripped when the page is served');
      /t\.length > 40/.test(docs));
 }
 
+// ------------------------------- an item counts only when it is fully saved
+//
+// The old rule was `any {}`: one cached asset was enough. A post with five
+// photos counted as saved when one had arrived, so the number climbed while
+// the content behind it was still downloading.
+console.log('\nCounting waits for the whole item');
+{
+  const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+
+  ok('there is one rule for what counts',
+     /fun isFullyDownloaded\(item: Item\): Boolean/.test(feed));
+  ok('every asset must be present, not just one',
+     /item\.media\.all \{/.test(feed));
+  ok('the loose any-of test is gone',
+     !/item\.media\.any \{ u ->[\s\S]{0,120}OfflineCache\.has\(u\)/.test(feed));
+  ok('a video must also be a plausible size, not merely present',
+     /if \(isVideoUrl\(u\)\) OfflineCache\.hasMinSize\(u, MIN_VIDEO_BYTES\)/.test(feed));
+  ok('a text post with no media still counts',
+     /if \(item\.media\.isEmpty\(\)\) return true/.test(feed));
+
+  ok('posts, reels and stories share the rule',
+     /fun realPlayableCount\(section: String\): Int =\s*\n\s*loadItems\(section\)\.count \{ isFullyDownloaded/.test(feed));
+  ok('what is displayed uses the same rule as what is counted',
+     /fun realPlayableItems[\s\S]{0,160}isFullyDownloaded/.test(feed) &&
+     /fun cardsHtml[\s\S]{0,120}realPlayableItems/.test(feed));
+
+  // Exercise the rule itself rather than trusting its shape.
+  const MIN = 500000;
+  const disk = {};
+  const isVideo = (u) => /\/o1\/v\/|\.mp4|video/.test(u);
+  const full = (media) => media.length === 0 ? true : media.every((u) =>
+    isVideo(u) ? (disk[u] !== undefined && disk[u] >= MIN) : disk[u] !== undefined);
+
+  const set = (o) => { for (const k of Object.keys(disk)) delete disk[k]; Object.assign(disk, o); };
+
+  set({ 'a.jpg': 9 });
+  ok('a five-photo post does not count on the first photo',
+     full(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg']) === false);
+  set({ 'a.jpg': 9, 'b.jpg': 9, 'c.jpg': 9, 'd.jpg': 9, 'e.jpg': 9 });
+  ok('and does once they are all there',
+     full(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg']) === true);
+  set({ 'av_s.jpg': 4000 });
+  ok('a reel does not count on its avatar alone',
+     full(['av_s.jpg', '/o1/v/vid']) === false);
+  set({ 'av_s.jpg': 4000, '/o1/v/vid': 1000 });
+  ok('nor on a truncated video',
+     full(['av_s.jpg', '/o1/v/vid']) === false);
+  set({ 'av_s.jpg': 4000, '/o1/v/vid': 9000000 });
+  ok('but does once the video is really there',
+     full(['av_s.jpg', '/o1/v/vid']) === true);
+  ok('a text post counts immediately', full([]) === true);
+}
+
+// ------------------------------------------- tapping Stories offline works
+console.log('\nStories can be opened offline');
+{
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+
+  ok('routing asks what is reachable, not what has a document',
+     /fun navigableScreens\(\): List<String>/.test(docs));
+  ok('a screen held only as cards still routes',
+     /realPlayableCount\(section\) > 0/.test(docs));
+  ok('the nav script is built from it',
+     /OfflineNav\.script\(navigableScreens\(\)\)/.test(docs) &&
+     !/OfflineNav\.script\(savedScreens\(\)\)/.test(docs));
+  ok('and so is the offline landing choice',
+     /val saved = OfflineDocs\.navigableScreens\(\)/.test(ma));
+  ok('stories map to the stories section',
+     /"stories" -> OfflineFeed\.SECTION_STORIES/.test(docs));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
