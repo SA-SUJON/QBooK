@@ -34,10 +34,20 @@ object OfflineInject {
      *                  is a reel/story id to scroll to.
      */
     fun script(cardsHtml: String, resumeId: String? = null): String {
+        // The HTML parser ends a <script> at the first "</script>" it sees,
+        // wherever that appears — including inside a JS string. Facebook's
+        // stored markup contains inline scripts, so one such card truncated
+        // the whole block and every card after it was dropped on the floor as
+        // raw text. That is why fifty saved posts showed as a handful.
+        //
+        // Breaking the sequence is the standard remedy: the parser no longer
+        // recognises it, and the JS string still evaluates to the original
+        // text because "<" + "/script>" is just concatenation at runtime.
         val cards = cardsHtml
             .replace("\\", "\\\\")
             .replace("`", "\\`")
             .replace("\$", "\\\$")
+            .replace("</script", "</scr` + `ipt")
 
         val main = """
         (function(){

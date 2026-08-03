@@ -279,10 +279,13 @@ object OfflineDocs {
      * story fills the viewport.
      */
     private fun storyViewer(cardsHtml: String, resumeId: String?): String {
+        // Same hazard as OfflineInject: a stored card containing "</script>"
+        // ends the block early and loses every story after it.
         val stories = cardsHtml
             .replace("\\", "\\\\")
             .replace("`", "\\`")
             .replace("$", "\\$")
+            .replace("</script", "</scr` + `ipt")
         val resumeJs = if (resumeId != null) {
             "\nvar START=0;var all=STORIES;for(var i=0;i<all.length;i++){" +
             "if(all[i].indexOf('" + resumeId + "')>=0){START=i;break;}}\n"

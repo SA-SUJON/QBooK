@@ -9,7 +9,7 @@
             android:title="@string/pref_zoom" android:summary="@string/pref_zoom_sum"
             android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="pull_to_refresh"
-            android:title="@string/pref_pull" android:defaultValue="false"
+            android:title="@string/pref_pull" android:defaultValue="true"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_media" app:iconSpaceReserved="false">

@@ -209,7 +209,13 @@ class Prefs(context: Context) {
 
 
     val desktopMode: Boolean get() = sp.getBoolean(KEY_DESKTOP_MODE, false)
-    val pullToRefresh: Boolean get() = sp.getBoolean(KEY_PULL_REFRESH, false)
+    /**
+     * Defaults on. Offline it is the only way to pick up content that has
+     * finished downloading since the page was built, and a gesture that does
+     * nothing reads as the app being broken rather than as a setting being
+     * off.
+     */
+    val pullToRefresh: Boolean get() = sp.getBoolean(KEY_PULL_REFRESH, true)
     val allowZoom: Boolean get() = sp.getBoolean(KEY_ZOOM, false)
     val autoplayVideo: Boolean get() = sp.getBoolean(KEY_AUTOPLAY_VIDEO, true)
     val openLinksExternal: Boolean get() = sp.getBoolean(KEY_EXTERNAL_BROWSER, false)

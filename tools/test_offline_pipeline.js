@@ -20,6 +20,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { JSDOM } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
 const KT = (f) => path.join(ROOT, 'app/src/main/java/com/dustbook/app', f);
@@ -666,6 +667,57 @@ console.log('\nA reel keeps a playable video URL offline');
      /src\s*=\s*\\?"' \+ dv|' \+ dv \+ '/.test(cap));
   ok('and source children are stripped first',
      /<source\\b\[\^>\]\*>/.test(cap));
+}
+
+console.log('\nEvery saved card reaches the page');
+{
+  const inj = fs.readFileSync(KT('utils/OfflineInject.kt'), 'utf8');
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+  const prefs = fs.readFileSync(KT('utils/Prefs.kt'), 'utf8');
+  const xml = fs.readFileSync(
+    path.join(ROOT, 'app/src/main/res/xml/settings_browsing.xml'), 'utf8');
+
+  // Cards are embedded in a JS template literal inside a <script>. The HTML
+  // parser ends that script at the first "</script>" it sees, even inside a
+  // string — and Facebook's stored markup contains inline scripts. One such
+  // card truncated the block and lost every card after it.
+  ok('the closing-script sequence is broken up',
+     /\.replace\("<\/script", "<\/scr` \+ `ipt"\)/.test(inj));
+  ok('the story viewer does the same',
+     /\.replace\("<\/script", "<\/scr` \+ `ipt"\)/.test(docs));
+  ok('backtick and dollar are still escaped first',
+     /\.replace\("`", "\\\\`"\)/.test(inj));
+
+  // Prove the behaviour, not the shape.
+  const esc = (str, fix) => {
+    let e = str.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+    return fix ? e.replace(/<\/script/g, '</scr` + `ipt') : e;
+  };
+  let cards = '';
+  for (let i = 0; i < 20; i++) {
+    cards += i === 5
+      ? '<div class="card">Post ' + i + '<script>var a=1;</script></div>'
+      : '<div class="card">Post ' + i + '</div>';
+  }
+  const render = (fix) => {
+    const page = '<html><body><div id="box"></div><script>' +
+      'var CARDS = `' + esc(cards, fix) + '`;' +
+      "document.getElementById('box').innerHTML = CARDS;" +
+      '</script></body></html>';
+    try {
+      // The unfixed case deliberately produces a SyntaxError; jsdom prints it
+      // to the console, which would look like a suite failure. Swallow it.
+      const vc = new (require('jsdom').VirtualConsole)();
+      const d = new JSDOM(page, { runScripts: 'dangerously', virtualConsole: vc });
+      return d.window.document.querySelectorAll('#box .card').length;
+    } catch (e) { return -1; }
+  };
+  ok('without the fix an inline script loses the cards', render(false) === 0);
+  ok('with it every card renders', render(true) === 20);
+
+  ok('pull to refresh is on by default',
+     /KEY_PULL_REFRESH, true\)/.test(prefs) &&
+     /android:key="pull_to_refresh"[\s\S]{0,120}android:defaultValue="true"/.test(xml));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
