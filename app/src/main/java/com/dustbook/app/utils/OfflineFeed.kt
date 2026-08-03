@@ -47,6 +47,7 @@ object OfflineFeed {
     private val queued = HashSet<String>()
 
     @Volatile private var root: File? = null
+    @Volatile private var appContext: Context? = null
     @Volatile var enabled: Boolean = true
 
     /**
@@ -84,6 +85,7 @@ object OfflineFeed {
     )
 
     fun init(context: Context) {
+        appContext = context.applicationContext
         if (root != null) return
         synchronized(this) {
             if (root != null) return
@@ -310,6 +312,7 @@ object OfflineFeed {
      */
     fun prefetchUrls(urls: List<String>, includeVideo: Boolean) {
         if (!enabled || urls.isEmpty()) return
+        if (!downloadAllowed()) return
 
         // Queue, never drop.
         //
@@ -327,6 +330,17 @@ object OfflineFeed {
         drain()
     }
 
+    /**
+     * Whether the current connection may be used for saving.
+     *
+     * Defaults to allowing it when the context is not yet known, so a missing
+     * init() cannot silently disable downloading altogether.
+     */
+    private fun downloadAllowed(): Boolean {
+        val c = appContext ?: return true
+        return NetworkPolicy.canDownload(c, Prefs(c))
+    }
+
     /** One worker drains the queue; further calls just add to it. */
     private fun drain() {
         if (!busy.compareAndSet(false, true)) return
@@ -334,6 +348,10 @@ object OfflineFeed {
             var stored = 0
             try {
                 while (enabled) {
+                    // Re-checked every item, not once at the start: a user can
+                    // walk out of Wi-Fi range mid-pass, and a queue of reels
+                    // would otherwise keep pulling video over mobile data.
+                    if (!downloadAllowed()) break
                     val u = synchronized(queue) {
                         if (queue.isEmpty()) null else queue.removeAt(0)
                     } ?: break

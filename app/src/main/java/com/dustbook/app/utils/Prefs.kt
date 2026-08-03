@@ -49,6 +49,7 @@ class Prefs(context: Context) {
         const val KEY_OFFLINE_STORIES = "offline_stories"
         const val KEY_OFFLINE_LAST_SYNC = "offline_last_sync"
         const val KEY_OFFLINE_REEL_COUNT = "offline_reel_count"
+        const val KEY_OFFLINE_WIFI_ONLY = "offline_network"
         const val KEY_OFFLINE_RESUME_REEL = "offline_resume_reel"
         const val KEY_OFFLINE_RESUME_FEED = "offline_resume_feed"
         const val KEY_OFFLINE_RESUME_STORIES = "offline_resume_stories"
@@ -132,6 +133,20 @@ class Prefs(context: Context) {
      * action (Offline → Clear saved content).
      */
     val offlineRead: Boolean get() = true
+    /**
+     * Restrict offline downloading to unmetered networks.
+     *
+     * Defaults to true. A full pass fetches feed pages, reels and their video,
+     * which is hundreds of megabytes; doing that silently on a mobile plan is
+     * the kind of thing a user only notices once the data is gone. Opting in
+     * to mobile data is a decision they should make deliberately.
+     */
+    val offlineWifiOnly: Boolean
+        get() = when (sp.getString(KEY_OFFLINE_WIFI_ONLY, "wifi")) {
+            "any" -> false
+            else -> true
+        }
+
     /** Video is what "keep reels" means, so it is not a separate choice. */
     val offlineVideo: Boolean get() = sp.getBoolean(KEY_OFFLINE_VIDEO, true)
 

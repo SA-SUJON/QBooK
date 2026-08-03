@@ -290,7 +290,8 @@ console.log('\nThe settings screen is the six things asked for');
   ok('how many reels to download', keys.includes('offline_reel_count'));
   ok('a count of what is saved', keys.includes('offline_status'));
   ok('clear saved content', keys.includes('clear_offline'));
-  ok('and nothing else', keys.length === 6, keys.join(','));
+  ok('which networks may be used', keys.includes('offline_network'));
+  ok('and nothing else', keys.length === 7, keys.join(','));
   ok('the reel count follows the reels switch',
      /offline_reel_count[\s\S]{0,400}dependency="offline_reels"/.test(xml));
 

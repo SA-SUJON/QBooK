@@ -46,6 +46,9 @@ object BackgroundSyncManager {
         val p = prefs ?: return
         if (!UrlHelper.isLoggedIn()) return
         if (!p.offlineMode) return
+        // Saving pulls feed pages, reels and their video. Not on a metered
+        // connection unless the user has said that is fine.
+        if (!NetworkPolicy.canDownload(c, p)) return
 
         isRunning = true
         step1NewPosts(c, p)

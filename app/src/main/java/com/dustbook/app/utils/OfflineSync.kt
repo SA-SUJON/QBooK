@@ -136,6 +136,9 @@ object OfflineSync {
         if (target <= 0) return
         if (!canRun(force)) return
         if (!UrlHelper.isLoggedIn()) return
+        // The offscreen WebView loads real Facebook pages, so this costs data
+        // even before any media is fetched.
+        if (!NetworkPolicy.canDownload(context, Prefs(context))) return
 
         running = true
         lastRun = System.currentTimeMillis()

@@ -59,6 +59,7 @@ import com.dustbook.app.utils.BlockList
 import com.dustbook.app.utils.CosmeticFilters
 import com.dustbook.app.utils.MFacebookAds
 import com.dustbook.app.utils.BackgroundSyncManager
+import com.dustbook.app.utils.NetworkPolicy
 import com.dustbook.app.utils.OfflineCache
 import com.dustbook.app.utils.OfflineCapture
 import com.dustbook.app.utils.OfflineDocs
@@ -930,6 +931,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun maybeSyncOffline(force: Boolean = false) {
         if (!prefs.offlineMode || !isOnline) return
+        if (!NetworkPolicy.canDownload(applicationContext, prefs)) return
 
         // V4: Use the new central proactive preparation engine
         OfflineManager.startProactivePreparation(

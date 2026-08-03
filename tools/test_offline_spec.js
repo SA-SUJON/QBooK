@@ -47,8 +47,17 @@ ok('Keep Feed defaults on',   /KEY_OFFLINE_FEED, true/.test(prefs));
 ok('Keep Reels defaults on',  /KEY_OFFLINE_REELS, true/.test(prefs));
 ok('Keep Stories defaults on',/KEY_OFFLINE_STORIES, true/.test(prefs));
 {
+  // This screen had grown to nine entries reporting the same thing in
+  // different words, so the count is pinned. The seventh is the network
+  // choice, which controls whether saving may use mobile data at all --
+  // named explicitly so an unrelated addition still fails here.
   const keys = [...xml.matchAll(/android:key="([^"]+)"/g)].map((m) => m[1]);
-  ok('the settings screen is not redesigned', keys.length === 6, keys.join(','));
+  const allowed = ['offline_reels', 'offline_feed', 'offline_stories',
+                   'offline_reel_count', 'offline_network', 'offline_status',
+                   'clear_offline'];
+  ok('the settings screen is not redesigned',
+     keys.length === allowed.length && keys.every((k) => allowed.includes(k)),
+     keys.join(','));
   ok('the statistics row is still there', keys.includes('offline_status'));
 }
 ok('stats show download progress against a target',

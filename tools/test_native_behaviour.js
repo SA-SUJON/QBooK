@@ -731,5 +731,60 @@ console.log('\nOnline requests are never delayed by the offline store');
      /if \(isOnline\) return null[\s\S]{0,400}OfflineCache\.isInterceptable/.test(body));
 }
 
+// ------------------------------------------ downloading on a metered network
+//
+// A full pass fetches feed pages, reels and their video -- hundreds of
+// megabytes. Doing that silently on a mobile plan is the user's month gone, so
+// it is restricted to unmetered networks unless they opt in.
+console.log('\nOffline saving respects the network choice');
+{
+  const np = fs.existsSync(KT('utils/NetworkPolicy.kt'))
+    ? fs.readFileSync(KT('utils/NetworkPolicy.kt'), 'utf8') : '';
+  const prefs = fs.readFileSync(KT('utils/Prefs.kt'), 'utf8');
+  const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  const sync = fs.readFileSync(KT('utils/OfflineSync.kt'), 'utf8');
+  const bsm = fs.readFileSync(KT('utils/BackgroundSyncManager.kt'), 'utf8');
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const sa = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
+  const xml = fs.readFileSync(
+    path.join(ROOT, 'app/src/main/res/xml/settings_offline.xml'), 'utf8');
+  const arrays = fs.readFileSync(
+    path.join(ROOT, 'app/src/main/res/values/arrays.xml'), 'utf8');
+
+  ok('there is a single policy helper', /object NetworkPolicy/.test(np));
+  ok('it tests metered, not "is this wifi"',
+     /NET_CAPABILITY_NOT_METERED/.test(np) && !/TRANSPORT_WIFI/.test(np));
+  ok('an unknown network is treated as metered, never as free',
+     /val c = caps\(context\) \?: return false/.test(np));
+
+  ok('the default is Wi-Fi only',
+     /android:defaultValue="wifi"/.test(xml) &&
+     /getString\(KEY_OFFLINE_WIFI_ONLY, "wifi"\)/.test(prefs));
+  ok('the choice is stored as a string, which is what ListPreference writes',
+     /getString\(KEY_OFFLINE_WIFI_ONLY/.test(prefs) &&
+     !/getBoolean\(KEY_OFFLINE_WIFI_ONLY/.test(prefs));
+  ok('both options are offered',
+     /<item>wifi<\/item>/.test(arrays) && /<item>any<\/item>/.test(arrays));
+
+  // Every place that pulls bytes has to ask, not just the top of the pipeline.
+  ok('the sync pipeline asks before starting',
+     /NetworkPolicy\.canDownload/.test(bsm));
+  ok('the offscreen page loader asks too',
+     /NetworkPolicy\.canDownload/.test(sync));
+  ok('the media queue refuses to enqueue',
+     /prefetchUrls[\s\S]{0,200}if \(!downloadAllowed\(\)\) return/.test(feed));
+  ok('and the worker re-checks every item, for a mid-pass network change',
+     /while \(enabled\)[\s\S]{0,300}if \(!downloadAllowed\(\)\) break/.test(feed));
+  ok('the resume-time sync asks as well',
+     /NetworkPolicy\.canDownload\(applicationContext, prefs\)/.test(ma));
+
+  ok('the user is told why saving is idle',
+     /blockedByMetered/.test(np) && /blockedByMetered/.test(sa));
+  ok('choosing mobile data starts a pass immediately',
+     /KEY_OFFLINE_WIFI_ONLY[\s\S]{0,400}BackgroundSyncManager\.start\(\)/.test(sa));
+  ok('a missing context does not silently disable saving',
+     /val c = appContext \?: return true/.test(feed));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

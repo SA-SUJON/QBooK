@@ -132,6 +132,12 @@
     <string name="pref_offline_video_sum">Also save video for offline playback</string>
     <string name="pref_offline_reels">Keep reels</string>
     <string name="pref_offline_reels_sum">Reels are downloaded for you in the background and stay playable with no connection</string>
+    <string name="pref_offline_network">Download over</string>
+    <string name="pref_offline_network_wifi">Wi-Fi only</string>
+    <string name="pref_offline_network_any">Wi-Fi and mobile data</string>
+    <string name="pref_offline_network_wifi_sum">Wi-Fi only · saving pauses on mobile data</string>
+    <string name="pref_offline_network_any_sum">Wi-Fi and mobile data · uses your data allowance</string>
+    <string name="offline_paused_metered">Saving paused — waiting for Wi-Fi</string>
     <string name="pref_offline_reel_count">Reels to download</string>
     <!--
       These must stay in step with Prefs.offlineReelTarget, which clamps to

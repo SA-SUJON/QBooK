@@ -21,6 +21,8 @@ import com.dustbook.app.R
 import com.dustbook.app.utils.AdBlocker
 import com.dustbook.app.utils.AppExecutors
 import com.dustbook.app.utils.BlockList
+import com.dustbook.app.utils.BackgroundSyncManager
+import com.dustbook.app.utils.NetworkPolicy
 import com.dustbook.app.utils.OfflineCache
 import com.dustbook.app.utils.OfflineDocs
 import com.dustbook.app.utils.OfflineFeed
@@ -280,6 +282,20 @@ class SettingsActivity : AppCompatActivity() {
                     }
             }
 
+            // Choosing "Wi-Fi and mobile data" should take effect now, not at
+            // the next resume: the user has just said they want it running.
+            findPreference<ListPreference>(Prefs.KEY_OFFLINE_WIFI_ONLY)
+                ?.setOnPreferenceChangeListener { _, _ ->
+                    view?.post {
+                        val ctx = requireContext().applicationContext
+                        if (NetworkPolicy.canDownload(ctx, Prefs(ctx))) {
+                            BackgroundSyncManager.start()
+                        }
+                        refreshOfflineSize()
+                    }
+                    markDirty(false); true
+                }
+
             findPreference<Preference>("clear_offline")?.setOnPreferenceClickListener {
                 confirm(R.string.pref_clear_offline, R.string.confirm_clear_offline) {
                     OfflineCache.clear()
@@ -393,7 +409,12 @@ class SettingsActivity : AppCompatActivity() {
             val working = OfflineSync.isRunning() || OfflineFeed.isPrefetching() || OfflineManager.isPreparingOffline()
 
             // V4 Step 2: Show preparation status so user knows we are fetching fresh content
+            // Say why nothing is happening. Without this, "Wi-Fi only" on a
+            // mobile connection looks identical to saving being broken.
+            val paused = NetworkPolicy.blockedByMetered(requireContext(), p)
+
             val prefix = when {
+                paused -> getString(R.string.offline_paused_metered) + " • "
                 OfflineManager.isPreparingOffline() -> "Preparing fresh content • "
                 working -> "Syncing • "
                 else -> ""

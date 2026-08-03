@@ -34,6 +34,17 @@
             android:dependency="offline_reels"
             app:iconSpaceReserved="false" />
 
+        <!-- Which connections may be used. Defaults to Wi-Fi only: a full
+             pass is hundreds of megabytes and should not quietly consume a
+             mobile allowance. -->
+        <ListPreference android:key="offline_network"
+            android:title="@string/pref_offline_network"
+            android:entries="@array/offline_network_labels"
+            android:entryValues="@array/offline_network_values"
+            android:defaultValue="wifi"
+            android:summary="%s"
+            app:iconSpaceReserved="false" />
+
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/grp_storage"
