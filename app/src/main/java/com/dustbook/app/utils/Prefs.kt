@@ -57,6 +57,7 @@ class Prefs(context: Context) {
 
         // Updates
         const val KEY_PUSH_NOTIFICATIONS = "push_notifications"
+        const val KEY_LAYOUT_PROBE = "layout_probe"
 
         // Updates
         const val KEY_AUTO_UPDATE = "auto_update_check"
@@ -198,6 +199,13 @@ class Prefs(context: Context) {
      * who has not asked for notifications should not pay for them.
      */
     val pushNotifications: Boolean get() = sp.getBoolean(KEY_PUSH_NOTIFICATIONS, false)
+
+    /**
+     * Diagnostic only. Shows the real layout numbers on a long-press, so a
+     * layout fault can be measured on the device instead of guessed at from
+     * the source. Off by default and draws nothing until it is switched on.
+     */
+    val layoutProbe: Boolean get() = sp.getBoolean(KEY_LAYOUT_PROBE, false)
 
     val autoUpdateCheck: Boolean get() = sp.getBoolean(KEY_AUTO_UPDATE, true)
 

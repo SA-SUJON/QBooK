@@ -59,6 +59,7 @@ import com.dustbook.app.utils.BlockList
 import com.dustbook.app.utils.CosmeticFilters
 import com.dustbook.app.utils.MFacebookAds
 import com.dustbook.app.utils.BackgroundSyncManager
+import com.dustbook.app.utils.LayoutProbe
 import com.dustbook.app.utils.NetworkPolicy
 import com.dustbook.app.utils.OfflineCache
 import com.dustbook.app.utils.OfflineCapture
@@ -71,6 +72,7 @@ import com.dustbook.app.utils.VideoHelper
 import com.dustbook.app.utils.SessionState
 import com.dustbook.app.utils.SoftRefresh
 import com.dustbook.app.utils.ThreeFingerDoubleTapDetector
+import com.dustbook.app.utils.TwoFingerHoldDetector
 import com.dustbook.app.utils.UpdateWatcher
 import com.dustbook.app.utils.UrlHelper
 import com.dustbook.app.viewmodel.MainViewModel
@@ -472,7 +474,42 @@ class MainActivity : AppCompatActivity() {
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         gestureDetector.onTouchEvent(ev)
+        if (prefs.layoutProbe) probeDetector.onTouchEvent(ev)
         return super.dispatchTouchEvent(ev)
+    }
+
+    /**
+     * Two-finger long press, only while the diagnostic setting is on.
+     *
+     * Deliberately not a normal long press: that is a real gesture on the
+     * page. Two fingers held still is not something Facebook does anything
+     * with, so it cannot interfere with ordinary use.
+     */
+    private val probeDetector by lazy { TwoFingerHoldDetector { showLayoutProbe() } }
+
+    private fun showLayoutProbe() {
+        LayoutProbe.snapshot(
+            activity = this,
+            root = binding.root,
+            contentRoot = binding.contentRoot,
+            webView = binding.webView,
+            customViewShowing = customView != null
+        ) { text ->
+            runOnUiThread {
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Layout")
+                    .setMessage(text)
+                    .setPositiveButton("Copy") { _, _ ->
+                        val cm = getSystemService(android.content.ClipboardManager::class.java)
+                        cm?.setPrimaryClip(
+                            android.content.ClipData.newPlainText("layout", text)
+                        )
+                        toast("Copied")
+                    }
+                    .setNegativeButton("Close", null)
+                    .show()
+            }
+        }
     }
 
     private fun openHiddenSettings() {

@@ -35,6 +35,9 @@
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_notifications" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat android:key="layout_probe"
+            android:title="@string/pref_layout_probe" android:summary="@string/pref_layout_probe_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="push_notifications"
             android:title="@string/pref_push" android:summary="@string/pref_push_sum"
             android:defaultValue="false" app:iconSpaceReserved="false" />
