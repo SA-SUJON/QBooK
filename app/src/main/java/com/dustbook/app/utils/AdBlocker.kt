@@ -777,6 +777,89 @@ object AdBlocker {
                 sponsored:   []
               };
 
+              // How much of the screen's interactive surface a section may
+              // take with it.
+              //
+              // Hiding a section walks up from a label to the block that holds
+              // it, and on the lite renderer that block can be the screen. The
+              // "Reels" heading on the Watch screen sits two levels under
+              // MScreen, so the walk landed on a node holding 66 of the
+              // screen's 77 controls and took the whole tab bar with it -
+              // measured on a captured m.facebook.com page.
+              //
+              // Text size cannot catch this: the same node was only 452 of the
+              // body's 51844 characters, because most of the body is script.
+              // Counting controls is what actually distinguishes "a shelf
+              // inside the page" from "the page".
+              function actionCount(el) {
+                try {
+                  var n = el.querySelectorAll(
+                    '[data-action-id],[data-fd-action],a[href],button'
+                  ).length;
+                  return n;
+                } catch (e) { return 0; }
+              }
+
+              var screenActions = -1;
+              function screenActionCount() {
+                if (screenActions >= 0) return screenActions;
+                var root = document.querySelector('[data-mcomponent="MScreen"]') ||
+                           document.body;
+                screenActions = root ? actionCount(root) : 0;
+                return screenActions;
+              }
+
+              /**
+               * Hide a section shelf, refusing to take most of the screen.
+               *
+               * Climbs while the candidate still looks like one shelf rather
+               * than the screen.
+               *
+               * A share-of-the-page threshold alone cannot do this. Measured
+               * on a captured Watch screen, the block holding the Reels
+               * heading carried 66 of 77 controls - 86% - because that screen
+               * is mostly reels; but the block one step further up also holds
+               * the navigation. So the stop condition is structural: never
+               * cross a node that contains the screen's navigation, and never
+               * take a node holding nearly everything.
+               */
+              function holdsNavigation(el) {
+                try {
+                  // The lite tab bar labels itself "Popular , 1 of 5" and so
+                  // on; the classic chrome uses role="navigation". Either way
+                  // a shelf never contains it.
+                  if (el.querySelector('[role="navigation"]')) return true;
+                  var labelled = el.querySelectorAll('[aria-label]');
+                  var tabs = 0;
+                  for (var i = 0; i < labelled.length && i < 400; i++) {
+                    var al = labelled[i].getAttribute('aria-label') || '';
+                    if (/\s+\d+\s+of\s+\d+\s*$/.test(al)) tabs++;
+                  }
+                  return tabs >= 2;
+                } catch (e) { return false; }
+              }
+
+              function hideSectionNode(el, maxUp) {
+                var total = screenActionCount();
+                if (total > 4) {
+                  var n = el, d = 0, cap = Math.min(maxUp || 6, 10), best = null;
+                  while (n && d <= cap) {
+                    if (isContainer(n)) break;
+                    if (holdsNavigation(n)) break;
+                    if (actionCount(n) > total * 0.95) break;
+                    best = n;
+                    n = n.parentElement;
+                    d++;
+                  }
+                  if (!best) return;
+                  // hide(), not hideStory(): hideStory runs its own walk and
+                  // would climb straight back past the node we just chose.
+                  hide(best);
+                  return;
+                }
+                hideStory(el, maxUp);
+              }
+
               function killSection(key) {
                 var words = SECTIONS[key];
                 if (!words || !words.length) return;
@@ -787,7 +870,7 @@ object AdBlocker {
                   var sel = '[aria-label="' + word + '" i],[data-pagelet*="' + word + '" i]';
                   var hits;
                   try { hits = document.querySelectorAll(sel); } catch (e) { continue; }
-                  for (var i = 0; i < hits.length; i++) hideStory(hits[i], 6);
+                  for (var i = 0; i < hits.length; i++) hideSectionNode(hits[i], 6);
                 }
 
                 // 2. section headings (h1-h4 / role=heading) inside the feed
@@ -800,7 +883,7 @@ object AdBlocker {
                   var t = (el.innerText || el.textContent || '').trim().toLowerCase();
                   if (!t || t.length > 40) continue;
                   for (var k = 0; k < words.length; k++) {
-                    if (t === words[k]) { hideStory(el, 8); break; }
+                    if (t === words[k]) { hideSectionNode(el, 8); break; }
                   }
                 }
 
@@ -816,7 +899,7 @@ object AdBlocker {
                     // only nav/shortcut links, not user-clicked content
                     var r = links[m].getAttribute('role');
                     if (r === 'link' || r === 'button' || links[m].closest('[role="navigation"]')) {
-                      hideStory(links[m], 4);
+                      hideSectionNode(links[m], 4);
                     }
                   }
                 }
@@ -1187,6 +1270,38 @@ object AdBlocker {
               (function() {
                 var last = null;
 
+                // Background audio is for Reels, not for the home feed.
+                //
+                // Scrolling the feed autoplays whatever passes the viewport,
+                // so treating any playing element as "audio" meant leaving
+                // the app during an ordinary feed post kept a video alive and
+                // held the notification up. Facebook already labels the
+                // difference: the lite renderer stamps every player node with
+                //
+                //   data-is-reels="true|false"
+                //
+                // (captured live from m.facebook.com — Watch feed posts all
+                // carry data-is-reels="false"). The <video> element itself is
+                // created inside that node after the fact, so the flag has to
+                // be looked up by walking to the enclosing player.
+                function isReel(m) {
+                  try {
+                    var n = m.closest ? m.closest('[data-is-reels]') : null;
+                    if (n) return n.getAttribute('data-is-reels') === 'true';
+                  } catch (e) {}
+                  // No label anywhere: the dedicated Reels screen replaces the
+                  // whole viewport, so fall back to that shape rather than
+                  // guessing from the address, which never changes here.
+                  try {
+                    var r = m.getBoundingClientRect();
+                    if (r && r.height > 0 && window.innerHeight > 0) {
+                      return (r.height / window.innerHeight) > 0.7 &&
+                             r.height > r.width;
+                    }
+                  } catch (e) {}
+                  return false;
+                }
+
                 function audible(m) {
                   // Muted does not count. The home feed autoplays every clip
                   // it scrolls past with the sound off, so counting those made
@@ -1204,8 +1319,11 @@ object AdBlocker {
                 function anyPlaying() {
                   var v = document.getElementsByTagName('video');
                   for (var i = 0; i < v.length; i++) {
-                    if (audible(v[i])) return true;
+                    if (audible(v[i]) && isReel(v[i])) return true;
                   }
+                  // Audio elements have no reel/feed distinction to make: the
+                  // feed does not autoplay bare <audio>, so anything here was
+                  // started deliberately.
                   var a = document.getElementsByTagName('audio');
                   for (var j = 0; j < a.length; j++) {
                     if (audible(a[j])) return true;

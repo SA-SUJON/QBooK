@@ -264,6 +264,97 @@ function posts(n, prefix) {
           lost < all.length / 2, true);
   }
 
+  // 9. The home-page section switches must remove a shelf, not the screen.
+  //
+  //    Every switch under Hidden settings > Home page sections was inert or
+  //    destructive. Hiding a section walks up from its label to the block
+  //    that holds it, and on the lite renderer that block is close to the
+  //    screen root: measured on a captured m.facebook.com Watch page, the
+  //    "Reels" <h2> sits two levels under MScreen, so the walk landed on a
+  //    node holding 66 of the screen's 77 controls and took the whole
+  //    five-tab bar with it.
+  //
+  //    The text-size guard could not catch it - that node was 452 characters
+  //    against a 51844-character body, because most of the body is script.
+  //    The walk is now bounded by how much of the screen's interactive
+  //    surface a candidate holds.
+  const sectionScript = extract(
+    'getCosmeticScript',
+    'stories:false,reels:true,rooms:false,marketplace:false,groups:false,' +
+    'watch:false,events:false,gaming:false,memories:false,birthdays:false,' +
+    'pymk:false,pages:false'
+  );
+  const reelCards = (n) => {
+    let s = '';
+    for (let i = 0; i < n; i++) {
+      s += `<div data-mcomponent="MContainer" data-action-id="90${i}"
+              aria-label="View reel video from User${i} with 5 million views ."
+              id="reelCard${i}"><div data-mcomponent="TextArea">reel ${i}</div></div>`;
+    }
+    return s;
+  };
+  //    The nesting matters and is taken from the real page: the tab bar is
+  //    not a sibling of the shelf, it lives inside the same block, so a walk
+  //    that takes "the block holding the heading" takes the navigation too.
+  //    The padding script is load-bearing, exactly as in section H: the old
+  //    walk was bounded by a share of the page's text, and on the real page
+  //    most of the body is script, so the block holding the whole screen was
+  //    still "small" by that measure. Without it the fixture is saved by a
+  //    guard that does not protect the real page.
+  const dom9 = new JSDOM(`<div id="screen-root">
+      <script>var pad = "${'x'.repeat(26000)}";</script>
+      <div data-mcomponent="MScreen" data-screen-id="65549"
+        data-type="container">
+      <div data-mcomponent="MContainer" id="outerBlock">
+        <div data-mcomponent="MContainer" id="tabBar">
+          <div data-action-id="1" aria-label="Popular , 1 of 5">Popular</div>
+          <div data-action-id="2" aria-label="Reels , 2 of 5">Reels</div>
+          <div data-action-id="3" aria-label="Explore , 3 of 5">Explore</div>
+          <div data-action-id="4" aria-label="Food , 4 of 5">Food</div>
+          <div data-action-id="5" aria-label="Animals , 5 of 5">Animals</div>
+        </div>
+        <div data-mcomponent="MContainer" id="reelShelf">
+          <h2 data-mcomponent="ServerTextArea">Reels</h2>
+          ${reelCards(11)}
+        </div>
+        <div data-mcomponent="MContainer" data-action-id="700" id="realPost">
+          <div data-mcomponent="TextArea">an ordinary post that must survive</div>
+        </div>
+      </div>
+    </div></div>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+  const w9 = dom9.window;
+  w9.requestIdleCallback = undefined;
+  w9.requestAnimationFrame = (f) => setTimeout(f, 0);
+  w9.FBPro = {
+    onAuthState() {}, onScrollState() {},
+    onLoginFormReady() {}, onBlobDownload() {}, onMediaState() {},
+  };
+  w9.eval(sectionScript);
+  await new Promise((r) => setTimeout(r, 900));
+
+  console.log('I) Hide reels removes the shelf, not the screen');
+  check('the reels shelf is removed', hidden(w9, '#reelShelf'), true);
+  check('a reel card goes with it', hidden(w9, '#reelCard0'), true);
+  check('the screen root survives', hidden(w9, '[data-mcomponent="MScreen"]'), false);
+  check('the tab bar survives', hidden(w9, '#tabBar'), false);
+  check('the Reels tab itself survives', hidden(w9, '[aria-label="Reels , 2 of 5"]'), false);
+  check('an ordinary post survives', hidden(w9, '#realPost'), false);
+
+  {
+    const all = w9.document.querySelectorAll('[data-action-id]');
+    let lost = 0;
+    for (const el of all) {
+      let p = el;
+      while (p) {
+        if (p.getAttribute && p.getAttribute('data-fbpro-hidden') === '1') { lost++; break; }
+        p = p.parentElement;
+      }
+    }
+    // 11 reel cards should go; the 5 tabs and the post must not.
+    check(`only the shelf's controls go (lost ${lost} of ${all.length})`,
+          lost === 11, true);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) {
     console.log('\n::error::feed guard failed - the blank-page or unblocked-ad bug is back');

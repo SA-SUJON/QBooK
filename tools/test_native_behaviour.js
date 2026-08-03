@@ -949,9 +949,11 @@ console.log('\nLoading bar off also hides the one Facebook draws');
      !/loading-bar/.test(emit(true, true, false)));
 }
 
-// ---------------------------------------------- background audio in the feed
+// ------------------------------------------------- background audio scope
 //
-// Background audio worked in Reels and nowhere else. Two faults, both here.
+// Background audio is a Reels feature: it must keep a reel playing when the
+// app is closed, and must do nothing for the home feed, which autoplays
+// whatever scrolls past. Three faults were found here.
 //
 // 1. unmute() latched on a per-element flag. Facebook's feed player sets
 //    muted straight back on when it starts an autoplay - browsers only allow
@@ -963,7 +965,7 @@ console.log('\nLoading bar off also hides the one Facebook draws');
 // 2. anyPlaying() counted a muted element as playing, so leaving the app
 //    during a silent feed autoplay started the service and held the
 //    notification up with nothing audible behind it.
-console.log('\nBackground audio works in the feed, not only in Reels');
+console.log('\nBackground audio is for Reels, and only when audible');
 (async () => {
   const ab = fs.readFileSync(KT('utils/AdBlocker.kt'), 'utf8');
   const script = rawString(KT('utils/AdBlocker.kt'), 'fun getNativeFeelScript');
@@ -1005,8 +1007,11 @@ console.log('\nBackground audio works in the feed, not only in Reels');
   A.w.document.dispatchEvent(new A.w.Event('touchend'));
   await wait(1300);
   ok('a tapped feed video ends up audible', A.v.muted === false);
-  ok('and only then is it reported as playing',
-     A.reports[A.reports.length - 1] === true);
+  // ...but sound alone does not make it background audio. This element has no
+  // player node around it, so it is not a reel, and closing the app on it must
+  // not keep anything alive. The reel case is asserted further down.
+  ok('an unlabelled feed clip is still not background audio',
+     !A.reports.includes(true));
 
   // B. the user muted it on purpose -> must stay muted
   const B = make();
@@ -1027,6 +1032,54 @@ console.log('\nBackground audio works in the feed, not only in Reels');
   await wait(1300);
   ok('a silent feed autoplay is not reported as audio',
      !C.reports.includes(true));
+
+  // Background audio is a Reels feature. An ordinary feed post that happens
+  // to be audible must still not keep the app alive once it is closed -
+  // scrolling the feed autoplays whatever passes the viewport, so that would
+  // hold the notification up for a post the user never chose to listen to.
+  //
+  // Facebook labels the difference itself. Captured live from
+  // m.facebook.com, every Watch-feed player node carries:
+  //   data-is-reels="false"   data-mcomponent="ServerMVideo"
+  ok('the reel test reads the label Facebook already provides',
+     /data-is-reels/.test(ab));
+
+  const player = (attr, rect) => {
+    const dom = new JSDOM(`<div data-mcomponent="ServerMVideo"${attr}><video></video></div>`,
+      { runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://m.facebook.com/' });
+    const w = dom.window;
+    const reports = [];
+    w.FBPro = {
+      onMediaState(p) { reports.push(p); }, onScrollState() {},
+      onAuthState() {}, onLoginFormReady() {}, onBlobDownload() {},
+    };
+    w.requestAnimationFrame = (f) => setTimeout(f, 0);
+    const v = w.document.querySelector('video');
+    Object.defineProperty(v, 'paused', { get: () => false });
+    Object.defineProperty(v, 'ended', { get: () => false });
+    Object.defineProperty(v, 'currentTime', { get: () => 2 });
+    v.muted = false; v.volume = 1;
+    v.getBoundingClientRect = () => rect;
+    w.eval(script);
+    return reports;
+  };
+  const small = { height: 200, width: 360, top: 0, left: 0, bottom: 200, right: 360 };
+  const tall = { height: 700, width: 360, top: 0, left: 0, bottom: 700, right: 360 };
+
+  const feed = player(' data-is-reels="false"', small);
+  await wait(1300);
+  ok('an audible home-feed video is not background audio',
+     !feed.includes(true));
+
+  const reel = player(' data-is-reels="true"', small);
+  await wait(1300);
+  ok('an audible reel is background audio', reel.includes(true));
+
+  // If Facebook ever drops the attribute, the dedicated Reels screen still
+  // fills the viewport, which the feed's inline player never does.
+  const bare = player('', tall);
+  await wait(1300);
+  ok('an unlabelled full-viewport player still counts', bare.includes(true));
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
