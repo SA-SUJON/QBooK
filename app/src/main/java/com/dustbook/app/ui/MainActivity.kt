@@ -106,6 +106,15 @@ class MainActivity : AppCompatActivity() {
 
     /** Live network state, updated by the ConnectivityManager callback. */
     @Volatile private var isOnline: Boolean = true
+
+    /**
+     * Consecutive main-frame failures for the current navigation.
+     *
+     * Reset the moment a page starts or finishes successfully, so a genuine
+     * outage still reaches the error screen after [MAX_MAIN_FRAME_RETRIES]
+     * attempts rather than retrying forever.
+     */
+    private var mainFrameRetries = 0
     private var connectivityCallback: ConnectivityManager.NetworkCallback? = null
 
     /** False when the page's own scroll container is scrolled away from top. */
@@ -757,6 +766,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupErrorView() {
         binding.errorRetry.setOnClickListener {
+            // A deliberate retry earns a fresh set of automatic attempts.
+            mainFrameRetries = 0
             binding.errorView.visibility = View.GONE
             binding.webView.visibility = View.VISIBLE
             binding.webView.reload()
@@ -967,6 +978,8 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 suppressInsets = false
                 binding.swipeRefresh.isRefreshing = false
+                // A page came through: the next failure starts from zero.
+                mainFrameRetries = 0
                 if (prefs.saveSession && UrlHelper.isInternal(url)) prefs.lastUrl = url
                 injectAll(view)
                 view?.postDelayed({ warmOfflineCache(url) }, 2500)
@@ -1014,6 +1027,34 @@ class MainActivity : AppCompatActivity() {
                     showSavedContent()
                     return
                 }
+
+                // A single failed request is not a dead connection. On mobile
+                // data the first load routinely fails while the radio is still
+                // coming up or DNS has not settled — ERROR_HOST_LOOKUP,
+                // ERROR_CONNECT, ERROR_TIMEOUT — and giving up immediately is
+                // why the app worked on Wi-Fi and showed "Can't load the page"
+                // on cellular. Wi-Fi is usually already associated and
+                // resolving by the time the activity starts, so the same code
+                // path never failed there.
+                //
+                // Retry the main frame a few times with a widening gap before
+                // admitting defeat. The user sees a blank frame for a moment
+                // instead of a dead end.
+                val code = error?.errorCode
+                    ?: android.webkit.WebViewClient.ERROR_UNKNOWN
+                if (isOnline && isTransientNetworkError(code) &&
+                    mainFrameRetries < MAX_MAIN_FRAME_RETRIES
+                ) {
+                    val attempt = ++mainFrameRetries
+                    val failed = request.url?.toString()
+                    binding.root.postDelayed({
+                        if (isFinishing || isDestroyed) return@postDelayed
+                        if (failed != null) binding.webView.loadUrl(failed)
+                        else binding.webView.reload()
+                    }, attempt * 1200L)
+                    return
+                }
+
                 showErrorPage()
             }
 
@@ -1954,5 +1995,29 @@ class MainActivity : AppCompatActivity() {
             action = AudioService.ACTION_STOP
         }
         try { startService(intent) } catch (e: Exception) {}
+    }
+
+    /**
+     * Whether a main-frame failure is worth retrying.
+     *
+     * These are the codes a mobile radio produces while it is still coming up:
+     * DNS not yet resolving, the connection refused mid-handover, or a slow
+     * cell timing out. None of them mean the network is unusable a second
+     * later. A certificate or file error, by contrast, will fail identically
+     * however many times it is retried.
+     */
+    private fun isTransientNetworkError(code: Int): Boolean = when (code) {
+        android.webkit.WebViewClient.ERROR_HOST_LOOKUP,
+        android.webkit.WebViewClient.ERROR_CONNECT,
+        android.webkit.WebViewClient.ERROR_TIMEOUT,
+        android.webkit.WebViewClient.ERROR_IO,
+        android.webkit.WebViewClient.ERROR_PROXY_AUTHENTICATION,
+        android.webkit.WebViewClient.ERROR_UNKNOWN -> true
+        else -> false
+    }
+
+    private companion object {
+        /** Enough to ride out a radio coming up, short enough to stay honest. */
+        const val MAX_MAIN_FRAME_RETRIES = 3
     }
 }

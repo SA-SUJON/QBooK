@@ -476,5 +476,47 @@ console.log('\nLogging in once');
      /substringBefore\('\/'\)/.test(uh));
 }
 
+// -------------------------------------------- a first failure is not an outage
+//
+// The app worked on Wi-Fi and showed "Can't load the page" on mobile data.
+// Wi-Fi is normally associated and resolving before the activity starts; a
+// cellular radio often is not, so the very first main-frame request fails with
+// ERROR_HOST_LOOKUP / ERROR_CONNECT / ERROR_TIMEOUT. onReceivedError went
+// straight to showErrorPage() with no second attempt, so that transient
+// failure became a dead end.
+console.log('\nTransient network failures');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+
+  ok('a transient main-frame error is retried, not shown',
+     /isTransientNetworkError\(code\)/.test(ma) &&
+     /mainFrameRetries < MAX_MAIN_FRAME_RETRIES/.test(ma));
+  ok('the retry classifier covers the cellular codes',
+     /ERROR_HOST_LOOKUP/.test(ma) && /ERROR_CONNECT/.test(ma) &&
+     /ERROR_TIMEOUT/.test(ma));
+  ok('retries are bounded', /MAX_MAIN_FRAME_RETRIES = \d+/.test(ma));
+
+  const cap = Number((ma.match(/MAX_MAIN_FRAME_RETRIES = (\d+)/) || [])[1]);
+  ok('the bound is sane', cap >= 2 && cap <= 5, 'cap=' + cap);
+
+  ok('the retry backs off instead of hammering',
+     /attempt \* \d+L/.test(ma));
+  ok('only retried while the system still reports a connection',
+     /isOnline && isTransientNetworkError/.test(ma));
+  ok('a genuine outage still reaches the error screen',
+     /showErrorPage\(\)/.test(ma));
+  ok('the counter resets once a page loads',
+     /onPageFinished[\s\S]{0,400}mainFrameRetries = 0/.test(ma));
+  ok('pressing Retry resets the counter',
+     /errorRetry\.setOnClickListener[\s\S]{0,200}mainFrameRetries = 0/.test(ma));
+
+  // Offline with saved content must still short-circuit before any retry.
+  const onErr = ma.slice(ma.indexOf('override fun onReceivedError'));
+  const savedAt = onErr.indexOf('showSavedContent()');
+  const retryAt = onErr.indexOf('isTransientNetworkError');
+  ok('stored content is still preferred over retrying',
+     savedAt >= 0 && retryAt >= 0 && savedAt < retryAt);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
