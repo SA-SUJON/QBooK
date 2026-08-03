@@ -538,7 +538,7 @@ console.log('\nStories can be opened offline');
   ok('routing asks what is reachable, not what has a document',
      /fun navigableScreens\(\): List<String>/.test(docs));
   ok('a screen held only as cards still routes',
-     /realPlayableCount\(section\) > 0/.test(docs));
+     /storedCount\(section\) > 0/.test(docs));
   ok('the nav script is built from it',
      /OfflineNav\.script\(navigableScreens\(\)\)/.test(docs) &&
      !/OfflineNav\.script\(savedScreens\(\)\)/.test(docs));
@@ -546,6 +546,70 @@ console.log('\nStories can be opened offline');
      /val saved = OfflineDocs\.navigableScreens\(\)/.test(ma));
   ok('stories map to the stories section',
      /"stories" -> OfflineFeed\.SECTION_STORIES/.test(docs));
+}
+
+// ------------------------------------------------ the five-step pipeline
+console.log('\nThe pipeline runs in the order it documents');
+{
+  const sync = fs.readFileSync(KT('utils/OfflineSync.kt'), 'utf8');
+  const bsm = fs.readFileSync(KT('utils/BackgroundSyncManager.kt'), 'utf8');
+
+  // targetFor used to raise every request to the V4 constants, so step 1
+  // chased 500 posts instead of 50 and never handed over to reels.
+  ok('a requested target is not silently raised',
+     /private fun targetFor\(section: String, target: Int\): Int = target/.test(sync));
+  ok('the V4 ceilings no longer override callers',
+     !/coerceAtLeast\(OfflineManager\.V4_FEED_TARGET\)/.test(sync) &&
+     !/coerceAtLeast\(OfflineManager\.V4_REEL_TARGET\)/.test(sync));
+  ok('step 1 asks for 50 posts', /val target = 50/.test(bsm));
+  ok('and hands over to reels', /step1NewPosts[\s\S]{0,600}step2Reels\(context, p\)/.test(bsm));
+  ok('reels use the user\'s chosen count',
+     /step2Reels[\s\S]{0,200}p\.offlineReelTarget/.test(bsm));
+  ok('then stories, then more posts',
+     /step3WaitForVideo[\s\S]{0,600}step4Stories\(context, p\)/.test(bsm) &&
+     /step4Stories[\s\S]{0,600}step5MorePosts\(context, p\)/.test(bsm));
+}
+
+console.log('\nSaved images survive to the offline page');
+{
+  const sync = fs.readFileSync(KT('utils/OfflineSync.kt'), 'utf8');
+  // Facebook lazy-loads feed images: with loading blocked the <img> tags
+  // never receive a real fbcdn URL, so capture collected none and every
+  // offline post came back as text with blank gaps.
+  ok('the capture WebView loads images',
+     /loadsImagesAutomatically = true/.test(sync) &&
+     /blockNetworkImage = false/.test(sync));
+}
+
+console.log('\nThe assembled page is rebuilt when media lands');
+{
+  const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+
+  ok('finishing a download invalidates the built page',
+     /if \(stored > 0\) OfflineDocs\.invalidate\(\)/.test(feed));
+  ok('offline refresh reaches a cards-only screen',
+     /val saved = OfflineDocs\.navigableScreens\(\)[\s\S]{0,300}screenFor\(binding\.webView\.url/.test(ma));
+
+  // Serving a page must not re-parse every section on the resource thread.
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+  ok('routing uses a cheap existence check',
+     /OfflineFeed\.storedCount\(section\) > 0/.test(docs));
+  // Scope to the function body, not the rest of the file: realPlayableCount
+  // is used legitimately elsewhere.
+  ok('and not the expensive one',
+     !/fun navigableScreens[\s\S]{0,700}?realPlayableCount[\s\S]{0,60}?\n    \}/.test(docs));
+  ok('the cheap check does not parse',
+     /fun storedCount[\s\S]{0,300}f\.length\(\) > 2L/.test(feed));
+}
+
+console.log('\nFullscreen video is not restarted by a layout pass');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  ok('the inset refresh stands down during fullscreen',
+     /fun refreshInsetsAfterLoad[\s\S]{0,400}if \(customView != null \|\| inFullscreenTransition\) return/.test(ma));
+  ok('the fullscreen handlers still request their own',
+     (ma.match(/ViewCompat\.requestApplyInsets/g) || []).length >= 3);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

@@ -675,6 +675,12 @@ class MainActivity : AppCompatActivity() {
      * this is the same thing for an ordinary navigation.
      */
     private fun refreshInsetsAfterLoad() {
+        // Not while a video is fullscreen. An inset pass re-lays out the root,
+        // and doing that under the fullscreen container made the player
+        // re-attach — the clip jumped back to the start. The fullscreen
+        // handlers already request their own pass when they finish, which is
+        // the right moment for it.
+        if (customView != null || inFullscreenTransition) return
         ViewCompat.requestApplyInsets(binding.root)
     }
 
@@ -829,7 +835,11 @@ class MainActivity : AppCompatActivity() {
             OfflineDocs.invalidate()
             binding.swipeRefresh.isRefreshing = false
             if (!hasAnythingOffline()) return
-            val saved = OfflineDocs.savedScreens()
+            // navigableScreens, not savedScreens: a screen held only as cards
+            // has no stored document, so it fell through to reload() — which
+            // re-served the very page we had just invalidated, and the screen
+            // never changed.
+            val saved = OfflineDocs.navigableScreens()
             val cur = OfflineDocs.screenFor(binding.webView.url ?: "")
             if (cur != null && saved.contains(cur)) {
                 binding.webView.loadUrl(OfflineDocs.urlFor(cur)

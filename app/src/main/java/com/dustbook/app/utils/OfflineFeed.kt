@@ -287,6 +287,23 @@ object OfflineFeed {
     fun freshCount(section: String): Int = realPlayableCount(section)
 
     /** V4: Total stored items (even if media not yet downloaded) */
+    /**
+     * Cheap "is there anything here at all" test.
+     *
+     * Deliberately does not parse. Callers on the WebView's resource thread
+     * only need to know whether a section holds content; reading and parsing
+     * the JSON there, four times per served page, is what made assembling an
+     * offline page slow enough to stall.
+     */
+    fun storedCount(section: String): Int {
+        val f = fileFor(section) ?: return 0
+        return try {
+            if (f.exists() && f.length() > 2L) 1 else 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
     fun totalStored(section: String): Int = loadItems(section).size
 
     fun hasAnything(): Boolean =
@@ -366,6 +383,14 @@ object OfflineFeed {
                 // Network died mid-pass: whatever was stored is still valid.
             } finally {
                 lastStored = stored
+                // An item only becomes complete when its last file lands, and
+                // that happens here, not when its metadata was written. The
+                // assembled page was built before those bytes existed, so it
+                // kept serving the smaller set: the count said six reels and
+                // three were on screen, and pull-to-refresh redisplayed the
+                // same stale page. Rebuild it now that more is genuinely
+                // playable.
+                if (stored > 0) OfflineDocs.invalidate()
                 busy.set(false)
                 // Anything added while we were finishing must not be stranded.
                 val more = synchronized(queue) { queue.isNotEmpty() }

@@ -713,7 +713,9 @@ console.log('\nOnline layout is not left with stale insets');
   const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
   ok('a finished page asks for a fresh inset pass',
      /onPageFinished[\s\S]{0,400}refreshInsetsAfterLoad\(\)/.test(ma) &&
-     /fun refreshInsetsAfterLoad\(\)[\s\S]{0,200}requestApplyInsets\(binding\.root\)/.test(ma));
+     /fun refreshInsetsAfterLoad\(\)[\s\S]{0,600}requestApplyInsets\(binding\.root\)/.test(ma));
+  ok('but not while a video is fullscreen, which would restart it',
+     /fun refreshInsetsAfterLoad[\s\S]{0,500}if \(customView != null \|\| inFullscreenTransition\) return/.test(ma));
   const n = (ma.match(/ViewCompat\.requestApplyInsets/g) || []).length;
   ok('every un-suppress point does so', n >= 3, 'found ' + n);
 }
@@ -808,12 +810,14 @@ console.log('\nOnly one thing competes with the feed');
   ok('starting twice is still harmless',
      /if \(!BackgroundSyncManager\.isRunning\)[\s\S]{0,200}BackgroundSyncManager\.start\(\)/.test(ma));
 
-  // The sync WebView shares the UI thread, so it must not decode images.
-  ok('the offscreen WebView does not decode images',
-     /loadsImagesAutomatically = false/.test(sync) &&
-     /blockNetworkImage = true/.test(sync));
-  ok('which is safe, because capture reads URLs from the markup',
-     /currentSrc \|\| /.test(fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8')));
+  // Blocking images in the sync WebView was tried here and reverted: Facebook
+  // lazy-loads feed images, so the tags never receive a real fbcdn URL and
+  // capture collected none. The saved page came back with blank gaps.
+  ok('the offscreen WebView still loads images',
+     /loadsImagesAutomatically = true/.test(sync) &&
+     /blockNetworkImage = false/.test(sync));
+  ok('and the reason is recorded so it is not tried again',
+     /lazy-load/.test(sync));
 
   // The offline unmute sweep walks the DOM; scrolling mutates it constantly.
   ok('the unmute sweep is debounced',

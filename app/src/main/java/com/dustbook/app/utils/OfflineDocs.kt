@@ -159,7 +159,13 @@ object OfflineDocs {
             "home" -> OfflineFeed.SECTION_FEED
             else -> return@filter false
         }
-        OfflineFeed.realPlayableCount(section) > 0
+        // storedCount, not realPlayableCount. This runs on the WebView's
+        // resource thread while a page is being assembled, and
+        // realPlayableCount re-reads and re-parses the section's JSON and
+        // then stats every media file it names — for four screens, on every
+        // served page. The question here is only "is this tab worth
+        // offering", which the cheap count answers.
+        OfflineFeed.storedCount(section) > 0
     }
 
     /** The URL a stored screen answers on. */

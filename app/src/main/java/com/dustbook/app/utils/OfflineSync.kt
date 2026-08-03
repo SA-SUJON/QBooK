@@ -106,12 +106,18 @@ object OfflineSync {
     }
 
     /** V4: Higher targets for fresh content. */
-    private fun targetFor(section: String, target: Int): Int = when (section) {
-        OfflineFeed.SECTION_REELS -> target.coerceAtLeast(OfflineManager.V4_REEL_TARGET)
-        OfflineFeed.SECTION_FEED -> target.coerceAtLeast(OfflineManager.V4_FEED_TARGET)
-        OfflineFeed.SECTION_STORIES -> target.coerceAtLeast(OfflineManager.V4_STORIES_TARGET)
-        else -> target
-    }
+    /**
+     * How many items this pass is trying to reach.
+     *
+     * The caller's number, unchanged. It used to be raised to the V4 constants
+     * — 500 posts, 200 reels — which silently overrode every request. Step 1
+     * of the pipeline asks for 50 posts and then hands over to reels, but with
+     * the target inflated to 500 it kept looping on posts and the handover
+     * never happened: posts climbed past 50 and no reel was ever fetched.
+     *
+     * A caller that wants a larger goal can simply ask for one.
+     */
+    private fun targetFor(section: String, target: Int): Int = target
 
     fun canRun(force: Boolean): Boolean {
         if (running) return false
@@ -172,21 +178,18 @@ object OfflineSync {
                     domStorageEnabled = true
                     databaseEnabled = true
 
-                    // Do not decode images in the sync WebView.
+                    // Images must load here, however tempting it is to skip
+                    // them for speed.
                     //
-                    // A WebView must live on the main thread, so this one
-                    // shares a thread with the UI: every image it decodes and
-                    // every frame it lays out is time the feed is not
-                    // scrolling. That is what made scrolling stutter whenever
-                    // saving was running.
-                    //
-                    // It does not need them. Capture reads markup and collects
-                    // media URLs as text; the bytes are fetched separately by
-                    // OfflineFeed's worker on a background pool, and that is
-                    // what ends up in the cache. Decoding them here was pure
-                    // cost with nothing downstream depending on it.
-                    loadsImagesAutomatically = false
-                    blockNetworkImage = true
+                    // Blocking them was tried and reverted: Facebook
+                    // lazy-loads feed images, so an <img> only carries its
+                    // real fbcdn URL once the renderer has decided to fetch
+                    // it. With loading blocked the tags stay empty, capture
+                    // collects no media URLs at all, and every saved post
+                    // comes back offline as text with blank spaces where the
+                    // photos should be.
+                    loadsImagesAutomatically = true
+                    blockNetworkImage = false
 
                     cacheMode = WebSettings.LOAD_DEFAULT
                     mediaPlaybackRequiresUserGesture = true
