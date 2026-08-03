@@ -178,6 +178,92 @@ function posts(n, prefix) {
   check('Facebook for Business post stays', hidden(w, '#v3'), false);
   check('feed survives', hidden(w, '.wrap'), false);
 
+  // 8. The lite renderer's screen root must survive.
+  //
+  //    Facebook's mobile site now draws a whole screen inside a single
+  //    MScreen node. It carries no id, no role and no data-sigil, so none of
+  //    the stop rules matched it and an "Open app" label five levels down let
+  //    the walk climb all the way to it.
+  //
+  //    Measured against a captured m.facebook.com lite screen before the fix:
+  //    hiding MScreen removed 77 of the 77 nodes carrying a data-action-id -
+  //    the comment control, the account switcher, the tab bar, everything.
+  //    That is the "screen goes dim and the dialog never appears" report and
+  //    the "comment option is missing" one, both from the same cause.
+  //
+  //    The shape below is the real one: attribute names and nesting depth are
+  //    taken from the captured page, including the inline scripts. Those
+  //    matter. The walk is bounded by a share of the page's text, and on the
+  //    real page 48565 of the body's 51844 characters are script source, so
+  //    the entire visible screen (584 characters) sits far under the limit
+  //    and the size guard never fires. Without the scripts here the fixture
+  //    passes against the broken code and proves nothing.
+  //    Two measurements from the captured page drive the shape below:
+  //      - the outermost node whose whole text is "Open app" sits exactly 5
+  //        levels under MScreen, and the promo pass walks up to 5, so it
+  //        lands precisely on the screen root
+  //      - 26176 of the body's 51844 characters are inline script, so the
+  //        visible screen is a small share of the "page text" the size guard
+  //        measures and that guard never fires
+  //    The script sits beside the screen, not inside it, exactly as on the
+  //    real page: MScreen there holds 584 characters out of a 51844-character
+  //    body. Put the padding inside the screen instead and the screen becomes
+  //    the whole page, the size guard fires for the wrong reason, and the
+  //    fixture stops reproducing the bug.
+  w = await run(`<div id="screen-root">
+      <script>var pad = "${'x'.repeat(26000)}";</script>
+      <div data-mcomponent="MScreen" data-screen-id="65549"
+        data-crash-screen-id="42949673960" data-screen-keys="57,56,55"
+        data-type="container" class="m bg-s2">
+      <div data-mcomponent="MContainer" class="m fixed-container top">
+       <div data-mcomponent="MContainer">
+        <div data-mcomponent="ServerTextArea" data-action-id="12">
+         <div><span>Open app</span></div></div>
+        <div data-mcomponent="ServerTextArea" data-action-id="13">
+         <div><span>Log in</span></div></div>
+       </div>
+      </div>
+      <div data-type="vscroller">
+        <div data-mcomponent="MContainer" id="liteFeed">
+          <div data-mcomponent="MContainer" data-action-id="21">
+            <div data-mcomponent="TextArea">a genuine post with real body text here</div>
+            <div data-mcomponent="ServerTextArea" data-action-id="22" id="liteComment">
+              <div><span>Comment</span></div></div>
+            <div data-mcomponent="ServerTextArea" data-action-id="23" id="liteLike">
+              <div><span>Like</span></div></div>
+          </div>
+          <div data-mcomponent="MContainer" data-action-id="24" id="liteSwitch">
+            <div data-mcomponent="TextArea">Switch profile</div></div>
+          ${posts(5, 'lite')}
+        </div>
+      </div>
+    </div></div>`);
+  console.log('H) lite renderer screen root');
+  check('the screen root survives', hidden(w, '[data-mcomponent="MScreen"]'), false);
+  check('the scroller survives', hidden(w, '[data-type="vscroller"]'), false);
+  check('the feed inside it survives', hidden(w, '#liteFeed'), false);
+  check('the comment control survives', hidden(w, '#liteComment'), false);
+  check('the like control survives', hidden(w, '#liteLike'), false);
+  check('the profile switcher survives', hidden(w, '#liteSwitch'), false);
+  check('a genuine lite post survives', hidden(w, '#lite0'), false);
+
+  // Whatever else happens, the great majority of the screen's controls have
+  // to still be reachable. Counting is what caught this: the individual
+  // checks above all passed while the screen as a whole was being removed.
+  {
+    const all = w.document.querySelectorAll('[data-action-id]');
+    let lost = 0;
+    for (const el of all) {
+      let p = el;
+      while (p) {
+        if (p.getAttribute && p.getAttribute('data-fbpro-hidden') === '1') { lost++; break; }
+        p = p.parentElement;
+      }
+    }
+    check(`most controls stay reachable (lost ${lost} of ${all.length})`,
+          lost < all.length / 2, true);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) {
     console.log('\n::error::feed guard failed - the blank-page or unblocked-ad bug is back');

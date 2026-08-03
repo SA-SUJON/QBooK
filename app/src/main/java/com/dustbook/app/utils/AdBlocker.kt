@@ -386,8 +386,31 @@ object AdBlocker {
                 if (!el || !el.getAttribute) return false;
                 if (STOP_ID[el.id]) return true;
 
+                // Facebook's lite renderer draws a whole screen inside one
+                // MScreen node, and it is the only one on the page. Every
+                // control the user taps - the comment box, the account
+                // switcher, the tab bar - lives inside it. It carries no id,
+                // no role and no data-sigil, so nothing above matched it and
+                // the walk was free to take it.
+                //
+                // Measured against a captured m.facebook.com lite screen: the
+                // "Open app" label sat 5 levels under MScreen, the walk
+                // climbed all 5, and hiding MScreen removed 77 of the 77
+                // nodes carrying a data-action-id. That is the whole screen -
+                // which is why a dialog only ever showed its dimmed backdrop
+                // and the comment control was missing entirely.
+                var mc = el.getAttribute('data-mcomponent') || '';
+                if (mc === 'MScreen') return true;
+
+                // The screen root also carries these. Checked separately so a
+                // renamed component cannot reopen the same hole.
+                if (el.hasAttribute('data-screen-id') ||
+                    el.hasAttribute('data-crash-screen-id') ||
+                    el.hasAttribute('data-screen-keys')) return true;
+
                 var r = el.getAttribute('role');
                 if (r === 'feed' || r === 'main' || r === 'navigation') return true;
+
 
                 // Only 'feed' means a list. 'story_div' marks an individual
                 // story, so treating it as a container stopped the walk one
