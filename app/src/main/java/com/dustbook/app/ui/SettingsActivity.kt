@@ -268,10 +268,12 @@ class SettingsActivity : AppCompatActivity() {
                     ?.setOnPreferenceChangeListener { _, _ ->
                         // Read after the value is committed, on the next pass.
                         view?.post {
-                            val on = Prefs(requireContext()).offlineMode
-                            OfflineCache.enabled = on
-                            OfflineFeed.enabled = on
-                            OfflineDocs.enabled = on
+                            // Only saving is switched. Content already on
+                            // disk stays readable either way.
+                            val write = Prefs(requireContext()).offlineMode
+                            OfflineCache.writeEnabled = write
+                            OfflineFeed.writeEnabled = write
+                            OfflineDocs.writeEnabled = write
                             refreshOfflineSize()
                         }
                         markDirty(false); true

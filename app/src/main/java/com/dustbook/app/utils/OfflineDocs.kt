@@ -74,6 +74,16 @@ object OfflineDocs {
     @Volatile var enabled: Boolean = true
 
     /**
+     * Whether new content may be *written*.
+     *
+     * [enabled] used to gate reading and writing together, so switching
+     * saving off also hid content already on disk. Reading is now always
+     * allowed; only collecting new content follows the user's switches.
+     */
+    @Volatile var writeEnabled: Boolean = true
+
+
+    /**
      * The WebView's user agent, set by the app at startup.
      *
      * This is not optional. Facebook chooses an entirely different renderer
@@ -206,6 +216,7 @@ object OfflineDocs {
             }
 
             val html = f.readText() +
+                unmuteStripScript() +
                 OfflineBanner.html() +
                 "<script>" + OfflineNav.script(savedScreens()) + "</script>" +
                 (if (cards.isNotBlank()) {
@@ -389,6 +400,7 @@ object OfflineDocs {
             "<style>body{margin:0;background:#18191a;color:#e4e6eb;" +
             "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
             "sans-serif}</style></head><body><div>" + use + "</div>" +
+            unmuteStripScript() +
             "<script>" + OfflineNav.script(savedScreens()) + "</script>" +
             (if (screen == "reels" || screen == "watch" || screen == "stories") {
                 "<script>" + VideoHelper.getOfflineVideoAssistScript() +
@@ -418,7 +430,7 @@ object OfflineDocs {
      * from there instead of re-requesting a URL that will not be answered.
      */
     fun storeFromPage(screen: String, html: String): Boolean {
-        if (!enabled) return false
+        if (!writeEnabled) return false
         val f = fileFor(screen) ?: return false
         if (html.length < MIN_DOC_BYTES) {
             outcomes[screen] = "tiny${html.length / 1024}k"
@@ -477,7 +489,7 @@ object OfflineDocs {
      * the diagnostics line reports.
      */
     fun refresh(screens: List<String> = SCREENS.keys.toList(), force: Boolean = false) {
-        if (!enabled) return
+        if (!writeEnabled) return
         if (inFlight.get() > 0) return
         for (screen in screens) {
             val url = SCREENS[screen] ?: continue
@@ -633,6 +645,65 @@ object OfflineDocs {
      */
     
 
+
+    /**
+     * Removes Facebook's "Tap to unmute" overlay from a served page.
+     *
+     * Stripping it at capture time was necessary but not sufficient. It only
+     * cleans markup captured *after* the fix, so every page already on disk
+     * still carried the overlay, and the stored full document -- which is a
+     * verbatim copy of Facebook's page, not something we assemble -- was never
+     * passed through the capture path at all.
+     *
+     * Doing it in the page covers both: the element is removed from the live
+     * DOM whatever produced it, and again whenever Facebook's own markup
+     * re-inserts one. A MutationObserver is used rather than a one-shot sweep
+     * because the offline video assist swaps elements in after load.
+     */
+    private fun unmuteStripScript(): String = """
+        <script id="__db_unmute_strip">
+        (function(){
+          if (window.__dbUnmuteStrip) return;
+          window.__dbUnmuteStrip = true;
+
+          var SEL = '[data-sigil~="m-video-overlay"],[data-sigil*="m-video-overlay"]';
+
+          function textLooksLikeUnmute(el) {
+            var t = (el.textContent || '').trim().toLowerCase();
+            if (!t || t.length > 40) return false;
+            return t.indexOf('unmute') !== -1 || t.indexOf('tap to') === 0;
+          }
+
+          function sweep() {
+            var n;
+            try { n = document.querySelectorAll(SEL); } catch (e) { return; }
+            for (var i = 0; i < n.length; i++) {
+              var el = n[i];
+              if (el.parentNode) el.parentNode.removeChild(el);
+            }
+            // Facebook does not always tag it. Catch the label by its own
+            // text, but only on small leaf-ish nodes so a real caption
+            // mentioning the word is never removed.
+            var spans = document.querySelectorAll('div,span');
+            for (var j = 0; j < spans.length && j < 3000; j++) {
+              var s = spans[j];
+              if (s.children.length > 2) continue;
+              if (!textLooksLikeUnmute(s)) continue;
+              var box = s.closest ? s.closest('[data-sigil]') : null;
+              var target = box && textLooksLikeUnmute(box) ? box : s;
+              if (target.parentNode) target.parentNode.removeChild(target);
+            }
+          }
+
+          sweep();
+          try {
+            new MutationObserver(function(){ sweep(); })
+              .observe(document.documentElement, {childList:true, subtree:true});
+          } catch (e) {}
+          document.addEventListener('DOMContentLoaded', sweep);
+        })();
+        </script>
+    """.trimIndent()
 
     /** Basic page served when there is literally nothing saved. */
     private fun offlineFallbackPage(): WebResourceResponse {

@@ -117,6 +117,21 @@ class Prefs(context: Context) {
     val offlineMode: Boolean
         get() = sp.getBoolean(KEY_OFFLINE_MODE, true) &&
             (offlineReels || offlineFeed || offlineStories)
+
+    /**
+     * Whether stored content may be *shown*.
+     *
+     * Deliberately not [offlineMode]. Those switches decide what gets saved
+     * from now on; they say nothing about what is already on disk. Tying
+     * display to them meant a user who turned saving off could no longer read
+     * content they had already downloaded — it was still there, and the app
+     * pretended it was not. Turning the switches back on made it reappear,
+     * which is the giveaway that nothing had actually been deleted.
+     *
+     * Showing what exists is always allowed. Deleting is a separate, explicit
+     * action (Offline → Clear saved content).
+     */
+    val offlineRead: Boolean get() = true
     /** Video is what "keep reels" means, so it is not a separate choice. */
     val offlineVideo: Boolean get() = sp.getBoolean(KEY_OFFLINE_VIDEO, true)
 

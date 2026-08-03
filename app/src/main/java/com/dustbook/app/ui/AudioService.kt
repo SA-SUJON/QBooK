@@ -2,7 +2,11 @@ package com.dustbook.app.ui
 
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -15,6 +19,60 @@ class AudioService : Service() {
         const val NOTIFICATION_ID = 9001
         const val ACTION_STOP = "com.dustbook.app.STOP_AUDIO"
         var running = false
+    }
+
+    /**
+     * Held for as long as the service runs.
+     *
+     * The foreground service keeps the process alive, but it says nothing
+     * about who owns the audio output. Without a focus request the system
+     * treats the playback as unowned and reclaims the stream within a few
+     * seconds of the app leaving the foreground -- which is exactly the
+     * reported symptom: sound for about five seconds, then silence, with the
+     * notification still showing.
+     */
+    private var focusRequest: AudioFocusRequest? = null
+
+    private fun acquireAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (focusRequest != null) return
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                    .build()
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(attrs)
+                    // Never duck or pause ourselves on a transient loss; the
+                    // WebView owns the element and cannot be resumed from here.
+                    .setWillPauseWhenDucked(false)
+                    .setOnAudioFocusChangeListener { }
+                    .build()
+                focusRequest = req
+                am.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN
+                )
+            }
+        } catch (e: Exception) {
+            focusRequest = null
+        }
+    }
+
+    private fun releaseAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                focusRequest?.let { am.abandonAudioFocusRequest(it) }
+                focusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(null)
+            }
+        } catch (e: Exception) {}
     }
 
     override fun onCreate() {
@@ -36,6 +94,7 @@ class AudioService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             AudioService.running = false
+            releaseAudioFocus()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -67,7 +126,10 @@ class AudioService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
+        // Foreground first, then focus: the system refuses a focus request
+        // made from the background, and the promotion is what lifts that.
         startForeground(NOTIFICATION_ID, notification)
+        acquireAudioFocus()
         AudioService.running = true
         return START_STICKY
     }
@@ -76,6 +138,7 @@ class AudioService : Service() {
 
     override fun onDestroy() {
         AudioService.running = false
+        releaseAudioFocus()
         super.onDestroy()
     }
 }

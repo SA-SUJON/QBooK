@@ -49,6 +49,16 @@ object OfflineFeed {
     @Volatile private var root: File? = null
     @Volatile var enabled: Boolean = true
 
+    /**
+     * Whether new content may be *written*.
+     *
+     * [enabled] used to gate reading and writing together, so switching
+     * saving off also hid content already on disk. Reading is now always
+     * allowed; only collecting new content follows the user's switches.
+     */
+    @Volatile var writeEnabled: Boolean = true
+
+
     /** Media stored by the last prefetch pass, shown in hidden settings. */
     @Volatile var lastStored: Int = 0
         private set

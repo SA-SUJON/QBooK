@@ -209,11 +209,9 @@ class MainActivity : AppCompatActivity() {
 
         // Blocklist + offline store load off the main thread.
         OfflineCache.init(applicationContext)
-        OfflineCache.enabled = prefs.offlineMode
         OfflineFeed.init(applicationContext)
-        OfflineFeed.enabled = prefs.offlineMode
         OfflineDocs.init(applicationContext)
-        OfflineDocs.enabled = prefs.offlineMode
+        applyOfflineFlags()
         AppExecutors.diskIO.execute {
             BlockList.load(applicationContext)
             CosmeticFilters.load(applicationContext)
@@ -343,9 +341,7 @@ class MainActivity : AppCompatActivity() {
         binding.webView.resumeTimers()
         applyBlockerFlags()
         applyRuntimeOptions()
-        OfflineCache.enabled = prefs.offlineMode
-        OfflineFeed.enabled = prefs.offlineMode
-        OfflineDocs.enabled = prefs.offlineMode
+        applyOfflineFlags()
         // Settings may have changed while we were away.
         // V4: Trigger proactive offline preparation on every resume
         // (lightweight if already running).
@@ -646,6 +642,25 @@ class MainActivity : AppCompatActivity() {
         } else {
             clean
         }
+    }
+
+    /**
+     * Reading is always on; only saving follows the user's switches.
+     *
+     * These used to be one flag, so turning saving off also hid content that
+     * was already downloaded. It was never deleted -- turning the switches
+     * back on made it reappear -- so the app was simply refusing to show
+     * something it still had.
+     */
+    private fun applyOfflineFlags() {
+        val read = prefs.offlineRead
+        val write = prefs.offlineMode
+        OfflineCache.enabled = read
+        OfflineFeed.enabled = read
+        OfflineDocs.enabled = read
+        OfflineCache.writeEnabled = write
+        OfflineFeed.writeEnabled = write
+        OfflineDocs.writeEnabled = write
     }
 
     private fun applyBlockerFlags() {
@@ -1070,7 +1085,10 @@ class MainActivity : AppCompatActivity() {
                 // stored document or saved cards to put in one - requiring a
                 // stored document alone meant a store full of reels still
                 // showed "Can't load the page".
-                if (prefs.offlineMode && !isOnline && hasAnythingOffline()) {
+                // offlineRead, not offlineMode: the save switches decide what
+                // is collected from now on, not whether what is already on
+                // disk may be read.
+                if (prefs.offlineRead && !isOnline && hasAnythingOffline()) {
                     showSavedContent()
                     return
                 }
@@ -1129,11 +1147,11 @@ class MainActivity : AppCompatActivity() {
                 // post controls are all exactly where they are online -
                 // because it is the same page. Without this the WebView's own
                 // error page wins before a single cached asset is requested.
-                if (prefs.offlineMode && !isOnline && request.isForMainFrame) {
+                if (prefs.offlineRead && !isOnline && request.isForMainFrame) {
                     OfflineDocs.serve(request)?.let { return it }
                 }
 
-                if (!prefs.offlineMode) return null
+                if (!prefs.offlineRead) return null
                 if (!OfflineCache.isInterceptable(request)) return null
 
                 // While online we never touch the request. shouldInterceptRequest
@@ -1198,7 +1216,7 @@ class MainActivity : AppCompatActivity() {
             view.evaluateJavascript(CosmeticFilters.proceduralScript(), null)
             view.evaluateJavascript(MFacebookAds.script(), null)
         }
-        if (prefs.offlineMode) {
+        if (prefs.offlineRead) {
             // Capture only runs via OfflineSync background WebView.
             // The visible page never populates the offline store —
             // this ensures online-viewed content is never saved.
@@ -1979,7 +1997,7 @@ class MainActivity : AppCompatActivity() {
         // Offer saved content only when we hold items whose media is really
         // on disk. Counting cache files was wrong: a store full of icons and
         // stylesheets made the button appear with nothing behind it.
-        val canOffline = prefs.offlineMode && hasAnythingOffline()
+        val canOffline = prefs.offlineRead && hasAnythingOffline()
         binding.errorOffline.visibility = if (canOffline) View.VISIBLE else View.GONE
     }
 

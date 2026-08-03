@@ -63,6 +63,16 @@ object OfflineCache {
     @Volatile private var root: File? = null
     @Volatile var enabled: Boolean = true
 
+    /**
+     * Whether new content may be *written*.
+     *
+     * [enabled] used to gate reading and writing together, so switching
+     * saving off also hid content already on disk. Reading is now always
+     * allowed; only collecting new content follows the user's switches.
+     */
+    @Volatile var writeEnabled: Boolean = true
+
+
     /** Bytes served from cache while offline, shown in the hidden settings. */
     @Volatile var offlineHits: Int = 0
         private set
@@ -291,7 +301,7 @@ object OfflineCache {
 
     /** Store a fetched asset. Safe to call from any background thread. */
     fun put(url: String, mime: String?, bytes: ByteArray) {
-        if (!enabled) return
+        if (!writeEnabled) return
         val dir = root ?: return
         if (bytes.isEmpty() || bytes.size > MAX_ENTRY) return
         val resolvedMime = if (mime == null || mime == "application/octet-stream")

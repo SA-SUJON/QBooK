@@ -33,9 +33,13 @@ class DustbookApplication : Application() {
         OfflineCache.init(this)
         OfflineFeed.init(this)
         OfflineDocs.init(this)
-        OfflineCache.enabled = prefs.offlineMode
-        OfflineFeed.enabled = prefs.offlineMode
-        OfflineDocs.enabled = prefs.offlineMode
+        // Reading is always permitted; only saving follows the switches.
+        OfflineCache.enabled = prefs.offlineRead
+        OfflineFeed.enabled = prefs.offlineRead
+        OfflineDocs.enabled = prefs.offlineRead
+        OfflineCache.writeEnabled = prefs.offlineMode
+        OfflineFeed.writeEnabled = prefs.offlineMode
+        OfflineDocs.writeEnabled = prefs.offlineMode
 
         // Watch for releases process-wide. Checking only in MainActivity's
         // onCreate meant an update published while the app was open went

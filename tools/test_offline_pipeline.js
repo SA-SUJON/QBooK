@@ -414,5 +414,67 @@ console.log('\nOffline story viewer clears the status bar');
      /indexOf\('viewport-fit'\) === -1/.test(sv));
 }
 
+// -------------------------------- reading is not gated by the save switches
+//
+// Turning offline saving off used to hide content that was already on disk.
+// Nothing had been deleted -- switching it back on made everything reappear --
+// so the app was refusing to show something it still had.
+console.log('\nSaved content is readable whatever the save switches say');
+{
+  const prefs = fs.readFileSync(KT('utils/Prefs.kt'), 'utf8');
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const app = fs.readFileSync(KT('DustbookApplication.kt'), 'utf8');
+  const sa = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
+
+  ok('reading has its own flag', /val offlineRead: Boolean/.test(prefs));
+  ok('and it does not depend on the section switches',
+     /val offlineRead: Boolean get\(\) = true/.test(prefs));
+  ok('saving still follows the switches',
+     /offlineReels \|\| offlineFeed \|\| offlineStories/.test(prefs));
+
+  ok('serving a stored page checks read, not save',
+     /prefs\.offlineRead && !isOnline && request\.isForMainFrame/.test(ma));
+  ok('falling back to saved content checks read',
+     /prefs\.offlineRead && !isOnline && hasAnythingOffline\(\)/.test(ma));
+  ok('the View saved content button checks read',
+     /canOffline = prefs\.offlineRead && hasAnythingOffline\(\)/.test(ma));
+  ok('no read path is gated on offlineMode any more',
+     !/prefs\.offlineMode && !isOnline/.test(ma));
+
+  ok('the stores separate reading from writing',
+     /writeEnabled/.test(fs.readFileSync(KT('utils/OfflineCache.kt'), 'utf8')) &&
+     /writeEnabled/.test(fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8')));
+  ok('put() is the one gated on writing',
+     /fun put[\s\S]{0,400}if \(!writeEnabled\) return/
+       .test(fs.readFileSync(KT('utils/OfflineCache.kt'), 'utf8')));
+  ok('get() is not',
+     /fun get\([\s\S]{0,300}if \(!enabled\) return null/
+       .test(fs.readFileSync(KT('utils/OfflineCache.kt'), 'utf8')));
+
+  ok('startup enables reading unconditionally',
+     /OfflineCache\.enabled = prefs\.offlineRead/.test(app) &&
+     /OfflineCache\.writeEnabled = prefs\.offlineMode/.test(app));
+  ok('the activity uses one helper for both',
+     /private fun applyOfflineFlags\(\)/.test(ma));
+  ok('toggling a switch changes only writing',
+     /OfflineCache\.writeEnabled = write/.test(sa) &&
+     !/OfflineCache\.enabled = on/.test(sa));
+}
+
+// ------------------------------- the unmute label on already-stored content
+console.log('\nThe unmute label is stripped when the page is served');
+{
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+  ok('a strip script exists', /private fun unmuteStripScript/.test(docs));
+  ok('the stored document gets it',
+     /f\.readText\(\) \+\s*\n\s*unmuteStripScript\(\)/.test(docs));
+  ok('the assembled page gets it too',
+     (docs.match(/unmuteStripScript\(\)/g) || []).length >= 3);
+  ok('it keeps watching, since markup is swapped in after load',
+     /MutationObserver/.test(docs.slice(docs.indexOf('unmuteStripScript'))));
+  ok('a long caption mentioning the word is protected',
+     /t\.length > 40/.test(docs));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

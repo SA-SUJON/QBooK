@@ -647,5 +647,35 @@ console.log('\nDownloading survives the app closing');
      /START_NOT_STICKY/.test(ss));
 }
 
+// ------------------------------------ background audio needs the audio focus
+//
+// Reported: sound plays for about five seconds after leaving the app, then
+// stops, with the notification still showing. The foreground service keeps the
+// process alive but says nothing about who owns the audio output, so the
+// system reclaims the stream shortly after the app leaves the foreground.
+console.log('\nBackground audio holds the audio focus');
+{
+  const as = fs.existsSync(KT('ui/AudioService.kt'))
+    ? fs.readFileSync(KT('ui/AudioService.kt'), 'utf8') : '';
+
+  ok('focus is requested', /requestAudioFocus/.test(as));
+  ok('with a durable gain, not a transient one',
+     /AUDIOFOCUS_GAIN\b/.test(as) && !/AUDIOFOCUS_GAIN_TRANSIENT/.test(as));
+  ok('as media usage',
+     /USAGE_MEDIA/.test(as));
+  // Compare the call sites, not the function definition: a background focus
+  // request is refused, and the promotion is what lifts that.
+  ok('foreground is promoted before focus is asked for',
+     /startForeground\(NOTIFICATION_ID, notification\)\s*\n\s*acquireAudioFocus\(\)/.test(as));
+  ok('focus is released when stopping',
+     /ACTION_STOP[\s\S]{0,200}releaseAudioFocus\(\)/.test(as));
+  ok('and on destroy',
+     /onDestroy[\s\S]{0,160}releaseAudioFocus\(\)/.test(as));
+  ok('a refused request cannot crash the service',
+     /catch \(e: Exception\)[\s\S]{0,120}focusRequest = null/.test(as));
+  ok('the pre-O path is handled too',
+     /STREAM_MUSIC/.test(as));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
