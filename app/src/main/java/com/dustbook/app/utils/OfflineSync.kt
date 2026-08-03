@@ -171,8 +171,23 @@ object OfflineSync {
                     javaScriptEnabled = true
                     domStorageEnabled = true
                     databaseEnabled = true
-                    loadsImagesAutomatically = true
-                    blockNetworkImage = false
+
+                    // Do not decode images in the sync WebView.
+                    //
+                    // A WebView must live on the main thread, so this one
+                    // shares a thread with the UI: every image it decodes and
+                    // every frame it lays out is time the feed is not
+                    // scrolling. That is what made scrolling stutter whenever
+                    // saving was running.
+                    //
+                    // It does not need them. Capture reads markup and collects
+                    // media URLs as text; the bytes are fetched separately by
+                    // OfflineFeed's worker on a background pool, and that is
+                    // what ends up in the cache. Decoding them here was pure
+                    // cost with nothing downstream depending on it.
+                    loadsImagesAutomatically = false
+                    blockNetworkImage = true
+
                     cacheMode = WebSettings.LOAD_DEFAULT
                     mediaPlaybackRequiresUserGesture = true
                     userAgentString = userAgentString.replace(" wv", "")

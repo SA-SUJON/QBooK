@@ -786,5 +786,42 @@ console.log('\nOffline saving respects the network choice');
      /val c = appContext \?: return true/.test(feed));
 }
 
+// ------------------------------------------- scrolling must stay the app's
+//
+// A WebView has to live on the main thread — the thread that draws the feed.
+// Two background engines each built one, so three WebViews shared it: the feed
+// scrolled in steps, and just after signing in the screen sat dimmed and
+// ignored taps while they all loaded.
+console.log('\nOnly one thing competes with the feed');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const sync = fs.readFileSync(KT('utils/OfflineSync.kt'), 'utf8');
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+
+  ok('the second collecting engine is not started',
+     !/OfflineManager\.startProactivePreparation/.test(ma));
+  ok('nor on reconnect',
+     !/OfflineManager\.onNetworkRestored/.test(ma));
+  ok('collecting still happens, through the one owner',
+     /BackgroundSyncManager\.start\(\)/.test(ma) &&
+     /BackgroundSyncManager\.onNetworkRestored\(\)/.test(ma));
+  ok('starting twice is still harmless',
+     /if \(!BackgroundSyncManager\.isRunning\)[\s\S]{0,200}BackgroundSyncManager\.start\(\)/.test(ma));
+
+  // The sync WebView shares the UI thread, so it must not decode images.
+  ok('the offscreen WebView does not decode images',
+     /loadsImagesAutomatically = false/.test(sync) &&
+     /blockNetworkImage = true/.test(sync));
+  ok('which is safe, because capture reads URLs from the markup',
+     /currentSrc \|\| /.test(fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8')));
+
+  // The offline unmute sweep walks the DOM; scrolling mutates it constantly.
+  ok('the unmute sweep is debounced',
+     /pending = setTimeout\(function\(\)\{ pending = 0; sweep\(\); \}, \d+\)/.test(docs));
+  ok('and only runs when nodes were added',
+     /if \(muts\[i\]\.addedNodes && muts\[i\]\.addedNodes\.length\)/.test(docs));
+  ok('it is still bounded per pass', /j < 3000/.test(docs));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

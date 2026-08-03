@@ -327,8 +327,14 @@ console.log('\nDownloading does not wait for the user');
   // for content to be saved.
   ok('a pass starts when the app comes to the front',
      /onResume[\s\S]{0,900}maybeSyncOffline/.test(main));
+  // The requirement is that reconnecting resumes collecting. Which engine
+  // does it is not the point -- BackgroundSyncManager owns that now, and
+  // OfflineManager is no longer started alongside it.
   ok('and again when the connection returns',
-     /onAvailable[\s\S]{0,900}OfflineManager.onNetworkRestored/.test(main));
+     /onAvailable[\s\S]{0,900}BackgroundSyncManager\.onNetworkRestored/.test(main));
+  ok('only one collecting engine is started',
+     !/OfflineManager\.startProactivePreparation/.test(main) &&
+     !/OfflineManager\.onNetworkRestored/.test(main));
 
   // One pass stops when the page runs out of cards, which is far short of the
   // target. It used to give up there and wait fifteen minutes.

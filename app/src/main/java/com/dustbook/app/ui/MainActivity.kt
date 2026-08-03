@@ -65,7 +65,6 @@ import com.dustbook.app.utils.OfflineCapture
 import com.dustbook.app.utils.OfflineDocs
 import com.dustbook.app.utils.OfflineFeed
 import com.dustbook.app.utils.AppExecutors
-import com.dustbook.app.utils.OfflineManager
 import com.dustbook.app.utils.OfflineSync
 import com.dustbook.app.utils.Prefs
 import com.dustbook.app.utils.VideoHelper
@@ -927,7 +926,7 @@ class MainActivity : AppCompatActivity() {
      * the visible page has settled, for whichever sections are enabled.
      */
     /** 
-     * V4: Delegates heavy lifting to the new proactive OfflineManager.
+     * Collecting is owned by BackgroundSyncManager.
      * Legacy path kept for compatibility (e.g. network restored callbacks).
      * The main automatic fresh content preparation now happens on launch.
      */
@@ -935,12 +934,22 @@ class MainActivity : AppCompatActivity() {
         if (!prefs.offlineMode || !isOnline) return
         if (!NetworkPolicy.canDownload(applicationContext, prefs)) return
 
-        // V4: Use the new central proactive preparation engine
-        OfflineManager.startProactivePreparation(
-            context = applicationContext,
-            prefs = prefs,
-            force = force
-        )
+        // BackgroundSyncManager owns collecting; OfflineManager is not
+        // started here any more.
+        //
+        // Both build their own offscreen WebView, and a WebView must live on
+        // the main thread — the same thread that draws the feed. Running two
+        // of them alongside the visible page meant three WebViews competing
+        // for one thread: the feed scrolled in steps, and right after signing
+        // in the screen sat dimmed and ignored taps while they all loaded.
+        //
+        // start() is idempotent and already triggered from onResume, from
+        // onPageFinished and from the sign-in transition, so nothing is lost
+        // by not starting a second engine here.
+        if (!BackgroundSyncManager.isRunning) {
+            BackgroundSyncManager.start()
+            SyncService.startIfNeeded(applicationContext)
+        }
 
         // Still refresh the current visible page's documents lightly
         AppExecutors.background.execute {
@@ -1833,12 +1842,12 @@ class MainActivity : AppCompatActivity() {
                         binding.webView.visibility = View.VISIBLE
                         binding.webView.reload()
                     }
-                    // V4: Back online → aggressively refresh fresh offline content
+                    // Back online: one engine, not two. Starting
+                    // OfflineManager here as well put a second offscreen
+                    // WebView on the main thread.
                     if (!was) {
                         BackgroundSyncManager.onNetworkRestored()
-                        binding.root.postDelayed({ 
-                            OfflineManager.onNetworkRestored(applicationContext, prefs) 
-                        }, 2800)
+                        SyncService.startIfNeeded(applicationContext)
                     }
                 }
             }

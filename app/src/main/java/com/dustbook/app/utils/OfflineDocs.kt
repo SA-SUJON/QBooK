@@ -718,8 +718,26 @@ object OfflineDocs {
 
           sweep();
           try {
-            new MutationObserver(function(){ sweep(); })
-              .observe(document.documentElement, {childList:true, subtree:true});
+            // Debounced, and only when nodes were actually added.
+            //
+            // Running the sweep on every mutation meant walking up to 3000
+            // elements each time, and scrolling produces mutations
+            // continuously — so the scan was competing with the scroll for
+            // the whole gesture. Coalescing to one pass per idle moment does
+            // the same job without being in the way.
+            var pending = 0;
+            function schedule() {
+              if (pending) return;
+              pending = setTimeout(function(){ pending = 0; sweep(); }, 400);
+            }
+            new MutationObserver(function(muts){
+              for (var i = 0; i < muts.length; i++) {
+                if (muts[i].addedNodes && muts[i].addedNodes.length) {
+                  schedule();
+                  return;
+                }
+              }
+            }).observe(document.documentElement, {childList:true, subtree:true});
           } catch (e) {}
           document.addEventListener('DOMContentLoaded', sweep);
         })();
