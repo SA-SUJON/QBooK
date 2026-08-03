@@ -264,179 +264,60 @@ function posts(n, prefix) {
           lost < all.length / 2, true);
   }
 
-  // 9. The home-page section switches must remove a shelf, not the screen.
+  // 9. Removing a promo must not take the header it sits in.
   //
-  //    Every switch under Hidden settings > Home page sections was inert or
-  //    destructive. Hiding a section walks up from its label to the block
-  //    that holds it, and on the lite renderer that block is close to the
-  //    screen root: measured on a captured m.facebook.com Watch page, the
-  //    "Reels" <h2> sits two levels under MScreen, so the walk landed on a
-  //    node holding 66 of the screen's 77 controls and took the whole
-  //    five-tab bar with it.
+  //    Reported as: the feed appears for about a second and then hides, with
+  //    the app-download bar visible underneath while it happens.
   //
-  //    The text-size guard could not catch it - that node was 452 characters
-  //    against a 51844-character body, because most of the body is script.
-  //    The walk is now bounded by how much of the screen's interactive
-  //    surface a candidate holds.
-  const sectionScript = extract(
-    'getCosmeticScript',
-    'stories:false,reels:true,rooms:false,marketplace:false,groups:false,' +
-    'watch:false,events:false,gaming:false,memories:false,birthdays:false,' +
-    'pymk:false,pages:false'
-  );
-  const reelCards = (n) => {
-    let s = '';
-    for (let i = 0; i < n; i++) {
-      s += `<div data-mcomponent="MContainer" data-action-id="90${i}"
-              aria-label="View reel video from User${i} with 5 million views ."
-              id="reelCard${i}"><div data-mcomponent="TextArea">reel ${i}</div></div>`;
-    }
-    return s;
-  };
-  //    The nesting matters and is taken from the real page: the tab bar is
-  //    not a sibling of the shelf, it lives inside the same block, so a walk
-  //    that takes "the block holding the heading" takes the navigation too.
-  //    The padding script is load-bearing, exactly as in section H: the old
-  //    walk was bounded by a share of the page's text, and on the real page
-  //    most of the body is script, so the block holding the whole screen was
-  //    still "small" by that measure. Without it the fixture is saved by a
-  //    guard that does not protect the real page.
-  const dom9 = new JSDOM(`<div id="screen-root">
+  //    Facebook puts "Open app" inside the pinned top bar, beside the logo,
+  //    the Log in button and the tab row. Every promo text test matches that
+  //    bar, because its text reads "Open appLog inVideo", and the walk then
+  //    climbed out of the link and hid the whole header - 8 controls on the
+  //    captured page. The app-download bar survived because it is a separate
+  //    node further down, which is exactly what the report described.
+  //
+  //    The text-size guard cannot catch this: the header is a few dozen
+  //    characters against a body of tens of thousands, most of it script.
+  //    Counting controls is what tells a banner from the bar around it.
+  w = await run(`<div id="screenRoot">
       <script>var pad = "${'x'.repeat(26000)}";</script>
-      <div data-mcomponent="MScreen" data-screen-id="65549"
-        data-type="container">
-      <div data-mcomponent="MContainer" id="outerBlock">
-        <div data-mcomponent="MContainer" id="tabBar">
-          <div data-action-id="1" aria-label="Popular , 1 of 5">Popular</div>
-          <div data-action-id="2" aria-label="Reels , 2 of 5">Reels</div>
-          <div data-action-id="3" aria-label="Explore , 3 of 5">Explore</div>
-          <div data-action-id="4" aria-label="Food , 4 of 5">Food</div>
-          <div data-action-id="5" aria-label="Animals , 5 of 5">Animals</div>
-        </div>
-        <div data-mcomponent="MContainer" id="reelShelf">
-          <h2 data-mcomponent="ServerTextArea">Reels</h2>
-          ${reelCards(11)}
-        </div>
-        <div data-mcomponent="MContainer" data-action-id="700" id="realPost">
-          <div data-mcomponent="TextArea">an ordinary post that must survive</div>
-        </div>
-      </div>
-    </div></div>`, { runScripts: 'outside-only', pretendToBeVisual: true });
-  const w9 = dom9.window;
-  w9.requestIdleCallback = undefined;
-  w9.requestAnimationFrame = (f) => setTimeout(f, 0);
-  w9.FBPro = {
-    onAuthState() {}, onScrollState() {},
-    onLoginFormReady() {}, onBlobDownload() {}, onMediaState() {},
-  };
-  w9.eval(sectionScript);
-  await new Promise((r) => setTimeout(r, 900));
-
-  console.log('I) Hide reels removes the shelf, not the screen');
-  check('the reels shelf is removed', hidden(w9, '#reelShelf'), true);
-  check('a reel card goes with it', hidden(w9, '#reelCard0'), true);
-  check('the screen root survives', hidden(w9, '[data-mcomponent="MScreen"]'), false);
-  check('the tab bar survives', hidden(w9, '#tabBar'), false);
-  check('the Reels tab itself survives', hidden(w9, '[aria-label="Reels , 2 of 5"]'), false);
-  check('an ordinary post survives', hidden(w9, '#realPost'), false);
-
-  {
-    const all = w9.document.querySelectorAll('[data-action-id]');
-    let lost = 0;
-    for (const el of all) {
-      let p = el;
-      while (p) {
-        if (p.getAttribute && p.getAttribute('data-fbpro-hidden') === '1') { lost++; break; }
-        p = p.parentElement;
-      }
-    }
-    // 11 reel cards should go; the 5 tabs and the post must not.
-    check(`only the shelf's controls go (lost ${lost} of ${all.length})`,
-          lost === 11, true);
-  }
-
-  // 10. Each Home page section switch must actually remove its own shelf.
-  //
-  //     Stopping the damage was not the same as making the feature work. All
-  //     three strategies looked for markup the lite renderer does not emit.
-  //     Measured on a captured m.facebook.com Marketplace screen:
-  //
-  //       [aria-label="marketplace" i]   0 nodes
-  //       [data-pagelet*="marketplace"]  0 nodes
-  //       a[href^="/marketplace"]        0 nodes
-  //       [role="heading"]               0 nodes
-  //       span[dir="auto"]               0 nodes
-  //       .native-text                 143 nodes   <- where titles live
-  //
-  //     so every switch was inert. The sweep now includes .native-text, the
-  //     walk stops when a step takes in a large block of extra controls (the
-  //     list of every shelf rather than this one), and a navigation entry is
-  //     never treated as a section - a tab labelled "Reels , 2 of 5" reads
-  //     exactly like a shelf title.
-  const shelf = (title, n, idp) => {
-    let cards = '';
-    for (let i = 0; i < n; i++) {
-      cards += `<div data-mcomponent="MContainer" data-action-id="${idp}${i}"
-                  id="${idp}card${i}"><div class="native-text">item ${i}</div></div>`;
-    }
-    return `<div data-mcomponent="MContainer" id="${idp}shelf">
-      <div data-mcomponent="ServerTextArea"><div class="native-text">${title}</div></div>
-      ${cards}</div>`;
-  };
-  const liteHome = `<div data-mcomponent="MScreen" data-screen-id="1" data-type="container">
-      <div data-mcomponent="MContainer" id="tabBar">
-        <div data-action-id="1" aria-label="Home , 1 of 5"><div class="native-text">Home</div></div>
-        <div data-action-id="2" aria-label="Reels , 2 of 5"><div class="native-text">Reels</div></div>
-        <div data-action-id="3" aria-label="Marketplace , 3 of 5"><div class="native-text">Marketplace</div></div>
-        <div data-action-id="4" aria-label="Notifications , 4 of 5"><div class="native-text">Notifications</div></div>
-        <div data-action-id="5" aria-label="Menu , 5 of 5"><div class="native-text">Menu</div></div>
-      </div>
-      <div data-mcomponent="MContainer" id="feed">
-        ${shelf('Stories', 4, 'st')}${shelf('Reels', 5, 'rl')}
-        ${shelf('Marketplace', 3, 'mp')}${shelf('People you may know', 4, 'pk')}
-        <div data-mcomponent="MContainer" data-action-id="900" id="realPost">
-          <div class="native-text">an ordinary post that must survive</div>
+      <div class="m fixed-container top" id="header">
+        <div data-mcomponent="MContainer">
+          <div data-mcomponent="ServerImageArea" data-action-id="1"
+               aria-label="Facebook Logo" id="logo"><div class="fl ac">f</div></div>
+          <div data-mcomponent="ServerTextArea" data-action-id="2" id="openApp">
+            <div class="fl ac"><div dir="auto" class="native-text">Open app</div></div>
+          </div>
+          <div data-mcomponent="ServerTextArea" data-action-id="3"
+               aria-label="Log in" id="loginBtn">
+            <div class="fl ac"><div dir="auto" class="native-text">Log in</div></div>
+          </div>
+          <div data-mcomponent="ServerTextArea" data-action-id="4" id="videoTab">
+            <div class="fl ac"><div dir="auto" class="native-text">Video</div></div>
+          </div>
+          <div data-mcomponent="ServerTextArea" data-action-id="5" id="searchBtn">
+            <div class="fl ac"><div dir="auto" class="native-text">Search</div></div>
+          </div>
         </div>
       </div>
-    </div>`;
-  const allOff = 'stories:false,reels:false,rooms:false,marketplace:false,' +
-    'groups:false,watch:false,events:false,gaming:false,memories:false,' +
-    'birthdays:false,pymk:false,pages:false';
-  const runSection = async (flags) => {
-    const sc = extract('getCosmeticScript', flags);
-    const dm = new JSDOM(liteHome,
-      { runScripts: 'outside-only', pretendToBeVisual: true });
-    const ww = dm.window;
-    ww.requestIdleCallback = undefined;
-    ww.requestAnimationFrame = (f) => setTimeout(f, 0);
-    ww.FBPro = {
-      onAuthState() {}, onScrollState() {}, onLoginFormReady() {},
-      onBlobDownload() {}, onMediaState() {},
-    };
-    ww.eval(sc);
-    await new Promise((r) => setTimeout(r, 900));
-    return ww;
-  };
-
-  console.log('J) each section switch removes its own shelf');
-  const ids = { stories: '#stshelf', reels: '#rlshelf',
-                marketplace: '#mpshelf', pymk: '#pkshelf' };
-  for (const key of Object.keys(ids)) {
-    const ws = await runSection(allOff.replace(key + ':false', key + ':true'));
-    check(`${key}: its shelf is removed`, hidden(ws, ids[key]), true);
-    for (const other of Object.keys(ids)) {
-      if (other === key) continue;
-      check(`${key}: the ${other} shelf is untouched`, hidden(ws, ids[other]), false);
-    }
-    check(`${key}: an ordinary post survives`, hidden(ws, '#realPost'), false);
-    check(`${key}: the tab bar survives`, hidden(ws, '#tabBar'), false);
-  }
-  // The tab reads "Reels" too, and must not be mistaken for the shelf.
-  {
-    const ws = await runSection(allOff.replace('reels:false', 'reels:true'));
-    check('the Reels tab itself survives',
-          hidden(ws, '[aria-label="Reels , 2 of 5"]'), false);
-  }
+      <div id="feedArea">
+        ${posts(5, 'hdr')}
+      </div>
+      <div class="m fixed-container bottom" id="promoBar">
+        <a href="/lite/?entry=login">Get the app</a>
+      </div>
+    </div>`);
+  console.log('I) an app promo inside the header');
+  check('the promo link itself goes', hidden(w, '#openApp'), true);
+  check('the header survives', hidden(w, '#header'), false);
+  check('the logo survives', hidden(w, '#logo'), false);
+  check('the Log in button survives', hidden(w, '#loginBtn'), false);
+  check('the Video tab survives', hidden(w, '#videoTab'), false);
+  check('search survives', hidden(w, '#searchBtn'), false);
+  check('the feed survives', hidden(w, '#feedArea'), false);
+  check('a real post survives', hidden(w, '#hdr0'), false);
+  // The standalone bar is a promo through and through, so it still goes.
+  check('the app-download bar still goes', hidden(w, '#promoBar'), true);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) {

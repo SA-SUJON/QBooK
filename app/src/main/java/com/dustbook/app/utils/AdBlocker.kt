@@ -408,6 +408,14 @@ object AdBlocker {
                     el.hasAttribute('data-crash-screen-id') ||
                     el.hasAttribute('data-screen-keys')) return true;
 
+                // Note: the pinned bars (class "fixed-container top|bottom")
+                // are deliberately NOT stop nodes. A bar that is nothing but
+                // an app promo has to be removable whole, or an empty strip
+                // is left behind once its link is hidden. The header is
+                // protected instead by the control count in hideStory, which
+                // tells "a banner" from "the bar that happens to contain
+                // one".
+
                 var r = el.getAttribute('role');
                 if (r === 'feed' || r === 'main' || r === 'navigation') return true;
 
@@ -487,6 +495,18 @@ object AdBlocker {
                 var cap = Math.min(maxUp || 8, 10);
                 var n = el, d = 0;
 
+                // How many controls the starting point owns. Climbing past a
+                // node that brings in unrelated ones means we have left the
+                // banner and reached the bar that merely contains it.
+                function ctrls(x) {
+                  try {
+                    return x.querySelectorAll(
+                      'a,button,[role="button"],[role="link"],[data-action-id]'
+                    ).length;
+                  } catch (e) { return 0; }
+                }
+                var startCtrls = ctrls(el);
+
                 while (n && d < cap) {
                   if (isCard(n)) break;
 
@@ -497,6 +517,21 @@ object AdBlocker {
 
                   // Taking p would cover too much of the page: stop here.
                   if (textLen(p) > limit) break;
+
+                  // Taking p would take controls that are nothing to do with
+                  // the banner.
+                  //
+                  // Facebook puts "Open app" inside the pinned header, next to
+                  // the logo, the Log in button and the tab row. Every text
+                  // test matches, and the walk then climbed out of the link
+                  // and took the header: 8 controls on the live page. That is
+                  // the header vanishing a second after the feed paints, with
+                  // the app-download bar still visible underneath because it
+                  // is a separate node.
+                  //
+                  // The text guard could not catch it - the header is a few
+                  // dozen characters against a page of tens of thousands.
+                  if (ctrls(p) > startCtrls + 1) break;
 
                   try {
                     if (p.querySelector('input[type="password"],input[type="email"],form')) break;
@@ -750,6 +785,34 @@ object AdBlocker {
                   if (!t || t.length > 90) continue;
                   t = t.trim().toLowerCase();
                   if (!t) continue;
+
+                  // The node must be the promo itself, not something that
+                  // merely contains one.
+                  //
+                  // Facebook puts "Open app" inside the pinned header, beside
+                  // the logo, the Log in button and the tab row. That header's
+                  // text reads "Open appLog inVideo", which contains the
+                  // phrase - so a substring test matched the header and the
+                  // walk then removed the whole thing. On the live page that
+                  // is 8 controls, and it is the header disappearing about a
+                  // second after the feed paints.
+                  //
+                  // A real promo is a leaf: a link or a button whose entire
+                  // text is the offer. Anything wrapping other controls is a
+                  // container, and the promo inside it is matched on its own
+                  // pass anyway.
+                  var extra = 0;
+                  try {
+                    extra = el.querySelectorAll(
+                      'a,button,[role="button"],[role="link"],[data-action-id]'
+                    ).length;
+                  } catch (e) {}
+                  var self = (el.tagName === 'A' || el.tagName === 'BUTTON' ||
+                              el.getAttribute('role') === 'button' ||
+                              el.getAttribute('role') === 'link' ||
+                              el.hasAttribute('data-action-id'));
+                  if (extra > (self ? 1 : 0)) continue;
+
                   for (var k = 0; k < PROMO_TEXT.length; k++) {
                     if (t.indexOf(PROMO_TEXT[k]) !== -1) { hideStory(el, 5); break; }
                   }
@@ -777,122 +840,6 @@ object AdBlocker {
                 sponsored:   []
               };
 
-              // How much of the screen's interactive surface a section may
-              // take with it.
-              //
-              // Hiding a section walks up from a label to the block that holds
-              // it, and on the lite renderer that block can be the screen. The
-              // "Reels" heading on the Watch screen sits two levels under
-              // MScreen, so the walk landed on a node holding 66 of the
-              // screen's 77 controls and took the whole tab bar with it -
-              // measured on a captured m.facebook.com page.
-              //
-              // Text size cannot catch this: the same node was only 452 of the
-              // body's 51844 characters, because most of the body is script.
-              // Counting controls is what actually distinguishes "a shelf
-              // inside the page" from "the page".
-              function actionCount(el) {
-                try {
-                  var n = el.querySelectorAll(
-                    '[data-action-id],[data-fd-action],a[href],button'
-                  ).length;
-                  return n;
-                } catch (e) { return 0; }
-              }
-
-              var screenActions = -1;
-              function screenActionCount() {
-                if (screenActions >= 0) return screenActions;
-                var root = document.querySelector('[data-mcomponent="MScreen"]') ||
-                           document.body;
-                screenActions = root ? actionCount(root) : 0;
-                return screenActions;
-              }
-
-              /**
-               * Hide a section shelf, refusing to take most of the screen.
-               *
-               * Climbs while the candidate still looks like one shelf rather
-               * than the screen.
-               *
-               * A share-of-the-page threshold alone cannot do this. Measured
-               * on a captured Watch screen, the block holding the Reels
-               * heading carried 66 of 77 controls - 86% - because that screen
-               * is mostly reels; but the block one step further up also holds
-               * the navigation. So the stop condition is structural: never
-               * cross a node that contains the screen's navigation, and never
-               * take a node holding nearly everything.
-               */
-              function holdsNavigation(el) {
-                try {
-                  // The lite tab bar labels itself "Popular , 1 of 5" and so
-                  // on; the classic chrome uses role="navigation". Either way
-                  // a shelf never contains it.
-                  if (el.querySelector('[role="navigation"]')) return true;
-                  var labelled = el.querySelectorAll('[aria-label]');
-                  var tabs = 0;
-                  for (var i = 0; i < labelled.length && i < 400; i++) {
-                    var al = labelled[i].getAttribute('aria-label') || '';
-                    if (/\s+\d+\s+of\s+\d+\s*$/.test(al)) tabs++;
-                  }
-                  return tabs >= 2;
-                } catch (e) { return false; }
-              }
-
-              /** True when the node sits inside the screen's own tab bar. */
-              function insideNavigation(el) {
-                try {
-                  if (el.closest('[role="navigation"]')) return true;
-                  // The lite tab bar has no role; each tab is labelled
-                  // "Reels , 2 of 5". A tab reads exactly like a section
-                  // title, so without this "Hide reels" removed the Reels
-                  // tab from the bar as well as the shelf.
-                  var p = el;
-                  for (var i = 0; i < 8 && p; i++) {
-                    var al = p.getAttribute && p.getAttribute('aria-label');
-                    if (al && /\s+\d+\s+of\s+\d+\s*$/.test(al)) return true;
-                    p = p.parentElement;
-                  }
-                } catch (e) {}
-                return false;
-              }
-
-              function hideSectionNode(el, maxUp) {
-                // Never take a navigation entry. Hiding a section means the
-                // shelf of content, not the way to reach it.
-                if (insideNavigation(el)) return;
-                var total = screenActionCount();
-                if (total > 4) {
-                  var n = el, d = 0, cap = Math.min(maxUp || 6, 10), best = null;
-                  var bestActs = -1;
-                  while (n && d <= cap) {
-                    if (isContainer(n)) break;
-                    if (holdsNavigation(n)) break;
-                    if (actionCount(n) > total * 0.95) break;
-
-                    var acts = actionCount(n);
-                    // Stop as soon as the candidate stops being just this
-                    // shelf. A shelf is the title plus its own cards; the
-                    // moment a step takes in a large block of extra controls
-                    // we have reached the list that holds every shelf, and
-                    // taking that removes the whole feed - the neighbouring
-                    // sections and the ordinary posts with them.
-                    if (bestActs > 0 && acts > bestActs * 1.5) break;
-
-                    best = n;
-                    bestActs = acts;
-                    n = n.parentElement;
-                    d++;
-                  }
-                  if (!best) return;
-                  // hide(), not hideStory(): hideStory runs its own walk and
-                  // would climb straight back past the node we just chose.
-                  hide(best);
-                  return;
-                }
-                hideStory(el, maxUp);
-              }
-
               function killSection(key) {
                 var words = SECTIONS[key];
                 if (!words || !words.length) return;
@@ -903,31 +850,20 @@ object AdBlocker {
                   var sel = '[aria-label="' + word + '" i],[data-pagelet*="' + word + '" i]';
                   var hits;
                   try { hits = document.querySelectorAll(sel); } catch (e) { continue; }
-                  for (var i = 0; i < hits.length; i++) hideSectionNode(hits[i], 6);
+                  for (var i = 0; i < hits.length; i++) hideStory(hits[i], 6);
                 }
 
-                // 2. section headings inside the feed.
-                //
-                // .native-text is what the lite renderer actually uses, and
-                // without it none of these switches did anything at all.
-                // Measured on a captured m.facebook.com Marketplace screen:
-                // role="heading" 0 nodes, span[dir="auto"] 0 nodes,
-                // aria-label="marketplace" 0 nodes, a[href^="/marketplace"]
-                // 0 nodes - but 143 .native-text nodes, which is where every
-                // shelf title lives.
+                // 2. section headings (h1-h4 / role=heading) inside the feed
                 var heads = document.querySelectorAll(
-                  'h1,h2,h3,h4,[role="heading"],span[dir="auto"],.native-text'
+                  'h1,h2,h3,h4,[role="heading"],span[dir="auto"]'
                 );
                 for (var j = 0; j < heads.length; j++) {
                   var el = heads[j];
                   if (el.hasAttribute(TAG)) continue;
-                  // A title is its own node, not a wrapper around the shelf.
-                  if (el.children.length > 1) continue;
-                  var t = (el.innerText || el.textContent || '')
-                    .replace(/\u00a0/g, ' ').trim().toLowerCase();
+                  var t = (el.innerText || el.textContent || '').trim().toLowerCase();
                   if (!t || t.length > 40) continue;
                   for (var k = 0; k < words.length; k++) {
-                    if (t === words[k]) { hideSectionNode(el, 8); break; }
+                    if (t === words[k]) { hideStory(el, 8); break; }
                   }
                 }
 
@@ -943,7 +879,7 @@ object AdBlocker {
                     // only nav/shortcut links, not user-clicked content
                     var r = links[m].getAttribute('role');
                     if (r === 'link' || r === 'button' || links[m].closest('[role="navigation"]')) {
-                      hideSectionNode(links[m], 4);
+                      hideStory(links[m], 4);
                     }
                   }
                 }
@@ -1314,38 +1250,6 @@ object AdBlocker {
               (function() {
                 var last = null;
 
-                // Background audio is for Reels, not for the home feed.
-                //
-                // Scrolling the feed autoplays whatever passes the viewport,
-                // so treating any playing element as "audio" meant leaving
-                // the app during an ordinary feed post kept a video alive and
-                // held the notification up. Facebook already labels the
-                // difference: the lite renderer stamps every player node with
-                //
-                //   data-is-reels="true|false"
-                //
-                // (captured live from m.facebook.com — Watch feed posts all
-                // carry data-is-reels="false"). The <video> element itself is
-                // created inside that node after the fact, so the flag has to
-                // be looked up by walking to the enclosing player.
-                function isReel(m) {
-                  try {
-                    var n = m.closest ? m.closest('[data-is-reels]') : null;
-                    if (n) return n.getAttribute('data-is-reels') === 'true';
-                  } catch (e) {}
-                  // No label anywhere: the dedicated Reels screen replaces the
-                  // whole viewport, so fall back to that shape rather than
-                  // guessing from the address, which never changes here.
-                  try {
-                    var r = m.getBoundingClientRect();
-                    if (r && r.height > 0 && window.innerHeight > 0) {
-                      return (r.height / window.innerHeight) > 0.7 &&
-                             r.height > r.width;
-                    }
-                  } catch (e) {}
-                  return false;
-                }
-
                 function audible(m) {
                   // Muted does not count. The home feed autoplays every clip
                   // it scrolls past with the sound off, so counting those made
@@ -1358,6 +1262,38 @@ object AdBlocker {
                   // readyState alone is not enough: a buffered but paused
                   // clip would keep the service alive forever.
                   return !m.paused && !m.ended && m.currentTime > 0;
+                }
+
+                // Background audio is for Reels, not for the home feed.
+                //
+                // Scrolling the feed autoplays whatever passes the viewport,
+                // so treating any playing element as "audio" meant leaving
+                // the app during an ordinary feed post kept a video alive and
+                // held the notification up. Facebook labels the difference:
+                // the lite renderer stamps every player node with
+                //
+                //   data-is-reels="true|false"
+                //
+                // captured live from m.facebook.com, where Watch feed posts
+                // all carry "false". The <video> element is created inside
+                // that node afterwards, so the flag is found by walking out
+                // to the enclosing player.
+                function isReel(m) {
+                  try {
+                    var n = m.closest ? m.closest('[data-is-reels]') : null;
+                    if (n) return n.getAttribute('data-is-reels') === 'true';
+                  } catch (e) {}
+                  // No label anywhere: the dedicated Reels screen replaces
+                  // the whole viewport, so fall back to that shape rather
+                  // than guessing from the address, which never changes here.
+                  try {
+                    var r = m.getBoundingClientRect();
+                    if (r && r.height > 0 && window.innerHeight > 0) {
+                      return (r.height / window.innerHeight) > 0.7 &&
+                             r.height > r.width;
+                    }
+                  } catch (e) {}
+                  return false;
                 }
 
                 function anyPlaying() {
