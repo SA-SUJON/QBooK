@@ -547,6 +547,13 @@ console.log('\nBackground audio follows playback, not the URL');
      /!m\.paused && !m\.ended/.test(ab));
   ok('media events are captured, since they do not bubble',
      /addEventListener\(e, tell, true\)/.test(ab));
+  ok('a muted element does not count as audio',
+     /if \(m\.muted\) return false;/.test(ab));
+  ok('volume 0 is treated the same as muted',
+     /m\.volume === 0\) return false/.test(ab));
+  ok('turning the sound on is noticed without waiting for the poll',
+     /'volumechange'\s*\]?\s*\)?\s*\n?\s*\.forEach/.test(ab) ||
+     /'emptied', 'volumechange'/.test(ab));
   ok('a swapped-out reel is caught by a backstop poll',
      /setInterval\(tell,/.test(ab));
 }
@@ -942,5 +949,85 @@ console.log('\nLoading bar off also hides the one Facebook draws');
      !/loading-bar/.test(emit(true, true, false)));
 }
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+// ---------------------------------------------- background audio in the feed
+//
+// Background audio worked in Reels and nowhere else. Two faults, both here.
+//
+// 1. unmute() latched on a per-element flag. Facebook's feed player sets
+//    muted straight back on when it starts an autoplay - browsers only allow
+//    an unattended play() while the clip is silent - so after the first
+//    attempt the flag said "already done" and the sweep never tried again.
+//    Reels appeared to work only because the user taps those, and the tap
+//    goes through onGesture, which is a different path.
+//
+// 2. anyPlaying() counted a muted element as playing, so leaving the app
+//    during a silent feed autoplay started the service and held the
+//    notification up with nothing audible behind it.
+console.log('\nBackground audio works in the feed, not only in Reels');
+(async () => {
+  const ab = fs.readFileSync(KT('utils/AdBlocker.kt'), 'utf8');
+  const script = rawString(KT('utils/AdBlocker.kt'), 'fun getNativeFeelScript');
+
+  ok('unmute() is no longer one-shot',
+     !/if \(!v \|\| v\.__dbUnmuted\) return;/.test(ab));
+  ok('a deliberate mute is still respected',
+     /__dbUserMuted/.test(ab));
+
+  // Behavioural: drive the real script the way the page does.
+  const make = () => {
+    const dom = new JSDOM('<body></body>',
+      { runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://m.facebook.com/' });
+    const w = dom.window;
+    const reports = [];
+    w.FBPro = {
+      onMediaState(p) { reports.push(p); }, onScrollState() {},
+      onAuthState() {}, onLoginFormReady() {}, onBlobDownload() {},
+    };
+    w.requestAnimationFrame = (f) => setTimeout(f, 0);
+    const v = w.document.createElement('video');
+    const st = { paused: true, ct: 0 };
+    Object.defineProperty(v, 'paused', { get: () => st.paused });
+    Object.defineProperty(v, 'ended', { get: () => false });
+    Object.defineProperty(v, 'currentTime', { get: () => st.ct });
+    v.muted = true; v.volume = 1;
+    w.document.body.appendChild(v);
+    w.eval(script);
+    return { w, v, st, reports };
+  };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // A. feed clip: autoplays muted, user taps it -> sound must come on
+  const A = make();
+  await wait(60);
+  A.v.dispatchEvent(new A.w.Event('loadstart'));
+  A.v.muted = true; A.st.paused = false; A.st.ct = 1.5;   // Facebook re-mutes
+  await wait(1300);
+  A.w.document.dispatchEvent(new A.w.Event('touchend'));
+  await wait(1300);
+  ok('a tapped feed video ends up audible', A.v.muted === false);
+  ok('and only then is it reported as playing',
+     A.reports[A.reports.length - 1] === true);
+
+  // B. the user muted it on purpose -> must stay muted
+  const B = make();
+  await wait(60);
+  B.v.dispatchEvent(new B.w.Event('loadstart'));
+  B.st.paused = false; B.st.ct = 2;
+  B.w.document.dispatchEvent(new B.w.Event('touchend'));
+  B.v.muted = true;
+  B.v.dispatchEvent(new B.w.Event('volumechange'));
+  await wait(2300);
+  ok('a video the user muted stays muted', B.v.muted === true);
+
+  // C. silent autoplay must never start the service
+  const C = make();
+  await wait(60);
+  C.v.muted = true; C.st.paused = false; C.st.ct = 3;
+  C.v.__dbUserMuted = true;
+  await wait(1300);
+  ok('a silent feed autoplay is not reported as audio',
+     !C.reports.includes(true));
+
+  console.log('\n' + pass + ' passed, ' + fail + ' failed');
+  process.exit(fail ? 1 : 0);
+})();

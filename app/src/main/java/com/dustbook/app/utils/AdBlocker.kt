@@ -1101,16 +1101,28 @@ object AdBlocker {
               // itself authorises audible playback, so nothing is paused.
               (function() {
                 var pendingGesture = false;
+                var lastGesture = 0;
 
                 function unmute(v) {
-                  if (!v || v.__dbUnmuted) return;
+                  if (!v) return;
+                  // The user asked for silence: leave it alone. Without the
+                  // old one-shot flag the sweep would otherwise undo their
+                  // own mute a second later, every second.
+                  if (v.__dbUserMuted) return;
                   try {
                     if (v.paused || v.currentTime === 0) {
                       // Not yet playing: safe to clear now.
                       v.muted = false;
                       v.defaultMuted = false;
                       v.removeAttribute('muted');
-                      v.__dbUnmuted = true;
+                      // Deliberately not latched. Facebook's feed player sets
+                      // muted straight back on when it starts an autoplay -
+                      // browsers only permit an unattended play() while the
+                      // clip is silent - so a one-shot flag meant the sweep
+                      // gave up after the first attempt and feed video stayed
+                      // silent for the rest of the session. Reels seemed to
+                      // work only because the user taps those, and the tap
+                      // authorises audible playback through onGesture below.
                     } else if (v.muted) {
                       // Already running and muted. Touching it here would
                       // pause it, so defer to the next real interaction.
@@ -1125,18 +1137,33 @@ object AdBlocker {
                 }
 
                 function onGesture() {
+                  lastGesture = Date.now();
                   if (!pendingGesture) return;
                   pendingGesture = false;
                   var v = document.getElementsByTagName('video');
                   for (var i = 0; i < v.length; i++) {
                     try {
-                      if (!v[i].paused && v[i].muted) {
+                      if (!v[i].paused && v[i].muted && !v[i].__dbUserMuted) {
                         v[i].muted = false;
-                        v[i].__dbUnmuted = true;
                       }
                     } catch (e) {}
                   }
                 }
+
+                // Tell a user mute apart from Facebook's own. Facebook re-mutes
+                // to satisfy the autoplay rules, which happens on its own; a
+                // person does it by tapping the speaker, so there is a gesture
+                // immediately before. Anything muted within a moment of a real
+                // tap is treated as deliberate and never touched again.
+                document.addEventListener('volumechange', function(ev) {
+                  var t = ev.target;
+                  if (!t || t.tagName !== 'VIDEO') return;
+                  if (t.muted && (Date.now() - lastGesture) < 1000) {
+                    t.__dbUserMuted = true;
+                  } else if (!t.muted) {
+                    t.__dbUserMuted = false;
+                  }
+                }, true);
 
                 // loadedmetadata fires before playback, which is the moment
                 // the flag can be cleared without interrupting anything.
@@ -1160,18 +1187,28 @@ object AdBlocker {
               (function() {
                 var last = null;
 
+                function audible(m) {
+                  // Muted does not count. The home feed autoplays every clip
+                  // it scrolls past with the sound off, so counting those made
+                  // the app claim audio was playing when nothing could be
+                  // heard: leaving the app then kept a silent video alive and
+                  // held the notification up. Volume 0 is the same thing by
+                  // another name.
+                  if (m.muted) return false;
+                  if (typeof m.volume === 'number' && m.volume === 0) return false;
+                  // readyState alone is not enough: a buffered but paused
+                  // clip would keep the service alive forever.
+                  return !m.paused && !m.ended && m.currentTime > 0;
+                }
+
                 function anyPlaying() {
                   var v = document.getElementsByTagName('video');
                   for (var i = 0; i < v.length; i++) {
-                    var m = v[i];
-                    // readyState alone is not enough: a buffered but paused
-                    // clip would keep the service alive forever.
-                    if (!m.paused && !m.ended && m.currentTime > 0) return true;
+                    if (audible(v[i])) return true;
                   }
                   var a = document.getElementsByTagName('audio');
                   for (var j = 0; j < a.length; j++) {
-                    var n = a[j];
-                    if (!n.paused && !n.ended && n.currentTime > 0) return true;
+                    if (audible(a[j])) return true;
                   }
                   return false;
                 }
@@ -1184,9 +1221,13 @@ object AdBlocker {
                 }
 
                 // Media events do not bubble, so they are caught on capture.
-                ['play', 'playing', 'pause', 'ended', 'emptied'].forEach(function(e) {
-                  document.addEventListener(e, tell, true);
-                });
+                // volumechange matters as much as play here: a feed clip is
+                // already running when the sound comes on, so without it the
+                // change would not be noticed until the next poll.
+                ['play', 'playing', 'pause', 'ended', 'emptied', 'volumechange']
+                  .forEach(function(e) {
+                    document.addEventListener(e, tell, true);
+                  });
 
                 // A reel can be swapped out without firing pause on the old
                 // element, so poll as a backstop. Cheap: a tag lookup and a
