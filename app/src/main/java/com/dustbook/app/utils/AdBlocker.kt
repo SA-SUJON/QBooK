@@ -839,15 +839,48 @@ object AdBlocker {
                 } catch (e) { return false; }
               }
 
+              /** True when the node sits inside the screen's own tab bar. */
+              function insideNavigation(el) {
+                try {
+                  if (el.closest('[role="navigation"]')) return true;
+                  // The lite tab bar has no role; each tab is labelled
+                  // "Reels , 2 of 5". A tab reads exactly like a section
+                  // title, so without this "Hide reels" removed the Reels
+                  // tab from the bar as well as the shelf.
+                  var p = el;
+                  for (var i = 0; i < 8 && p; i++) {
+                    var al = p.getAttribute && p.getAttribute('aria-label');
+                    if (al && /\s+\d+\s+of\s+\d+\s*$/.test(al)) return true;
+                    p = p.parentElement;
+                  }
+                } catch (e) {}
+                return false;
+              }
+
               function hideSectionNode(el, maxUp) {
+                // Never take a navigation entry. Hiding a section means the
+                // shelf of content, not the way to reach it.
+                if (insideNavigation(el)) return;
                 var total = screenActionCount();
                 if (total > 4) {
                   var n = el, d = 0, cap = Math.min(maxUp || 6, 10), best = null;
+                  var bestActs = -1;
                   while (n && d <= cap) {
                     if (isContainer(n)) break;
                     if (holdsNavigation(n)) break;
                     if (actionCount(n) > total * 0.95) break;
+
+                    var acts = actionCount(n);
+                    // Stop as soon as the candidate stops being just this
+                    // shelf. A shelf is the title plus its own cards; the
+                    // moment a step takes in a large block of extra controls
+                    // we have reached the list that holds every shelf, and
+                    // taking that removes the whole feed - the neighbouring
+                    // sections and the ordinary posts with them.
+                    if (bestActs > 0 && acts > bestActs * 1.5) break;
+
                     best = n;
+                    bestActs = acts;
                     n = n.parentElement;
                     d++;
                   }
@@ -873,14 +906,25 @@ object AdBlocker {
                   for (var i = 0; i < hits.length; i++) hideSectionNode(hits[i], 6);
                 }
 
-                // 2. section headings (h1-h4 / role=heading) inside the feed
+                // 2. section headings inside the feed.
+                //
+                // .native-text is what the lite renderer actually uses, and
+                // without it none of these switches did anything at all.
+                // Measured on a captured m.facebook.com Marketplace screen:
+                // role="heading" 0 nodes, span[dir="auto"] 0 nodes,
+                // aria-label="marketplace" 0 nodes, a[href^="/marketplace"]
+                // 0 nodes - but 143 .native-text nodes, which is where every
+                // shelf title lives.
                 var heads = document.querySelectorAll(
-                  'h1,h2,h3,h4,[role="heading"],span[dir="auto"]'
+                  'h1,h2,h3,h4,[role="heading"],span[dir="auto"],.native-text'
                 );
                 for (var j = 0; j < heads.length; j++) {
                   var el = heads[j];
                   if (el.hasAttribute(TAG)) continue;
-                  var t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                  // A title is its own node, not a wrapper around the shelf.
+                  if (el.children.length > 1) continue;
+                  var t = (el.innerText || el.textContent || '')
+                    .replace(/\u00a0/g, ' ').trim().toLowerCase();
                   if (!t || t.length > 40) continue;
                   for (var k = 0; k < words.length; k++) {
                     if (t === words[k]) { hideSectionNode(el, 8); break; }

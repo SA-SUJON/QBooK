@@ -355,6 +355,89 @@ function posts(n, prefix) {
           lost === 11, true);
   }
 
+  // 10. Each Home page section switch must actually remove its own shelf.
+  //
+  //     Stopping the damage was not the same as making the feature work. All
+  //     three strategies looked for markup the lite renderer does not emit.
+  //     Measured on a captured m.facebook.com Marketplace screen:
+  //
+  //       [aria-label="marketplace" i]   0 nodes
+  //       [data-pagelet*="marketplace"]  0 nodes
+  //       a[href^="/marketplace"]        0 nodes
+  //       [role="heading"]               0 nodes
+  //       span[dir="auto"]               0 nodes
+  //       .native-text                 143 nodes   <- where titles live
+  //
+  //     so every switch was inert. The sweep now includes .native-text, the
+  //     walk stops when a step takes in a large block of extra controls (the
+  //     list of every shelf rather than this one), and a navigation entry is
+  //     never treated as a section - a tab labelled "Reels , 2 of 5" reads
+  //     exactly like a shelf title.
+  const shelf = (title, n, idp) => {
+    let cards = '';
+    for (let i = 0; i < n; i++) {
+      cards += `<div data-mcomponent="MContainer" data-action-id="${idp}${i}"
+                  id="${idp}card${i}"><div class="native-text">item ${i}</div></div>`;
+    }
+    return `<div data-mcomponent="MContainer" id="${idp}shelf">
+      <div data-mcomponent="ServerTextArea"><div class="native-text">${title}</div></div>
+      ${cards}</div>`;
+  };
+  const liteHome = `<div data-mcomponent="MScreen" data-screen-id="1" data-type="container">
+      <div data-mcomponent="MContainer" id="tabBar">
+        <div data-action-id="1" aria-label="Home , 1 of 5"><div class="native-text">Home</div></div>
+        <div data-action-id="2" aria-label="Reels , 2 of 5"><div class="native-text">Reels</div></div>
+        <div data-action-id="3" aria-label="Marketplace , 3 of 5"><div class="native-text">Marketplace</div></div>
+        <div data-action-id="4" aria-label="Notifications , 4 of 5"><div class="native-text">Notifications</div></div>
+        <div data-action-id="5" aria-label="Menu , 5 of 5"><div class="native-text">Menu</div></div>
+      </div>
+      <div data-mcomponent="MContainer" id="feed">
+        ${shelf('Stories', 4, 'st')}${shelf('Reels', 5, 'rl')}
+        ${shelf('Marketplace', 3, 'mp')}${shelf('People you may know', 4, 'pk')}
+        <div data-mcomponent="MContainer" data-action-id="900" id="realPost">
+          <div class="native-text">an ordinary post that must survive</div>
+        </div>
+      </div>
+    </div>`;
+  const allOff = 'stories:false,reels:false,rooms:false,marketplace:false,' +
+    'groups:false,watch:false,events:false,gaming:false,memories:false,' +
+    'birthdays:false,pymk:false,pages:false';
+  const runSection = async (flags) => {
+    const sc = extract('getCosmeticScript', flags);
+    const dm = new JSDOM(liteHome,
+      { runScripts: 'outside-only', pretendToBeVisual: true });
+    const ww = dm.window;
+    ww.requestIdleCallback = undefined;
+    ww.requestAnimationFrame = (f) => setTimeout(f, 0);
+    ww.FBPro = {
+      onAuthState() {}, onScrollState() {}, onLoginFormReady() {},
+      onBlobDownload() {}, onMediaState() {},
+    };
+    ww.eval(sc);
+    await new Promise((r) => setTimeout(r, 900));
+    return ww;
+  };
+
+  console.log('J) each section switch removes its own shelf');
+  const ids = { stories: '#stshelf', reels: '#rlshelf',
+                marketplace: '#mpshelf', pymk: '#pkshelf' };
+  for (const key of Object.keys(ids)) {
+    const ws = await runSection(allOff.replace(key + ':false', key + ':true'));
+    check(`${key}: its shelf is removed`, hidden(ws, ids[key]), true);
+    for (const other of Object.keys(ids)) {
+      if (other === key) continue;
+      check(`${key}: the ${other} shelf is untouched`, hidden(ws, ids[other]), false);
+    }
+    check(`${key}: an ordinary post survives`, hidden(ws, '#realPost'), false);
+    check(`${key}: the tab bar survives`, hidden(ws, '#tabBar'), false);
+  }
+  // The tab reads "Reels" too, and must not be mistaken for the shelf.
+  {
+    const ws = await runSection(allOff.replace('reels:false', 'reels:true'));
+    check('the Reels tab itself survives',
+          hidden(ws, '[aria-label="Reels , 2 of 5"]'), false);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) {
     console.log('\n::error::feed guard failed - the blank-page or unblocked-ad bug is back');
