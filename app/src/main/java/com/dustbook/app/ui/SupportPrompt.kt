@@ -31,16 +31,14 @@ import com.dustbook.app.utils.Prefs
 object SupportPrompt {
 
     /**
-     * Shown from the second launch onwards.
+     * Held back until the app has actually been in use for a few days.
      *
-     * This was eight, with a fortnight between asks, and the effect was that
-     * the prompt never appeared at all - which is not what was asked for. The
-     * request is simple: it shows when the app opens, and "Don't show again"
-     * is what stops it. So the only thing still held back is the very first
-     * launch, because a donation box before the app has drawn a single feed
-     * is begging rather than asking.
+     * A donation box on day one is begging rather than asking. Gating on
+     * elapsed time since the first launch, rather than a launch count, means
+     * someone who opens the app once a day still gets asked on schedule
+     * instead of needing three separate cold starts first.
      */
-    private const val MIN_LAUNCHES_BEFORE_ASKING = 2
+    private const val DAYS_BEFORE_ASKING = 3L
 
     /**
      * At most once a day.
@@ -75,10 +73,13 @@ object SupportPrompt {
     fun maybeShow(activity: Activity): Boolean {
         val prefs = Prefs(activity)
         if (prefs.supportHidden) return false
-        if (prefs.launchCount < MIN_LAUNCHES_BEFORE_ASKING) return false
 
         val now = System.currentTimeMillis()
-        val gap = DAYS_BETWEEN_ASKS * 24 * 60 * 60 * 1000
+        val dayMs = 24 * 60 * 60 * 1000L
+        val sinceFirstLaunch = now - prefs.firstLaunchAt
+        if (prefs.firstLaunchAt == 0L || sinceFirstLaunch < DAYS_BEFORE_ASKING * dayMs) return false
+
+        val gap = DAYS_BETWEEN_ASKS * dayMs
         if (now - prefs.supportLastShown < gap) return false
 
         prefs.supportLastShown = now
