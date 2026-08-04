@@ -586,6 +586,7 @@ class MainActivity : AppCompatActivity() {
         // That is true, and it is why the container is now hidden with
         // INVISIBLE rather than GONE - see onShowCustomView. INVISIBLE keeps
         // the feed measured, so it comes back at the size it left at.
+        var imeWasVisible = false
         ViewCompat.setOnApplyWindowInsetsListener(binding.contentRoot) { view, windowInsets ->
             // getInsetsIgnoringVisibility, not getInsets.
             //
@@ -600,11 +601,23 @@ class MainActivity : AppCompatActivity() {
             val bars = windowInsets.getInsetsIgnoringVisibility(
                 WindowInsetsCompat.Type.systemBars()
             )
+            val imeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime())
             val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
             view.updatePadding(
                 top = bars.top,
                 bottom = maxOf(bars.bottom, ime.bottom)
             )
+
+            // The keyboard closing on its own way into Reels or Stories is
+            // another moment the window is left stale with nothing to say
+            // so - the lite renderer swaps the comment box for those screens
+            // in place, no navigation and no fullscreen transition, so
+            // neither of recoverWindowSizeIfStale()'s two existing call
+            // sites ever runs. This listener already fires on every real IME
+            // transition, which is the one signal that reliably does.
+            if (imeWasVisible && !imeVisible) recoverWindowSizeIfStale()
+            imeWasVisible = imeVisible
+
             windowInsets
         }
 
@@ -628,30 +641,6 @@ class MainActivity : AppCompatActivity() {
             windowInsets
         }
         updateSystemBarIcons()
-
-        // Closing the keyboard on its own way into Reels or Stories leaves
-        // the window stale with nothing to say so.
-        //
-        // recoverWindowSizeIfStale() already exists for exactly this
-        // shape of bug - it was written for leaving fullscreen video - but
-        // it was only ever wired to that one exit and to onResume. The lite
-        // renderer swaps a comment box for Reels/Stories in place: no
-        // navigation, no fullscreen transition, nothing that already calls
-        // it. The window grows back once the IME closes, and this is the
-        // one signal that actually fires when that happens.
-        //
-        // Every layout pass reaches here, including the one requestApplyInsets
-        // itself causes, so this has to filter hard rather than call through
-        // on every pass - that would be the same loop the function's own
-        // comment already warns against.
-        var lastRootHeight = -1
-        binding.root.viewTreeObserver.addOnGlobalLayoutListener {
-            if (isFinishing || isDestroyed) return@addOnGlobalLayoutListener
-            val h = binding.root.height
-            if (h <= 0 || h == lastRootHeight) return@addOnGlobalLayoutListener
-            lastRootHeight = h
-            recoverWindowSizeIfStale()
-        }
     }
 
     private fun updateSystemBarIcons() {
