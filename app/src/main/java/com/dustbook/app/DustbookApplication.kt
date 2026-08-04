@@ -53,6 +53,10 @@ class DustbookApplication : Application() {
         // rather than in an Activity: this runs exactly once per process.
         prefs.launchCount = prefs.launchCount + 1
 
+        // Stamp the very first launch, so the support prompt can wait a
+        // fixed number of days from install rather than a launch count.
+        if (prefs.firstLaunchAt == 0L) prefs.firstLaunchAt = System.currentTimeMillis()
+
         // Re-assert the notification schedule on every process start. The
         // work itself survives a reboot, but the channels do not exist until
         // something creates them, and a cancelled schedule has to stay
