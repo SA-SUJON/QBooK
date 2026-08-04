@@ -63,6 +63,7 @@ class Prefs(context: Context) {
         const val KEY_SUPPORT_LAST_SHOWN = "support_last_shown"
         const val KEY_LAUNCH_COUNT = "launch_count"
         const val KEY_SUPPORT_DONATED_AT = "support_donated_at"
+        const val KEY_FIRST_LAUNCH_AT = "first_launch_at"
 
         // Updates
         const val KEY_AUTO_UPDATE = "auto_update_check"
@@ -234,6 +235,11 @@ class Prefs(context: Context) {
     var launchCount: Int
         get() = sp.getInt(KEY_LAUNCH_COUNT, 0)
         set(v) = sp.edit().putInt(KEY_LAUNCH_COUNT, v).apply()
+
+    /** When the app was opened for the very first time. 0 until set. */
+    var firstLaunchAt: Long
+        get() = sp.getLong(KEY_FIRST_LAUNCH_AT, 0L)
+        set(v) = sp.edit().putLong(KEY_FIRST_LAUNCH_AT, v).apply()
 
     val autoUpdateCheck: Boolean get() = sp.getBoolean(KEY_AUTO_UPDATE, true)
 
