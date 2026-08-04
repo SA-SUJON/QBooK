@@ -383,6 +383,13 @@ class SettingsActivity : AppCompatActivity() {
                 showDeveloperDialog()
                 true
             }
+
+            // Asked for explicitly, so it always opens - the "Don't show
+            // again" box silences the automatic prompt, not this.
+            findPreference<Preference>("support_dev")?.setOnPreferenceClickListener {
+                activity?.let { SupportPrompt.showNow(it) }
+                true
+            }
         }
 
         /**

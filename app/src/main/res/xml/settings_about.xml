@@ -23,5 +23,8 @@
         <Preference android:key="dev_info" android:title="@string/pref_developer"
             android:summary="@string/pref_developer_sum"
             app:iconSpaceReserved="false" />
+        <Preference android:key="support_dev" android:title="@string/pref_support"
+            android:summary="@string/pref_support_sum"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
 </PreferenceScreen>

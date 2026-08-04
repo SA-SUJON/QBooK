@@ -48,6 +48,11 @@ class DustbookApplication : Application() {
         // unnoticed until the next cold start.
         UpdateWatcher.start(this)
 
+        // Count launches, so the support prompt can wait until the app has
+        // been used enough to have been worth something. Incremented here
+        // rather than in an Activity: this runs exactly once per process.
+        prefs.launchCount = prefs.launchCount + 1
+
         // Re-assert the notification schedule on every process start. The
         // work itself survives a reboot, but the channels do not exist until
         // something creates them, and a cancelled schedule has to stay

@@ -130,6 +130,9 @@ class MainActivity : AppCompatActivity() {
      */
     @Volatile private var mediaPlaying: Boolean = false
 
+    /** The support prompt is considered at most once per session. */
+    private var supportAsked = false
+
     /** True while a login / signup / checkpoint page is showing. */
     private var onAuthPage: Boolean = false
 
@@ -372,6 +375,22 @@ class MainActivity : AppCompatActivity() {
         if (MainViewModel.pendingUpdateCheck) {
             MainViewModel.pendingUpdateCheck = false
             UpdateWatcher.checkNow(force = true)
+        }
+
+        // Ask about supporting the project, once the app has actually been
+        // useful. Deliberately late and deliberately rare: it waits for the
+        // feed to settle so it never lands on top of a page still loading,
+        // and it stands aside entirely if an update prompt is due, since two
+        // dialogs at once is nobody's idea of a native feel.
+        if (!supportAsked) {
+            supportAsked = true
+            binding.root.postDelayed({
+                if (!isFinishing && !isDestroyed &&
+                    UpdateWatcher.pending == null && customView == null
+                ) {
+                    SupportPrompt.maybeShow(this)
+                }
+            }, 9000)
         }
 
         if (viewModel.settingsDirty) {

@@ -59,6 +59,11 @@ class Prefs(context: Context) {
         const val KEY_PUSH_NOTIFICATIONS = "push_notifications"
         const val KEY_LAYOUT_PROBE = "layout_probe"
 
+        // Support the developer
+        const val KEY_SUPPORT_HIDDEN = "support_hidden"
+        const val KEY_SUPPORT_LAST_SHOWN = "support_last_shown"
+        const val KEY_LAUNCH_COUNT = "launch_count"
+
         // Updates
         const val KEY_AUTO_UPDATE = "auto_update_check"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
@@ -206,6 +211,20 @@ class Prefs(context: Context) {
      * the source. Off by default and draws nothing until it is switched on.
      */
     val layoutProbe: Boolean get() = sp.getBoolean(KEY_LAYOUT_PROBE, false)
+
+    /** Set by the "Don't show again" box. Silences the automatic prompt only. */
+    var supportHidden: Boolean
+        get() = sp.getBoolean(KEY_SUPPORT_HIDDEN, false)
+        set(v) = sp.edit().putBoolean(KEY_SUPPORT_HIDDEN, v).apply()
+
+    var supportLastShown: Long
+        get() = sp.getLong(KEY_SUPPORT_LAST_SHOWN, 0L)
+        set(v) = sp.edit().putLong(KEY_SUPPORT_LAST_SHOWN, v).apply()
+
+    /** How many times the app has been opened, for "has this been useful yet". */
+    var launchCount: Int
+        get() = sp.getInt(KEY_LAUNCH_COUNT, 0)
+        set(v) = sp.edit().putInt(KEY_LAUNCH_COUNT, v).apply()
 
     val autoUpdateCheck: Boolean get() = sp.getBoolean(KEY_AUTO_UPDATE, true)
 
