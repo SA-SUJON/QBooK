@@ -339,6 +339,127 @@ object LayoutTraceScript {
             }, 1000);
           })();
 
+          /* ---------------------------------------------------------------
+             Round three.
+
+             The second trace ruled the scroll theory out: scrollTop stayed 0
+             throughout, no SET, no focus, no scrollIntoView, no scroll event
+             - and the screen was still wrong. So nothing is scrolling; some
+             element is simply the wrong height.
+
+             The decisive new fact is that Stories are affected identically.
+             Measured from the two screenshots:
+
+                 reel  bottom gap = 376 px
+                 story bottom gap = 375 px
+
+             A story is a full-screen canvas, not a 9:16 video, and it is a
+             different screen from Reels. Both stop at the same place, so the
+             constraint belongs to the page area they share, not to either
+             player. In css:
+
+                 viewport      808
+                 content ends  676   ( = 380 * 16/9, and 1918 px )
+                 unused        132
+
+             676 is the height a 16:9 device would have at this width. So
+             something is sizing the screen for a 16:9 phone on a 20:9 one.
+
+             This pass finds the element that carries that height, by walking
+             the chain from the player up to <html> and printing what each
+             ancestor measures and which CSS declaration produced it.
+             --------------------------------------------------------------- */
+
+          function cssOf(el) {
+            var cs = null;
+            try { cs = getComputedStyle(el); } catch (e) { return '?'; }
+            var inline = (el.getAttribute && el.getAttribute('style')) || '';
+            return 'h=' + cs.height + ' minH=' + cs.minHeight +
+                   ' maxH=' + cs.maxHeight +
+                   ' pos=' + cs.position +
+                   ' flex=' + cs.flex +
+                   ' aspect=' + (cs.aspectRatio || 'n/a') +
+                   ' overflow=' + cs.overflow +
+                   (inline ? ' inline="' + inline.slice(0, 90) + '"' : '');
+          }
+
+          /* Walk from the biggest video (or the screen root) up to <html>,
+             printing the measured box and the CSS behind it at every level.
+             Whichever ancestor is 676 css tall while its parent is 808 is
+             the one imposing the limit, and its declaration names the cause. */
+          function chain(tag) {
+            var start = null, area = 0;
+            var v = document.getElementsByTagName('video');
+            for (var i = 0; i < v.length; i++) {
+              var r = v[i].getBoundingClientRect();
+              if (r.width * r.height > area) { area = r.width * r.height; start = v[i]; }
+            }
+            if (!start) {
+              try {
+                start = document.querySelector('[data-mcomponent="MScreen"]') ||
+                        document.querySelector('[data-type="vscroller"]') ||
+                        document.body;
+              } catch (e) { start = document.body; }
+            }
+            if (!start) { say(tag + ' chain: nothing to walk'); return; }
+
+            var el = start, depth = 0;
+            while (el && depth < 14) {
+              var r = el.getBoundingClientRect();
+              say(tag + ' chain[' + depth + '] ' + el2s(el) +
+                  ' rect top=' + Math.round(r.top) +
+                  ' h=' + Math.round(r.height) +
+                  ' w=' + Math.round(r.width) +
+                  ' | ' + cssOf(el));
+              el = el.parentElement;
+              depth++;
+            }
+            /* documentElement and body separately: a height on either would
+               cap everything inside without appearing in the walk above. */
+            var de = document.documentElement, bd = document.body;
+            if (de) say(tag + ' HTML rect h=' +
+                        Math.round(de.getBoundingClientRect().height) +
+                        ' scrollH=' + de.scrollHeight + ' | ' + cssOf(de));
+            if (bd) say(tag + ' BODY rect h=' +
+                        Math.round(bd.getBoundingClientRect().height) +
+                        ' scrollH=' + bd.scrollHeight + ' | ' + cssOf(bd));
+          }
+
+          /* The lite renderer swaps screens without navigating, so the
+             injection-time events never fire again. Everything interesting
+             therefore has to be sampled on a timer as well - which is why the
+             last trace held only the census. */
+          (function() {
+            var lastSig = null;
+            setInterval(function() {
+              var v = document.getElementsByTagName('video');
+              var best = null, area = 0;
+              for (var i = 0; i < v.length; i++) {
+                var r = v[i].getBoundingClientRect();
+                if (r.width * r.height > area) { area = r.width * r.height; best = v[i]; }
+              }
+              var probe = best ||
+                (function() {
+                  try { return document.querySelector('[data-mcomponent="MScreen"]'); }
+                  catch (e) { return null; }
+                })();
+              if (!probe) return;
+              var r = probe.getBoundingClientRect();
+              var sig = Math.round(r.top) + 'x' + Math.round(r.height) +
+                        '@' + Math.round(window.innerHeight);
+              if (sig === lastSig) return;
+              lastSig = sig;
+              say('CHANGED ' + el2s(probe) + ' top=' + Math.round(r.top) +
+                  ' h=' + Math.round(r.height) + ' innerH=' +
+                  Math.round(window.innerHeight));
+              chain('changed');
+            }, 500);
+          })();
+
+          /* And once early, so a correct run has something to compare. */
+          setTimeout(function() { chain('t+1500'); }, 1500);
+          setTimeout(function() { chain('t+4000'); }, 4000);
+
           say('script injected readyState=' + document.readyState);
           full('inject');
 

@@ -1501,6 +1501,28 @@ console.log('\nBackground audio is for Reels, and only when audible');
     ok('a missing API is reported rather than fatal',
        /scrollIntoView absent/.test(js) && /IntersectionObserver absent/.test(js));
 
+    // Round three. scrollTop stayed 0 in the second trace with the screen
+    // still wrong, so nothing is scrolling - an element is the wrong height.
+    // Stories are affected identically (376 px gap on a reel, 375 on a
+    // story), and a story is not a 9:16 video, so the cap belongs to the
+    // shared page area. 676 css is 380 * 16/9: the height a 16:9 device
+    // would have at this width, on a 20:9 phone.
+    ok('the ancestor chain is walked from the player upwards',
+       /function chain\(tag\)/.test(js) && /chain\[/.test(js));
+    ok('each level reports its measured box', /rect top=/.test(js));
+    ok('and the CSS that produced it', /function cssOf/.test(js) &&
+       /minH=/.test(js) && /aspect=/.test(js));
+    ok('inline styles are shown, since that is where the cap lives',
+       /inline="/.test(js));
+    ok('html and body are reported separately, being able to cap everything',
+       /HTML rect h=/.test(js) && /BODY rect h=/.test(js));
+    // The lite renderer swaps screens without navigating, so injection-time
+    // events never fire again - which is why the last trace held only the
+    // census. Sampling has to be on a timer.
+    ok('the chain is re-sampled whenever the box changes',
+       /CHANGED /.test(js) && /chain\('changed'\)/.test(js) &&
+       /lastSig/.test(js));
+
     const tt2 = read(KT('utils/LayoutTrace.kt'));
     ok('the buffer holds enough for a whole episode',
        /MAX_LINES = 1200/.test(tt2));
