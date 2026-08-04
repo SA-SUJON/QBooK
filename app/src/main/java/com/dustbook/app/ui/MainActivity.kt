@@ -644,9 +644,9 @@ class MainActivity : AppCompatActivity() {
                 bottom = maxOf(bars.bottom, ime.bottom)
             )
             LayoutTrace.app(
-                "insets contentRoot top=${'$'}{bars.top} bottom=${'$'}{bars.bottom}" +
-                    " ime=${'$'}{ime.bottom} viewH=${'$'}{view.height}" +
-                    " fullscreen=${'$'}{customView != null}"
+                "insets contentRoot top=${bars.top} bottom=${bars.bottom}" +
+                    " ime=${ime.bottom} viewH=${view.height}" +
+                    " fullscreen=${customView != null}"
             )
             windowInsets
         }
@@ -1256,7 +1256,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                LayoutTrace.app("onPageStarted ${'$'}{url?.take(60)}")
+                LayoutTrace.app("onPageStarted ${url?.take(60)}")
                 // Counted, so finishing this load cannot lift a hold that a
                 // fullscreen transition is still relying on.
                 if (!pageLoadHoldsInsets) { pageLoadHoldsInsets = true; holdInsets() }
@@ -1292,7 +1292,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                LayoutTrace.app("onPageFinished webViewH=${'$'}{binding.webView.height}")
+                LayoutTrace.app("onPageFinished webViewH=${binding.webView.height}")
                 if (pageLoadHoldsInsets) { pageLoadHoldsInsets = false; releaseInsets() }
                 binding.swipeRefresh.isRefreshing = false
                 mainFrameRetries = 0

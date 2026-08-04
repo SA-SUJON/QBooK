@@ -31,6 +31,7 @@ object LayoutTraceScript {
           function viewport() {
             var v = window.visualViewport;
             return 'innerH=' + num(window.innerHeight) +
+                   ' innerW=' + num(window.innerWidth) +
                    ' docH=' + num(document.documentElement.clientHeight) +
                    ' visualH=' + (v ? num(v.height) : -1) +
                    ' visualTop=' + (v ? num(v.offsetTop) : -1) +
@@ -106,12 +107,29 @@ object LayoutTraceScript {
                    ' transform=' + (cs ? cs.transform : '?');
           }
 
+          /* The screen root. It carries Facebook's own sizing - the first
+             trace showed style="min-height:100vh; width:360px" - so its box
+             is what everything inside is measured against. */
+          function screenRoot() {
+            var el = null;
+            try { el = document.querySelector('[data-mcomponent="MScreen"]'); } catch (e) {}
+            if (!el) return 'screen=none';
+            var r = el.getBoundingClientRect();
+            var cs = null;
+            try { cs = getComputedStyle(el); } catch (e) {}
+            return 'screen top=' + num(r.top) + ' h=' + num(r.height) +
+                   ' w=' + num(r.width) +
+                   ' minH=' + (cs ? cs.minHeight : '?') +
+                   ' cssW=' + (cs ? cs.width : '?');
+          }
+
           function full(tag) {
             say(tag + ' | ' + viewport());
             say(tag + ' | ' + safeArea());
             say(tag + ' | ' + player());
             say(tag + ' | ' + meta());
             say(tag + ' | ' + scroller());
+            say(tag + ' | ' + screenRoot());
           }
 
           say('script injected readyState=' + document.readyState);
