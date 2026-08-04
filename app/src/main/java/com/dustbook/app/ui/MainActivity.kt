@@ -313,6 +313,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Same shortfall recoverWindowSizeIfStale measures, without acting on it.
+     *
+     * Session state is written from onPause, which is exactly the moment a
+     * transient window shrink is most likely to be mid-flight - Reels and
+     * Stories were coming back broken after nothing but a background/
+     * foreground cycle, on an otherwise perfectly normal window. Turning
+     * "restore last session" off made it stop, which only makes sense if the
+     * bundle being restored was bad: saveState() had captured the WebView
+     * while the window was briefly short, and every relaunch faithfully
+     * restored that same short-window layout rather than the real one.
+     *
+     * The window recovering afterwards on its own does not undo this - the
+     * damage is in the saved bundle, not the live window, and restoring it
+     * writes the bad state straight back over whatever had since recovered.
+     */
+    private fun isWindowStale(): Boolean {
+        val root = binding.root
+        val insets = ViewCompat.getRootWindowInsets(root) ?: return false
+        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return false
+
+        val windowH = root.height
+        if (windowH <= 0) return false
+
+        val screenH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager.maximumWindowMetrics.bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            resources.displayMetrics.heightPixels
+        }
+
+        val short = screenH - windowH
+        return short > 24 && short < screenH / 2
+    }
+
+    /**
      * Mirror the WebView's state to disk so it survives the process being
      * killed, not just the activity being recreated.
      */
@@ -328,6 +363,14 @@ class MainActivity : AppCompatActivity() {
             SessionState.clear(this)
             return
         }
+        // Never write a state captured while the window was briefly short
+        // either, for the same reason - it would faithfully restore a
+        // layout that was already wrong, on every launch, on an otherwise
+        // healthy window. Skipping the write here just means the next
+        // launch does a normal load instead of a broken restore; the
+        // existing on-disk copy (if any) is left alone rather than
+        // overwritten with a worse one.
+        if (isWindowStale()) return
         val b = Bundle()
         if (binding.webView.saveState(b) != null) {
             SessionState.save(this, b)
@@ -609,13 +652,23 @@ class MainActivity : AppCompatActivity() {
             )
 
             // The keyboard closing on its own way into Reels or Stories is
-            // another moment the window is left stale with nothing to say
+            // another moment the window is left short with nothing to say
             // so - the lite renderer swaps the comment box for those screens
             // in place, no navigation and no fullscreen transition, so
             // neither of recoverWindowSizeIfStale()'s two existing call
-            // sites ever runs. This listener already fires on every real IME
-            // transition, which is the one signal that reliably does.
-            if (imeWasVisible && !imeVisible) recoverWindowSizeIfStale()
+            // sites ever runs.
+            //
+            // This pass fires the moment the close *starts*, not once it has
+            // finished - the window has not actually resized back yet, so
+            // checking here immediately would measure the still-short window
+            // and find nothing wrong. The same gap exists on the fullscreen
+            // exit path, which is why that one already waits before its
+            // second check. Same wait here, for the same reason.
+            if (imeWasVisible && !imeVisible) {
+                binding.root.postDelayed({
+                    if (!isFinishing && !isDestroyed) recoverWindowSizeIfStale()
+                }, 650)
+            }
             imeWasVisible = imeVisible
 
             windowInsets
