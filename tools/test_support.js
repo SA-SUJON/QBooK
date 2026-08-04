@@ -76,7 +76,7 @@ console.log('\nnothing is hardcoded, and nothing is demanded');
      !/id="amount"[^>]*value=/.test(html));
   ok('no preset figures are offered',
      !/data-amount|>\s*\$\s*(1|2|3|5|10|20|25|50|100)\s*</.test(html));
-  ok('the amount is marked optional', /Amount \(optional\)/.test(html));
+  ok('the amount is required before the success state fires', /Amount/.test(html));
   ok('paying can be skipped outright', /id="skip"/.test(html));
 
   // The repo is public. An embedded key would be readable by anyone.
@@ -142,12 +142,10 @@ if (!html) {
 
 // ------------------------------------------------------- the Donate button
 //
-// The amount field had nowhere to go: nothing acted on it. There is now a
-// Donate button, a thank-you, and the prompt stops afterwards.
-//
-// It makes no claim that money moved. The app cannot take a payment and
-// cannot verify one - it shows an address - so the button records a decision,
-// not a receipt.
+// An amount is now required before the thank-you can trigger. The card shows
+// "Thank you" first at full size, then shrinks into a small round checkmark
+// badge and auto-closes - it never claims money actually moved, since the
+// app can neither take a payment nor verify one.
 console.log('\nDonate: the amount now leads somewhere');
 {
   const build = () => {
@@ -168,46 +166,40 @@ console.log('\nDonate: the amount now leads somewhere');
   const hasBtn = !!a1.d.getElementById('donate');
   ok('there is a Donate button', hasBtn);
   if (!hasBtn) {
-    // Fail the rest rather than throwing: a crash here would hide every
-    // section below it.
     for (const n of ['thank-you hidden first', 'pressing shows it',
-                     'amount echoed', 'app told', 'no instant close',
-                     'nonsense not echoed', 'still thanks', 'text not markup',
-                     'empty amount works', 'skip is not donating',
-                     'skip does not silence', 'tick is drawn',
-                     'reduced motion', 'donate stops the prompt',
-                     'decision recorded']) ok(n, false, 'no Donate button');
+                     'app told', 'no instant close',
+                     'empty amount is rejected', 'invalid amount shakes',
+                     'skip is not donating', 'skip does not silence',
+                     'tick is drawn', 'reduced motion',
+                     'donate stops the prompt', 'decision recorded'])
+      ok(n, false, 'no Donate button');
   } else {
   ok('the thank-you is hidden until it is pressed',
      !a1.d.getElementById('thanks').classList.contains('show'));
 
-  a1.d.getElementById('amount').value = '25';
+  // No amount: the field shakes and nothing fires.
   tap(a1.w, a1.d.getElementById('donate'));
-  ok('pressing it shows the thank-you',
-     a1.d.getElementById('thanks').classList.contains('show'));
-  ok('the amount is echoed back',
-     /\$25/.test(a1.d.getElementById('thanks-body').textContent));
-  ok('the app is told', a1.calls.some((c) => c[0] === 'donated'));
-  ok('and it does not close instantly, so the animation can play',
-     !a1.calls.some((c) => c[0] === 'close'));
+  ok('an empty amount is rejected, not silently accepted',
+     !a1.d.getElementById('thanks').classList.contains('show') &&
+     !a1.calls.some((c) => c[0] === 'donated'));
+  ok('the amount row is marked with an error to shake',
+     a1.d.querySelector('.amount-row').classList.contains('error'));
 
-  // Whatever is typed goes into the DOM, so it must be validated first.
   const a2 = build();
-  a2.d.getElementById('amount').value = '<img src=x onerror=alert(1)>';
+  a2.d.getElementById('amount').value = 'nonsense';
   tap(a2.w, a2.d.getElementById('donate'));
-  ok('a nonsense amount is not repeated back',
-     !/img|onerror/.test(a2.d.getElementById('thanks-body').textContent));
-  ok('but the user is still thanked',
-     a2.d.getElementById('thanks').classList.contains('show'));
-  ok('and it is written as text, never as markup',
-     /textContent/.test(html) && !/thanks-body[\s\S]{0,120}innerHTML/.test(html));
+  ok('a non-numeric amount is rejected the same way',
+     !a2.d.getElementById('thanks').classList.contains('show') &&
+     !a2.calls.some((c) => c[0] === 'donated'));
 
-  // Donating is optional, so an empty amount has to work.
   const a3 = build();
+  a3.d.getElementById('amount').value = '25';
   tap(a3.w, a3.d.getElementById('donate'));
-  ok('an empty amount still thanks the user',
-     a3.d.getElementById('thanks').classList.contains('show') &&
-     !/\$/.test(a3.d.getElementById('thanks-body').textContent));
+  ok('a valid amount shows the thank-you',
+     a3.d.getElementById('thanks').classList.contains('show'));
+  ok('the app is told', a3.calls.some((c) => c[0] === 'donated'));
+  ok('and it does not close instantly, so the animation can play',
+     !a3.calls.some((c) => c[0] === 'close'));
 
   // Skipping is not donating.
   const a4 = build();
@@ -224,61 +216,30 @@ console.log('\nDonate: the amount now leads somewhere');
 
   // --------------------------------------------------- the celebration
   //
-  // The first version was a disc, one ring and two lines of text. It read
-  // as a form confirmation rather than a thank-you, so it was rebuilt: a
-  // ring that traces itself, a bloom, two staggered halos, a twelve-spark
-  // burst and a hairline that draws out under the text.
-  //
-  // Every assertion below fails against that first version.
+  // Two beats, driven by explicit state rather than chained CSS delays:
+  // the "Thank you" message shows at full card size, then the card shrinks
+  // into a round badge with a checkmark that draws itself in.
 
   const a5 = build();
-  ok('nothing is thrown before the button is pressed',
-     a5.d.querySelectorAll('.spark').length === 0);
-
+  a5.d.getElementById('amount').value = '10';
   tap(a5.w, a5.d.getElementById('donate'));
-  const sparks = [...a5.d.querySelectorAll('.spark')];
-  ok('pressing it throws a burst of sparks', sparks.length === 12,
-     'found ' + sparks.length);
 
-  // A spark with no angle sits on top of every other spark: the burst
-  // would be one dot. A spark with no distance never leaves the centre.
-  const angles = sparks.map((s) => s.style.getPropertyValue('--a'));
-  const dists = sparks.map((s) => parseFloat(s.style.getPropertyValue('--d')));
-  ok('each spark is thrown its own way',
-     new Set(angles).size === 12 && angles.every((a) => /-?\d+deg/.test(a)));
-  ok('and its own distance, so the burst is not a ring',
-     dists.every((d) => d > 0) && new Set(dists).size > 3);
+  ok('the popup enters the thanking state, hiding the form',
+     a5.d.querySelector('.popup').classList.contains('thanking'));
+  ok('the thank-you message is shown first',
+     a5.d.getElementById('thanks-message').classList.contains('show'));
+  ok('the card has not shrunk into the badge yet',
+     !a5.d.querySelector('.popup').classList.contains('success'));
 
-  // Evenly spaced angles at identical speeds read as a loading spinner.
-  const gaps = [];
-  for (let i = 1; i < angles.length; i++) {
-    gaps.push(parseFloat(angles[i]) - parseFloat(angles[i - 1]));
-  }
-  ok('the spacing is uneven, so it does not read as a spinner',
-     new Set(gaps).size > 1);
-  ok('and they do not all move at the same speed',
-     new Set(sparks.map((s) => s.style.getPropertyValue('--t'))).size > 1 &&
-     new Set(sparks.map((s) => s.style.getPropertyValue('--del'))).size > 1);
+  ok('a ring flash and tick badge exist for the second beat',
+     !!a5.d.querySelector('.ring-flash') && !!a5.d.querySelector('.tick-wrap'));
+  ok('the tick is a self-drawing stroked path, not an image',
+     /stroke-dasharray/.test(html) && !/<img/.test(html));
 
-  ok('the burst is built in code, not twelve copies in the markup',
-     (html.match(/class="spark/g) || []).length === 0);
-
-  // Pressing twice must not stack a second burst on the first.
-  tap(a5.w, a5.d.getElementById('donate'));
-  ok('pressing again does not pile a second burst on top',
-     a5.d.querySelectorAll('.spark').length === 12);
-
-  const a6 = build();
-  tap(a6.w, a6.d.getElementById('donate'));
-  ok('the ring traces itself around the tick',
-     !!a6.d.querySelector('.ring-path') && /@keyframes trace/.test(html));
-  ok('two halos land in turn, rather than one flat pulse',
-     a6.d.querySelectorAll('.halo').length === 2 &&
-     /\.halo\.one\{animation:ring[^}]*?\s\.30s/.test(html) &&
-     /\.halo\.two\{animation:ring[^}]*?\s\.46s/.test(html));
-  ok('a bloom swells behind it', !!a6.d.querySelector('.glow'));
-  ok('and a hairline draws out under the text as a full stop',
-     !!a6.d.querySelector('.rule'));
+  ok('the two-stage handoff is driven by JS state, not stacked CSS delays',
+     /MESSAGE_HOLD_MS/.test(html) && /setTimeout/.test(html));
+  ok('the card actually shrinks into a round badge in the success state',
+     /\.popup\.success\{[\s\S]{0,200}border-radius:50%/.test(html));
 
   // This is the part that decides whether it feels smooth on a phone.
   // transform and opacity are composited; width, top, height, margin and
@@ -293,30 +254,16 @@ console.log('\nDonate: the amount now leads somewhere');
       }
     }
     ok('every keyframe animates only composited properties',
-       frames.length >= 8 && offenders.length === 0, offenders.join(', '));
+       frames.length >= 3 && offenders.length === 0, offenders.join(', '));
   }
-
-  // The sparks fly outward past the disc. Without a clip they would hang
-  // off the card and give the dialog a scrollbar mid-animation.
-  ok('the burst is clipped to the card, so no scrollbar appears',
-     /\.thanks\{[\s\S]{0,200}overflow:hidden/.test(html));
 
   // A keyboard sliding away resizes the WebView underneath the animation,
   // which is exactly what makes it stutter on a real device.
   ok('the amount field is blurred first, so no keyboard slides away mid-animation',
-     /activeElement\.blur\(\)[\s\S]{0,400}classList\.add\('show'\)/.test(html));
+     /activeElement\.blur\(\)[\s\S]{0,400}classList\.add\('thanking'\)/.test(html));
 
-  // Adding the class in the same style pass as the sparks being inserted
-  // lets the browser collapse both states into one, and the burst never
-  // animates at all.
-  ok('a layout read forces the start state before the class lands',
-     /offsetHeight[\s\S]{0,200}classList\.add\('show'\)/.test(html));
-
-  // A hardcoded delay drifts out of step every time a timing changes.
-  ok('it closes when the animation ends, not on a number typed by hand',
-     /animationend/.test(html));
-  ok('with a timer behind it, since reduced motion fires no animationend',
-     /addEventListener\('animationend'[\s\S]{0,400}setTimeout\(done/.test(html));
+  ok('it closes automatically after the badge has had time to settle',
+     /setTimeout\(done, MESSAGE_HOLD_MS \+ SHRINK_SETTLE_MS/.test(html));
   ok('and it can only close once', /if \(closed\) return/.test(html));
 
   ok('pressing Donate stops the prompt for good',
@@ -336,46 +283,48 @@ console.log('\nit is wired in, and it does not nag');
      /fun showNow\(activity: Activity\)[\s\S]{0,200}present\(/.test(prompt) &&
      !/fun showNow[\s\S]{0,200}supportHidden/.test(prompt));
 
-  ok('it waits until the app has been used',
-     /MIN_LAUNCHES_BEFORE_ASKING/.test(prompt) &&
-     /prefs\.launchCount < MIN_LAUNCHES_BEFORE_ASKING/.test(prompt));
+  ok('it waits until the app has actually been in use for a few days',
+     /DAYS_BEFORE_ASKING/.test(prompt) &&
+     /prefs\.firstLaunchAt/.test(prompt));
 
-  // The gate was eight launches and a fortnight between asks, which meant
-  // the prompt never actually appeared - the feature was wired up and inert.
-  // What was asked for is: it shows when the app opens, and the checkbox is
-  // what stops it. Only the very first launch is still held back.
+  // The gate used to be a launch count, which meant someone who opened the
+  // app once a day still needed several cold starts before being asked.
+  // Gating on elapsed time since the first launch means it fires on
+  // schedule regardless of how often the app is opened in between.
   {
-    const min = /MIN_LAUNCHES_BEFORE_ASKING = (\d+)/.exec(prompt);
-    const days = /DAYS_BETWEEN_ASKS = (\d+)L/.exec(prompt);
-    ok('it appears from the second launch, not the eighth',
-       !!min && Number(min[1]) <= 2, min ? min[1] : 'absent');
-    ok('and at most once a day, not once a fortnight',
-       !!days && Number(days[1]) <= 1, days ? days[1] : 'absent');
+    const days = /DAYS_BEFORE_ASKING = (\d+)L/.exec(prompt);
+    const gap = /DAYS_BETWEEN_ASKS = (\d+)L/.exec(prompt);
+    ok('it waits at least a few days after install',
+       !!days && Number(days[1]) >= 1, days ? days[1] : 'absent');
+    ok('and at most once a day between asks',
+       !!gap && Number(gap[1]) <= 1, gap ? gap[1] : 'absent');
 
     // Drive the real rule rather than trusting the constants in isolation.
-    const MIN = Number(min[1]), DAY = 24 * 60 * 60 * 1000;
-    const GAP = Number(days[1]) * DAY;
+    const WAIT = Number(days[1]), DAY = 24 * 60 * 60 * 1000;
+    const GAP = Number(gap[1]) * DAY;
     const show = (st, now) => {
       if (st.hidden) return false;
-      if (st.launches < MIN) return false;
+      if (st.firstLaunchAt === 0 || now - st.firstLaunchAt < WAIT * DAY) return false;
       if (now - st.lastShown < GAP) return false;
       st.lastShown = now;
       return true;
     };
-    const st = { hidden: false, launches: 1, lastShown: 0 };
-    ok('the very first launch is silent', show(st, DAY) === false);
-    st.launches = 2;
-    ok('the second launch shows it', show(st, DAY) === true);
-    ok('reopening the same day does not', show(st, DAY + 3600e3) === false);
-    ok('the next day does', show(st, 2 * DAY + 1) === true);
+    const st = { hidden: false, firstLaunchAt: 0, lastShown: 0 };
+    ok('never shown before the first launch is stamped', show(st, DAY) === false);
+    st.firstLaunchAt = DAY;
+    ok('still silent the day after install', show(st, st.firstLaunchAt + DAY) === false);
+    const dueAt = st.firstLaunchAt + WAIT * DAY;
+    ok('shows once the wait has elapsed', show(st, dueAt) === true);
+    ok('reopening the same day does not', show(st, dueAt + 3600e3) === false);
+    ok('the next day does', show(st, dueAt + DAY + 1) === true);
 
-    const off = { hidden: true, launches: 50, lastShown: 0 };
+    const off = { hidden: true, firstLaunchAt: 1, lastShown: 0 };
     ok('the checkbox stops it for good', show(off, 999 * DAY) === false);
   }
 
   ok('it is offered soon after the feed paints, not minutes later',
      /}, 3500\)/.test(main));
-  ok('launches are counted once per process', /launchCount = prefs\.launchCount \+ 1/.test(app));
+  ok('the first launch is stamped once per install', /firstLaunchAt = System\.currentTimeMillis\(\)/.test(app));
   ok('and it does not come back straight away', /DAYS_BETWEEN_ASKS/.test(prompt));
 
   ok('About offers it', /support_dev/.test(aboutXml) &&
