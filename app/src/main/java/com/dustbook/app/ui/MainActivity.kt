@@ -386,13 +386,17 @@ class MainActivity : AppCompatActivity() {
         // dialogs at once is nobody's idea of a native feel.
         if (!supportAsked) {
             supportAsked = true
+            // Long enough for the feed to have painted, short enough that it
+            // still reads as "on opening the app". Nine seconds was too late:
+            // by then the user is already scrolling and a dialog is an
+            // interruption rather than a greeting.
             binding.root.postDelayed({
                 if (!isFinishing && !isDestroyed &&
                     UpdateWatcher.pending == null && customView == null
                 ) {
                     SupportPrompt.maybeShow(this)
                 }
-            }, 9000)
+            }, 3500)
         }
 
         if (viewModel.settingsDirty) {

@@ -30,11 +30,27 @@ import com.dustbook.app.utils.Prefs
  */
 object SupportPrompt {
 
-    /** Shown once the app has been used enough to be worth supporting. */
-    private const val MIN_LAUNCHES_BEFORE_ASKING = 8
+    /**
+     * Shown from the second launch onwards.
+     *
+     * This was eight, with a fortnight between asks, and the effect was that
+     * the prompt never appeared at all - which is not what was asked for. The
+     * request is simple: it shows when the app opens, and "Don't show again"
+     * is what stops it. So the only thing still held back is the very first
+     * launch, because a donation box before the app has drawn a single feed
+     * is begging rather than asking.
+     */
+    private const val MIN_LAUNCHES_BEFORE_ASKING = 2
 
-    /** And never more often than this, in days. */
-    private const val DAYS_BETWEEN_ASKS = 14L
+    /**
+     * At most once a day.
+     *
+     * Not a fortnight. The checkbox is the real control here - anyone who
+     * does not want it says so once and is never asked again - but without
+     * some limit the prompt would appear on every single cold start, which
+     * would make the app feel like adware.
+     */
+    private const val DAYS_BETWEEN_ASKS = 1L
 
     private const val PAGE = "file:///android_asset/support.html"
 

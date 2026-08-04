@@ -153,6 +153,42 @@ console.log('\nit is wired in, and it does not nag');
   ok('it waits until the app has been used',
      /MIN_LAUNCHES_BEFORE_ASKING/.test(prompt) &&
      /prefs\.launchCount < MIN_LAUNCHES_BEFORE_ASKING/.test(prompt));
+
+  // The gate was eight launches and a fortnight between asks, which meant
+  // the prompt never actually appeared - the feature was wired up and inert.
+  // What was asked for is: it shows when the app opens, and the checkbox is
+  // what stops it. Only the very first launch is still held back.
+  {
+    const min = /MIN_LAUNCHES_BEFORE_ASKING = (\d+)/.exec(prompt);
+    const days = /DAYS_BETWEEN_ASKS = (\d+)L/.exec(prompt);
+    ok('it appears from the second launch, not the eighth',
+       !!min && Number(min[1]) <= 2, min ? min[1] : 'absent');
+    ok('and at most once a day, not once a fortnight',
+       !!days && Number(days[1]) <= 1, days ? days[1] : 'absent');
+
+    // Drive the real rule rather than trusting the constants in isolation.
+    const MIN = Number(min[1]), DAY = 24 * 60 * 60 * 1000;
+    const GAP = Number(days[1]) * DAY;
+    const show = (st, now) => {
+      if (st.hidden) return false;
+      if (st.launches < MIN) return false;
+      if (now - st.lastShown < GAP) return false;
+      st.lastShown = now;
+      return true;
+    };
+    const st = { hidden: false, launches: 1, lastShown: 0 };
+    ok('the very first launch is silent', show(st, DAY) === false);
+    st.launches = 2;
+    ok('the second launch shows it', show(st, DAY) === true);
+    ok('reopening the same day does not', show(st, DAY + 3600e3) === false);
+    ok('the next day does', show(st, 2 * DAY + 1) === true);
+
+    const off = { hidden: true, launches: 50, lastShown: 0 };
+    ok('the checkbox stops it for good', show(off, 999 * DAY) === false);
+  }
+
+  ok('it is offered soon after the feed paints, not minutes later',
+     /}, 3500\)/.test(main));
   ok('launches are counted once per process', /launchCount = prefs\.launchCount \+ 1/.test(app));
   ok('and it does not come back straight away', /DAYS_BETWEEN_ASKS/.test(prompt));
 
