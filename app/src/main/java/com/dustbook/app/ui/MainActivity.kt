@@ -1640,6 +1640,21 @@ class MainActivity : AppCompatActivity() {
                 requestedOrientation = originalOrientation
                 endFullscreenTransition()
 
+                // Twice, because the size the page should settle at is not
+                // known yet at the first one: the system bars are still
+                // animating in and the WebView has not been through the inset
+                // pass that endFullscreenTransition requests 500ms from now.
+                //
+                // The early one clears the immersive layout straight away so
+                // the feed is not visibly wrong while the bars slide back.
+                // The later one runs after that inset pass has resized the
+                // WebView, and is the one that leaves it correct. Cheap
+                // enough to do both: two layout reads, once per exit.
+                forcePageRelayout(binding.webView)
+                binding.root.postDelayed({
+                    if (!isFinishing && !isDestroyed) forcePageRelayout(binding.webView)
+                }, 650)
+
                 // V4 Step 3: Re-inject after exiting fullscreen (helps restore feed state)
                 binding.root.postDelayed({
                     if (!isFinishing && !isDestroyed) {
@@ -1669,6 +1684,56 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Make the page re-measure itself.
+     *
+     * The native side of the fullscreen bug is fixed: the padding lives on
+     * contentRoot, it is measured ignoring bar visibility, and the feed is
+     * hidden with INVISIBLE so it keeps its measured size. What none of that
+     * reaches is the layout *inside* the WebView. Facebook's lite renderer
+     * caps its screen at a height it worked out earlier - the traces caught
+     * it holding "min-height:100vh;width:360px" - and it only recomputes when
+     * something makes it. Leaving fullscreen is not, by itself, one of those
+     * things, so the page can come back still laid out for the immersive
+     * viewport: content shifted up, dead strip at the bottom.
+     *
+     * Reading a layout property is what forces it. That is a deliberate
+     * forced synchronous layout - normally a thing to avoid, here the entire
+     * point - and it is why a scroll always appeared to cure this, and why
+     * the bug hid for a day while the diagnostic tracer was installed: that
+     * tracer read getBoundingClientRect() on a 400ms timer and was
+     * accidentally doing this 2.5 times a second.
+     *
+     * Once, on exit. Not a poll: a timer that forces a layout several times
+     * a second to paper over a stale one would cost battery on every screen
+     * in the app to fix a bug on one.
+     */
+    private fun forcePageRelayout(view: WebView?) {
+        view ?: return
+        view.evaluateJavascript(
+            """
+            (function() {
+              try {
+                var de = document.documentElement;
+                var b = document.body;
+                // The read is the work. Assigning it to nothing would let a
+                // minifier or the JIT drop the whole statement, so the values
+                // are kept and handed back.
+                var h = de ? de.clientHeight : 0;
+                var bh = b ? b.getBoundingClientRect().height : 0;
+                // Tell the page as well. The lite renderer listens for resize
+                // to recompute its screen height, and coming out of immersive
+                // the viewport really has changed size - it just was not
+                // always told.
+                try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+                return h + 'x' + Math.round(bh);
+              } catch (e) { return 'err'; }
+            })();
+            """.trimIndent(),
+            null
+        )
     }
 
     private fun enterImmersive(on: Boolean) {

@@ -1436,6 +1436,81 @@ console.log('\nBackground audio is for Reels, and only when audible');
     }
   }
 
+  // ------------------- leaving fullscreen must re-measure the page itself
+  //
+  // The bug came back the moment the diagnostics were removed, and the
+  // history says why. Nothing in MainActivity's fullscreen or inset code
+  // changed between the last real fix and that removal - the whole diff was
+  // the tracer. So the tracer was holding it up, not the fix.
+  //
+  // It did that by accident: LayoutTraceScript read getBoundingClientRect()
+  // on a 400ms timer, plus three more polls a second. Each read is a forced
+  // synchronous layout, so the page was being re-measured 2.5 times a second
+  // whatever else happened. That is also why scrolling always seemed to cure
+  // it, and why "it happens at random" - it depended on whether anything
+  // else had forced a layout since the last fullscreen exit.
+  //
+  // The native side is already right: padding on contentRoot, measured
+  // ignoring bar visibility, feed hidden with INVISIBLE. None of that
+  // reaches the layout inside the WebView, which is where the stale height
+  // actually lives. So the page is now told once, on the way out.
+  {
+    const ma = read(KT('ui/MainActivity.kt'));
+
+    ok('there is a way to make the page re-measure itself',
+       /private fun forcePageRelayout\(view: WebView\?\)/.test(ma));
+
+    const body = (/private fun forcePageRelayout\(view: WebView\?\)[\s\S]{0,1400}?\n    }/
+      .exec(ma) || [''])[0];
+
+    // Reading a layout property is the whole mechanism. Without a read
+    // nothing is forced and the call is decoration.
+    ok('it reads a layout property, which is what forces the measurement',
+       /clientHeight/.test(body) && /getBoundingClientRect/.test(body));
+    ok('and the value is returned, so it cannot be optimised away',
+       /return h \+ 'x'/.test(body));
+    ok('it also tells the page the viewport changed',
+       /dispatchEvent\(new Event\('resize'\)\)/.test(body));
+    ok('a missing WebView is not a crash', /view \?: return/.test(body));
+    ok('and neither is a page that refuses', /catch \(e\) \{ return 'err'/.test(body));
+
+    // Leaving fullscreen is the moment the page is stale.
+    const hide = (/override fun onHideCustomView\(\)[\s\S]{0,2000}?\n            }/
+      .exec(ma) || [''])[0];
+    ok('it runs on leaving fullscreen', /forcePageRelayout/.test(hide));
+
+    // Once immediately and once after the inset pass. The first cannot be
+    // the final word: the bars are still animating and the WebView has not
+    // been resized yet.
+    ok('once straight away, and once after the bars have settled',
+       (hide.match(/forcePageRelayout/g) || []).length === 2 &&
+       /postDelayed\(\{[\s\S]{0,140}forcePageRelayout[\s\S]{0,60}\}, 650\)/.test(hide));
+    ok('the delayed one checks the activity is still alive',
+       /if \(!isFinishing && !isDestroyed\) forcePageRelayout/.test(hide));
+
+    // The settle callback fires at 500ms, so the second pass has to be
+    // after it or it measures the same stale size again.
+    {
+      const settle = /binding\.root\.postDelayed\(r, (\d+)\)/.exec(ma);
+      const second = /forcePageRelayout\(binding\.webView\)\s*\}, (\d+)\)/.exec(hide) ||
+                     /\}, (650)\)/.exec(hide);
+      ok('and it lands after the inset pass, not before',
+         !!settle && !!second && Number(second[1]) > Number(settle[1]),
+         settle && second ? second[1] + ' vs ' + settle[1] : 'not found');
+    }
+
+    // A timer forcing layout several times a second is what the tracer did.
+    // It worked, and it would cost battery on every screen in the app to fix
+    // a bug on one. This must not become that.
+    ok('it is not a poll',
+       !/setInterval[\s\S]{0,200}forcePageRelayout/.test(ma) &&
+       !new RegExp('forcePageRelayout[\\s\\S]{0,200}setInterval').test(ma));
+
+    // VideoHelper is high risk and has nothing to do with this.
+    ok('nothing here touches the video element',
+       !/\.muted/.test(body) && !/mediaPlaybackRequiresUserGesture/.test(body));
+  }
+
   // ------------------------------- the layout investigation, packed away
   //
   // The reel-shifting bug is fixed and confirmed on the device, so the
