@@ -628,6 +628,30 @@ class MainActivity : AppCompatActivity() {
             windowInsets
         }
         updateSystemBarIcons()
+
+        // Closing the keyboard on its own way into Reels or Stories leaves
+        // the window stale with nothing to say so.
+        //
+        // recoverWindowSizeIfStale() already exists for exactly this
+        // shape of bug - it was written for leaving fullscreen video - but
+        // it was only ever wired to that one exit and to onResume. The lite
+        // renderer swaps a comment box for Reels/Stories in place: no
+        // navigation, no fullscreen transition, nothing that already calls
+        // it. The window grows back once the IME closes, and this is the
+        // one signal that actually fires when that happens.
+        //
+        // Every layout pass reaches here, including the one requestApplyInsets
+        // itself causes, so this has to filter hard rather than call through
+        // on every pass - that would be the same loop the function's own
+        // comment already warns against.
+        var lastRootHeight = -1
+        binding.root.viewTreeObserver.addOnGlobalLayoutListener {
+            if (isFinishing || isDestroyed) return@addOnGlobalLayoutListener
+            val h = binding.root.height
+            if (h <= 0 || h == lastRootHeight) return@addOnGlobalLayoutListener
+            lastRootHeight = h
+            recoverWindowSizeIfStale()
+        }
     }
 
     private fun updateSystemBarIcons() {
