@@ -17,7 +17,13 @@ package com.dustbook.app.utils
  */
 object LayoutTrace {
 
-    private const val MAX_LINES = 400
+    /*
+     * Round two logs far more: every scrollTop write, every focus, every
+     * scrollIntoView and a per-second player census. 400 lines was a few
+     * seconds of that, and the interesting moment would have scrolled out of
+     * the buffer before it could be read.
+     */
+    private const val MAX_LINES = 1200
 
     /** Off unless the user turns the diagnostic on. Checked on every call. */
     @Volatile

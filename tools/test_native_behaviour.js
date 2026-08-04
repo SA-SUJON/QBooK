@@ -1478,6 +1478,32 @@ console.log('\nBackground audio is for Reels, and only when audible');
     }
 
     ok('and it reports when the player actually moves', /MOVED top/.test(js));
+
+    // Round two. The first trace showed player.top == 50 - scrollTop in
+    // every sample, with viewport, scale, player height, video size and
+    // object-fit all constant - so the layout is stable and something is
+    // scrolling the reel container. These find out what.
+    ok('scrollTop writes are trapped and attributed',
+       /Object\.defineProperty\(proto, 'scrollTop'/.test(js) &&
+       /SET scrollTop/.test(js));
+    ok('scrollIntoView is trapped, with its options',
+       /scrollIntoView = function\(\)/.test(js) && /opts=/.test(js));
+    ok('focus is trapped, recording preventScroll',
+       /focusProto\.focus = function/.test(js) && /preventScroll=/.test(js));
+    ok('IntersectionObserver is trapped', /IntersectionObserver = function/.test(js));
+    ok('scroll events report what is under the middle and what has focus',
+       /elementFromPoint/.test(js) && /activeElement/.test(js));
+    ok('players are identified across a recycle', /__dbId/.test(js));
+    ok('each of those names its caller', /function who\(/.test(js));
+
+    // Absent APIs must be reported, not throw: jsdom has neither
+    // scrollIntoView nor IntersectionObserver, and a device might differ too.
+    ok('a missing API is reported rather than fatal',
+       /scrollIntoView absent/.test(js) && /IntersectionObserver absent/.test(js));
+
+    const tt2 = read(KT('utils/LayoutTrace.kt'));
+    ok('the buffer holds enough for a whole episode',
+       /MAX_LINES = 1200/.test(tt2));
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

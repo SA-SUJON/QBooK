@@ -132,6 +132,213 @@ object LayoutTraceScript {
             say(tag + ' | ' + screenRoot());
           }
 
+          /* ---------------------------------------------------------------
+             Round two.
+
+             The first trace settled the geometry question: viewport,
+             visualViewport, scale, WebView size, player height, video
+             dimensions and object-fit were identical in every sample. The
+             only things that moved were the scroller's scrollTop and, in
+             lockstep with it, the player's top edge:
+
+                 player.top == 50 - scrollTop     (exact, five samples)
+
+             So nothing is being re-laid out. Something is scrolling the reel
+             container. This half finds out what.
+             --------------------------------------------------------------- */
+
+          function el2s(el) {
+            if (!el) return 'null';
+            if (el === document.body) return 'BODY';
+            if (el === document.documentElement) return 'HTML';
+            var s = el.tagName;
+            if (el.id) s += '#' + el.id;
+            var mc = el.getAttribute && el.getAttribute('data-mcomponent');
+            if (mc) s += '[' + mc + ']';
+            var ai = el.getAttribute && el.getAttribute('data-action-id');
+            if (ai) s += '{a=' + ai + '}';
+            return s;
+          }
+
+          /* Who called. The bundle is minified, so the names are short, but
+             they are stable and greppable against the shipped file. */
+          function who(skip) {
+            try {
+              var st = new Error().stack || '';
+              var lines = st.split('\n').slice(skip || 3, (skip || 3) + 3);
+              return lines.map(function(l) {
+                return l.trim().replace(/^at\s+/, '').slice(0, 70);
+              }).join(' <- ');
+            } catch (e) { return '?'; }
+          }
+
+          function vscroller() {
+            try { return document.querySelector('[data-type="vscroller"]'); }
+            catch (e) { return null; }
+          }
+
+          function playerTop() {
+            var v = document.getElementsByTagName('video');
+            var best = null, area = 0;
+            for (var i = 0; i < v.length; i++) {
+              var r = v[i].getBoundingClientRect();
+              if (r.width * r.height > area) { area = r.width * r.height; best = v[i]; }
+            }
+            return best ? Math.round(best.getBoundingClientRect().top) : null;
+          }
+
+          /* Trap writes to scrollTop on the element prototype. This is the
+             single most useful line in the whole investigation: it names the
+             code that moves the reel, at the moment it happens. */
+          try {
+            var proto = Element.prototype;
+            var desc = Object.getOwnPropertyDescriptor(proto, 'scrollTop') ||
+                       Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop');
+            if (desc && desc.set) {
+              Object.defineProperty(proto, 'scrollTop', {
+                configurable: true,
+                enumerable: desc.enumerable,
+                get: function() { return desc.get.call(this); },
+                set: function(v) {
+                  var before = desc.get.call(this);
+                  desc.set.call(this, v);
+                  if (Math.round(before) !== Math.round(v)) {
+                    say('SET scrollTop ' + el2s(this) + ' ' +
+                        Math.round(before) + '->' + Math.round(v) +
+                        ' playerTop=' + playerTop() + ' | ' + who(2));
+                  }
+                }
+              });
+              say('scrollTop setter trapped');
+            } else {
+              say('scrollTop setter NOT trappable');
+            }
+          } catch (e) { say('scrollTop trap failed: ' + e); }
+
+          /* scrollIntoView is the other way a container gets moved, and the
+             bundle contains a wrapper that calls it (Tyb -> a.scrollIntoView). */
+          try {
+            var sivProto = Element.prototype;
+            var origSiv = sivProto.scrollIntoView;
+            if (typeof origSiv !== 'function') {
+              say('scrollIntoView absent');
+            } else {
+            sivProto.scrollIntoView = function() {
+              var sc = vscroller();
+              var beforeTop = sc ? Math.round(sc.scrollTop) : -1;
+              var arg = '';
+              try { arg = JSON.stringify(arguments[0]); } catch (e) {}
+              var r = origSiv.apply(this, arguments);
+              var afterTop = sc ? Math.round(sc.scrollTop) : -1;
+              say('scrollIntoView ' + el2s(this) + ' opts=' + arg +
+                  ' scrollTop ' + beforeTop + '->' + afterTop +
+                  ' playerTop=' + playerTop() + ' | ' + who(2));
+              return r;
+            };
+            say('scrollIntoView trapped');
+            }
+          } catch (e) { say('scrollIntoView trap failed: ' + e); }
+
+          /* focus() scrolls the nearest scrollable ancestor unless
+             preventScroll is passed. The bundle passes it in three places and
+             does NOT pass it on the video element, which is the leading
+             suspect for the 16px moves. */
+          try {
+            var focusProto = HTMLElement.prototype;
+            var origFocus = focusProto.focus;
+            focusProto.focus = function() {
+              var sc = vscroller();
+              var beforeTop = sc ? Math.round(sc.scrollTop) : -1;
+              var opts = arguments[0];
+              var prevented = !!(opts && opts.preventScroll);
+              var r = origFocus.apply(this, arguments);
+              var afterTop = sc ? Math.round(sc.scrollTop) : -1;
+              if (beforeTop !== afterTop || this.tagName === 'VIDEO') {
+                say('focus ' + el2s(this) + ' preventScroll=' + prevented +
+                    ' scrollTop ' + beforeTop + '->' + afterTop +
+                    ' playerTop=' + playerTop() + ' | ' + who(2));
+              }
+              return r;
+            };
+            say('focus trapped');
+          } catch (e) { say('focus trap failed: ' + e); }
+
+          /* Every scroll event on the reel container, with what is under the
+             middle of the screen and what currently has focus. */
+          (function() {
+            var last = null;
+            document.addEventListener('scroll', function(ev) {
+              var t = ev.target;
+              if (!t || !t.getAttribute) return;
+              if (t.getAttribute('data-type') !== 'vscroller') return;
+              var now = Math.round(t.scrollTop);
+              if (now === last) return;
+              last = now;
+              var mid = null;
+              try {
+                mid = document.elementFromPoint(
+                  Math.round(window.innerWidth / 2),
+                  Math.round(window.innerHeight / 2));
+              } catch (e) {}
+              say('scroll event scrollTop=' + now +
+                  ' playerTop=' + playerTop() +
+                  ' active=' + el2s(document.activeElement) +
+                  ' mid=' + el2s(mid));
+            }, {passive: true, capture: true});
+          })();
+
+          /* IntersectionObserver is how a pager decides which reel is current,
+             and a snap driven by it would move the container. */
+          try {
+            var OrigIO = window.IntersectionObserver;
+            if (OrigIO) {
+              var ioCount = 0;
+              window.IntersectionObserver = function(cb, opts) {
+                var id = ++ioCount;
+                say('IntersectionObserver #' + id + ' created thresholds=' +
+                    JSON.stringify(opts && opts.threshold) + ' | ' + who(2));
+                return new OrigIO(function(entries, obs) {
+                  for (var i = 0; i < entries.length; i++) {
+                    var e = entries[i];
+                    if (e.target && e.target.tagName === 'VIDEO') {
+                      say('IO #' + id + ' ' + el2s(e.target) +
+                          ' intersecting=' + e.isIntersecting +
+                          ' ratio=' + (Math.round(e.intersectionRatio * 100) / 100));
+                    }
+                  }
+                  return cb.apply(this, arguments);
+                }, opts);
+              };
+              window.IntersectionObserver.prototype = OrigIO.prototype;
+              say('IntersectionObserver trapped');
+            } else {
+              say('IntersectionObserver absent');
+            }
+          } catch (e) { say('IO trap failed: ' + e); }
+
+          /* Player identity across a recycle. mutation#2 reported three new
+             players while only one remained, which is the signature of a
+             recycled pager - and whatever re-attaches a player can re-run
+             focus() or scrollIntoView(). Tagging each element shows whether
+             the visible player is a new node or the same one moved. */
+          (function() {
+            var nextId = 1;
+            setInterval(function() {
+              var v = document.getElementsByTagName('video');
+              var ids = [];
+              for (var i = 0; i < v.length; i++) {
+                if (!v[i].__dbId) v[i].__dbId = nextId++;
+                var r = v[i].getBoundingClientRect();
+                ids.push('#' + v[i].__dbId + '@' + Math.round(r.top) +
+                         (v[i].paused ? 'p' : 'P'));
+              }
+              var sc = vscroller();
+              say('players ' + ids.join(' ') +
+                  ' scrollTop=' + (sc ? Math.round(sc.scrollTop) : -1) +
+                  ' active=' + el2s(document.activeElement));
+            }, 1000);
+          })();
+
           say('script injected readyState=' + document.readyState);
           full('inject');
 
