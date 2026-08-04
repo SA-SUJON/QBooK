@@ -17,6 +17,8 @@ const { JSDOM } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
 const KT = (f) => path.join(ROOT, 'app/src/main/java/com/dustbook/app', f);
+/** Defensive: a deleted file must fail a check, not crash the run. */
+const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -1432,6 +1434,50 @@ console.log('\nBackground audio is for Reels, and only when audible');
       await wait(1400);
       ok('and a stuck press clears itself', !pressed(d, 'btn'));
     }
+  }
+
+  // ------------------------------------------- the layout investigation
+  //
+  // The reel is sometimes centred and sometimes high on one unchanged device,
+  // which a fixed geometry cannot explain: same screen, same build, same
+  // page, different result. That makes it a difference in sequence, so the
+  // sequence is recorded rather than reasoned about.
+  //
+  // The tracer must never become the cause of what it measures.
+  {
+    const ts = read(KT('utils/LayoutTraceScript.kt'));
+    const tt = read(KT('utils/LayoutTrace.kt'));
+    const ma = read(KT('ui/MainActivity.kt'));
+    ok('the tracer exists', ts.length > 0 && tt.length > 0);
+    ok('it is off unless the diagnostic is on',
+       /var enabled: Boolean = false/.test(tt) &&
+       /if \(!enabled\) return/.test(tt));
+    ok('and it is only injected then',
+       /if \(prefs\.layoutProbe\)[\s\S]{0,160}LayoutTraceScript\.script\(\)/.test(ma));
+    ok('the buffer is bounded', /MAX_LINES/.test(tt));
+
+    const jsStart = ts.indexOf('"""');
+    const js = ts.slice(jsStart + 3, ts.indexOf('""".trimIndent()', jsStart));
+    ok('it never moves anything: no class changes',
+       !/classList\.(add|remove)/.test(js));
+    ok('no scroll writes', !/\.scrollTop\s*=/.test(js));
+    ok('no markup writes', !/innerHTML\s*=/.test(js));
+    ok('the one element it makes is hidden and removed',
+       (js.match(/createElement/g) || []).length === 1 &&
+       /visibility:hidden/.test(js) && /p\.remove\(\)/.test(js));
+
+    // Every stage that was asked for has to actually be reported.
+    for (const stage of ['DOMContentLoaded', 'load', 'frame1', 'resize',
+                         'visualViewport', 'MutationObserver', 'ResizeObserver',
+                         'safe-area', 'player', 'meta', 'scroller']) {
+      const probe = stage === 'safe-area' ? 'safe-area-inset-top'
+                  : stage === 'MutationObserver' ? 'MutationObserver'
+                  : stage === 'ResizeObserver' ? 'ResizeObserver'
+                  : stage;
+      ok('it records ' + stage, js.includes(probe));
+    }
+
+    ok('and it reports when the player actually moves', /MOVED top/.test(js));
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

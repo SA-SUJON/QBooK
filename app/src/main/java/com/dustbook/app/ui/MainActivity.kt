@@ -60,6 +60,8 @@ import com.dustbook.app.utils.CosmeticFilters
 import com.dustbook.app.utils.MFacebookAds
 import com.dustbook.app.utils.BackgroundSyncManager
 import com.dustbook.app.utils.LayoutProbe
+import com.dustbook.app.utils.LayoutTrace
+import com.dustbook.app.utils.LayoutTraceScript
 import com.dustbook.app.utils.NetworkPolicy
 import com.dustbook.app.utils.OfflineCache
 import com.dustbook.app.utils.OfflineCapture
@@ -515,15 +517,23 @@ class MainActivity : AppCompatActivity() {
             customViewShowing = customView != null
         ) { text ->
             runOnUiThread {
+                // The snapshot says what is true now; the trace says how it
+                // got there. Comparing two runs needs the second.
+                val full = text + "\n---- trace (" + LayoutTrace.count() + ") ----\n" +
+                    LayoutTrace.dump()
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Layout")
-                    .setMessage(text)
+                    .setMessage(full)
                     .setPositiveButton("Copy") { _, _ ->
                         val cm = getSystemService(android.content.ClipboardManager::class.java)
                         cm?.setPrimaryClip(
-                            android.content.ClipData.newPlainText("layout", text)
+                            android.content.ClipData.newPlainText("layout", full)
                         )
                         toast("Copied")
+                    }
+                    .setNeutralButton("Reset trace") { _, _ ->
+                        LayoutTrace.reset()
+                        toast("Trace cleared - now reproduce it")
                     }
                     .setNegativeButton("Close", null)
                     .show()
@@ -632,6 +642,11 @@ class MainActivity : AppCompatActivity() {
             view.updatePadding(
                 top = bars.top,
                 bottom = maxOf(bars.bottom, ime.bottom)
+            )
+            LayoutTrace.app(
+                "insets contentRoot top=${'$'}{bars.top} bottom=${'$'}{bars.bottom}" +
+                    " ime=${'$'}{ime.bottom} viewH=${'$'}{view.height}" +
+                    " fullscreen=${'$'}{customView != null}"
             )
             windowInsets
         }
@@ -1241,6 +1256,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
+                LayoutTrace.app("onPageStarted ${'$'}{url?.take(60)}")
                 // Counted, so finishing this load cannot lift a hold that a
                 // fullscreen transition is still relying on.
                 if (!pageLoadHoldsInsets) { pageLoadHoldsInsets = true; holdInsets() }
@@ -1276,6 +1292,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                LayoutTrace.app("onPageFinished webViewH=${'$'}{binding.webView.height}")
                 if (pageLoadHoldsInsets) { pageLoadHoldsInsets = false; releaseInsets() }
                 binding.swipeRefresh.isRefreshing = false
                 mainFrameRetries = 0
@@ -1483,6 +1500,12 @@ class MainActivity : AppCompatActivity() {
         view.evaluateJavascript(
             AdBlocker.getNativeFeelScript(), null
         )
+        // Investigation only, and only while the setting is on. Read-only:
+        // it observes and reports, and moves nothing itself.
+        if (prefs.layoutProbe) {
+            LayoutTrace.enabled = true
+            view.evaluateJavascript(LayoutTraceScript.script(), null)
+        }
         view.evaluateJavascript(
             AdBlocker.getCosmeticScript(
                 blockAds = prefs.adBlock && prefs.cosmeticFilter,
@@ -1634,6 +1657,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     visibility = View.VISIBLE
                 }
+                LayoutTrace.app("onShowCustomView")
                 beginFullscreenTransition()
                 // INVISIBLE, not GONE.
                 //
@@ -1660,6 +1684,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onHideCustomView() {
                 if (customView == null) return
+                LayoutTrace.app("onHideCustomView")
                 beginFullscreenTransition()
                 binding.customViewContainer.apply {
                     removeAllViews()
@@ -1984,6 +2009,12 @@ class MainActivity : AppCompatActivity() {
          * renderer swaps the Reels screen in place without navigating, so the
          * address stays on the home feed for the whole time a reel is playing.
          */
+        /** Diagnostic only: the page reporting a layout event. */
+        @JavascriptInterface
+        fun log(line: String) {
+            LayoutTrace.page(line)
+        }
+
         @JavascriptInterface
         fun onMediaState(playing: Boolean) {
             mediaPlaying = playing
