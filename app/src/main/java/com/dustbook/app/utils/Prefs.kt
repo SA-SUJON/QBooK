@@ -63,6 +63,7 @@ class Prefs(context: Context) {
         const val KEY_SUPPORT_HIDDEN = "support_hidden"
         const val KEY_SUPPORT_LAST_SHOWN = "support_last_shown"
         const val KEY_LAUNCH_COUNT = "launch_count"
+        const val KEY_SUPPORT_DONATED_AT = "support_donated_at"
 
         // Updates
         const val KEY_AUTO_UPDATE = "auto_update_check"
@@ -220,6 +221,16 @@ class Prefs(context: Context) {
     var supportLastShown: Long
         get() = sp.getLong(KEY_SUPPORT_LAST_SHOWN, 0L)
         set(v) = sp.edit().putLong(KEY_SUPPORT_LAST_SHOWN, v).apply()
+
+    /**
+     * When the user pressed Donate, or 0.
+     *
+     * Not a receipt - the app cannot verify a payment. It records that they
+     * decided, which is enough to stop asking them.
+     */
+    var supportDonatedAt: Long
+        get() = sp.getLong(KEY_SUPPORT_DONATED_AT, 0L)
+        set(v) = sp.edit().putLong(KEY_SUPPORT_DONATED_AT, v).apply()
 
     /** How many times the app has been opened, for "has this been useful yet". */
     var launchCount: Int

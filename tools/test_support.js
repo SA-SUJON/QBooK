@@ -140,6 +140,95 @@ if (!html) {
   ok('ticking the box reports it', calls.some((c) => c[0] === 'close' && c[1] === true));
 }
 
+// ------------------------------------------------------- the Donate button
+//
+// The amount field had nowhere to go: nothing acted on it. There is now a
+// Donate button, a thank-you, and the prompt stops afterwards.
+//
+// It makes no claim that money moved. The app cannot take a payment and
+// cannot verify one - it shows an address - so the button records a decision,
+// not a receipt.
+console.log('\nDonate: the amount now leads somewhere');
+{
+  const build = () => {
+    const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true });
+    const w = dom.window, d = w.document;
+    const calls = [];
+    w.DBSupport = {
+      copy(t) { calls.push(['copy', t]); },
+      close(x) { calls.push(['close', x]); },
+      donated() { calls.push(['donated']); },
+    };
+    d.dispatchEvent(new w.Event('DOMContentLoaded'));
+    return { w, d, calls };
+  };
+  const tap = (w, el) => el.dispatchEvent(new w.Event('click', { bubbles: true }));
+
+  const a1 = build();
+  const hasBtn = !!a1.d.getElementById('donate');
+  ok('there is a Donate button', hasBtn);
+  if (!hasBtn) {
+    // Fail the rest rather than throwing: a crash here would hide every
+    // section below it.
+    for (const n of ['thank-you hidden first', 'pressing shows it',
+                     'amount echoed', 'app told', 'no instant close',
+                     'nonsense not echoed', 'still thanks', 'text not markup',
+                     'empty amount works', 'skip is not donating',
+                     'skip does not silence', 'tick is drawn',
+                     'reduced motion', 'donate stops the prompt',
+                     'decision recorded']) ok(n, false, 'no Donate button');
+  } else {
+  ok('the thank-you is hidden until it is pressed',
+     !a1.d.getElementById('thanks').classList.contains('show'));
+
+  a1.d.getElementById('amount').value = '25';
+  tap(a1.w, a1.d.getElementById('donate'));
+  ok('pressing it shows the thank-you',
+     a1.d.getElementById('thanks').classList.contains('show'));
+  ok('the amount is echoed back',
+     /\$25/.test(a1.d.getElementById('thanks-body').textContent));
+  ok('the app is told', a1.calls.some((c) => c[0] === 'donated'));
+  ok('and it does not close instantly, so the animation can play',
+     !a1.calls.some((c) => c[0] === 'close'));
+
+  // Whatever is typed goes into the DOM, so it must be validated first.
+  const a2 = build();
+  a2.d.getElementById('amount').value = '<img src=x onerror=alert(1)>';
+  tap(a2.w, a2.d.getElementById('donate'));
+  ok('a nonsense amount is not repeated back',
+     !/img|onerror/.test(a2.d.getElementById('thanks-body').textContent));
+  ok('but the user is still thanked',
+     a2.d.getElementById('thanks').classList.contains('show'));
+  ok('and it is written as text, never as markup',
+     /textContent/.test(html) && !/thanks-body[\s\S]{0,120}innerHTML/.test(html));
+
+  // Donating is optional, so an empty amount has to work.
+  const a3 = build();
+  tap(a3.w, a3.d.getElementById('donate'));
+  ok('an empty amount still thanks the user',
+     a3.d.getElementById('thanks').classList.contains('show') &&
+     !/\$/.test(a3.d.getElementById('thanks-body').textContent));
+
+  // Skipping is not donating.
+  const a4 = build();
+  tap(a4.w, a4.d.getElementById('skip'));
+  ok('skipping does not count as donating',
+     !a4.calls.some((c) => c[0] === 'donated'));
+  ok('and does not silence the prompt',
+     a4.calls.some((c) => c[0] === 'close' && c[1] === false));
+
+  ok('the tick draws itself rather than loading an image',
+     /stroke-dashoffset/.test(html) && !/<img/.test(html));
+  ok('the animation is dropped for users who ask for less motion',
+     /prefers-reduced-motion[\s\S]{0,400}animation:none !important/.test(html));
+
+  ok('pressing Donate stops the prompt for good',
+     /fun donated\(\)[\s\S]{0,220}supportHidden = true/.test(prompt));
+  ok('and the decision is recorded', /supportDonatedAt/.test(prompt) &&
+     /supportDonatedAt/.test(prefs));
+  }
+}
+
 console.log('\nit is wired in, and it does not nag');
 {
   ok('the dialog is implemented', prompt.length > 0);

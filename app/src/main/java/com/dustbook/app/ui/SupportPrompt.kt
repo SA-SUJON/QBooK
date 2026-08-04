@@ -115,6 +115,23 @@ object SupportPrompt {
                 }
             }
 
+            /**
+             * The user pressed Donate.
+             *
+             * This is not a receipt. The app cannot take a payment and cannot
+             * verify one - it shows an address and nothing more - so nothing
+             * here claims money has moved. It records that the person has
+             * decided, which is the only fact available, and that is enough
+             * to stop asking them.
+             */
+            @JavascriptInterface
+            fun donated() {
+                activity.runOnUiThread {
+                    prefs.supportHidden = true
+                    prefs.supportDonatedAt = System.currentTimeMillis()
+                }
+            }
+
             @JavascriptInterface
             fun close(dontShowAgain: Boolean) {
                 activity.runOnUiThread {

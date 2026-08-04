@@ -196,7 +196,93 @@
     padding:8px 10px;cursor:pointer;
   }
 
-  @media (prefers-reduced-motion:reduce){.popup{animation:none;}}
+  /* The action. Clay, full width, sitting under the payment panes so the
+     order reads: how much, where to send it, done. */
+  .donate-btn{
+    width:100%;
+    margin-top:16px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    padding:14px;
+    border:none;border-radius:10px;
+    background:var(--clay);
+    color:#fff;font-size:15px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    cursor:pointer;
+    transition:transform .12s ease, background .15s ease;
+  }
+  .donate-btn:active{transform:scale(.985);background:#b05a30;}
+
+  /* Thank-you. Covers the card rather than replacing its markup, so
+     nothing reflows underneath and the card keeps its size. */
+  .thanks{
+    position:absolute;inset:0;
+    background:var(--card);
+    border-radius:18px;
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    text-align:center;padding:30px;
+    opacity:0;pointer-events:none;
+    transition:opacity .25s ease;
+  }
+  .thanks.show{opacity:1;pointer-events:auto;}
+
+  .tick-wrap{
+    width:86px;height:86px;border-radius:50%;
+    background:linear-gradient(155deg,var(--moss) 0%,var(--moss-deep) 100%);
+    display:flex;align-items:center;justify-content:center;
+    margin-bottom:20px;
+    box-shadow:0 10px 26px -10px rgba(44,66,48,.65);
+    transform:scale(.4);opacity:0;
+  }
+  .thanks.show .tick-wrap{animation:pop .5s cubic-bezier(.18,.9,.32,1.4) forwards;}
+  @keyframes pop{to{transform:scale(1);opacity:1;}}
+
+  /* The tick draws itself: a stroked path revealed by its own dash offset.
+     No image, nothing to load, and it scales cleanly. */
+  .tick-wrap svg{width:44px;height:44px;}
+  .tick-path{
+    stroke:#fbfaf4;stroke-width:3.2;fill:none;
+    stroke-linecap:round;stroke-linejoin:round;
+    stroke-dasharray:34;stroke-dashoffset:34;
+  }
+  .thanks.show .tick-path{animation:draw .42s .28s ease-out forwards;}
+  @keyframes draw{to{stroke-dashoffset:0;}}
+
+  /* A ring that expands and fades, so the moment has some weight. */
+  .ripple{
+    position:absolute;width:86px;height:86px;border-radius:50%;
+    border:2px solid var(--moss);
+    opacity:0;transform:scale(1);
+    margin-bottom:20px;
+  }
+  .thanks.show .ripple{animation:ring .8s .3s ease-out forwards;}
+  @keyframes ring{
+    from{opacity:.55;transform:scale(1);}
+    to{opacity:0;transform:scale(2.1);}
+  }
+
+  .thanks h2{
+    font-size:23px;margin:0 0 8px;font-weight:600;letter-spacing:-.01em;
+    opacity:0;
+  }
+  .thanks p{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:14px;line-height:1.55;color:var(--muted);margin:0;
+    opacity:0;
+  }
+  .thanks.show h2{animation:riseIn .4s .4s ease-out forwards;}
+  .thanks.show p{animation:riseIn .4s .52s ease-out forwards;}
+  @keyframes riseIn{
+    from{opacity:0;transform:translateY(8px);}
+    to{opacity:1;transform:translateY(0);}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .popup{animation:none;}
+    .thanks .tick-wrap,.thanks .tick-path,.thanks h2,.thanks p,.ripple{
+      animation:none !important;opacity:1;transform:none;stroke-dashoffset:0;
+    }
+  }
 </style>
 </head>
 <body>
@@ -271,6 +357,8 @@
 
     </div>
 
+    <button class="donate-btn" id="donate" type="button">Donate</button>
+
     <div class="dismiss-line">
       <label class="dont-show">
         <input type="checkbox" id="dont-show">
@@ -279,6 +367,14 @@
     </div>
     <div class="skip-line">
       <button class="skip-btn" id="skip" type="button">Maybe later</button>
+    </div>
+    <div class="thanks" id="thanks" role="status" aria-live="polite">
+      <div class="ripple" aria-hidden="true"></div>
+      <div class="tick-wrap" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path class="tick-path" d="M4 12.5 L9.5 18 L20 6.5"/></svg>
+      </div>
+      <h2 id="thanks-title">Thank you</h2>
+      <p id="thanks-body">That genuinely helps keep this going.</p>
     </div>
   </div>
 
@@ -323,6 +419,31 @@
   }
   document.getElementById('close').addEventListener('click', close);
   document.getElementById('skip').addEventListener('click', close);
+
+  /* Donate.
+     The app cannot take a payment or verify one - it only shows an address -
+     so this makes no claim about money having moved. It thanks the user,
+     and it stops asking them. Someone who has pressed this has decided;
+     asking again tomorrow would be rude. */
+  document.getElementById('donate').addEventListener('click', function() {
+    var amount = (document.getElementById('amount').value || '').trim();
+    var body = document.getElementById('thanks-body');
+
+    /* Only repeat the amount if it looks like one. Echoing whatever was
+       typed back at the user would be worse than saying nothing. */
+    if (/^[0-9]+([.,][0-9]{1,2})?$/.test(amount) && parseFloat(amount) > 0) {
+      body.textContent = 'Your $' + amount +
+        ' genuinely helps keep this going.';
+    }
+
+    document.getElementById('thanks').classList.add('show');
+
+    var b = bridge();
+    if (b && b.donated) b.donated();
+
+    /* Long enough to read and to let the tick finish drawing. */
+    setTimeout(function() { if (b && b.close) b.close(true); }, 2300);
+  });
 </script>
 
 </body>
