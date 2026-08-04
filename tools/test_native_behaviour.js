@@ -1109,8 +1109,21 @@ console.log('\nLoading bar off also hides the one Facebook draws');
      /fun getStyleScript\([\s\S]{0,200}hideSiteLoadingBar: Boolean/.test(ab));
   ok('it targets the class Facebook actually uses',
      /"\.loading-bar-animation"/.test(ab) && /"\.loading-bar-background"/.test(ab));
-  ok('the dimming overlay is left alone, it is used elsewhere too',
-     !/"\.loading-overlay"/.test(ab));
+  // This assertion used to say the opposite, and it was wrong.
+  //
+  // Hiding only the bar left Facebook's grey wash on screen with nothing
+  // moving on it - rgba(0,0,0,0.6) over everything in dark mode - so tapping
+  // a link looked like the app had frozen. One function builds all three and
+  // the overlay is the bar's own parent:
+  //
+  //   a.g.className='loading-overlay';
+  //   a.e.className='loading-bar-animation';
+  //   a.g.appendChild(a.e);
+  //
+  // 'loading-overlay' is assigned in exactly one place in the whole lite
+  // bundle, so removing it cannot affect anything else.
+  ok('the dimming layer goes with the bar it carries',
+     /"\.loading-overlay"/.test(ab) && /"\.loading-overlay-background"/.test(ab));
 
   // The flag has to be the inverse of the user's setting, and it has to be
   // passed at both injection points or the setting only takes effect on the
@@ -1132,7 +1145,15 @@ console.log('\nLoading bar off also hides the one Facebook draws');
   const emit = (promos, ads, hideBar) => {
     const src = ab.slice(ab.indexOf('fun getStyleScript'));
     const rules = [];
-    if (hideBar) rules.push('.loading-bar-animation', '.loading-bar-background');
+    if (hideBar) {
+      // Read the real rule list out of getStyleScript rather than restating
+      // it. A hand-written copy passes whatever the app actually does, which
+      // is how the missing overlay rule went unnoticed in the first place.
+      const start = src.indexOf('if (hideSiteLoadingBar) {');
+      const block = src.slice(start, src.indexOf('if (blockPromos)', start));
+      const listed = block.match(/"(\.[a-z-]+)"/g) || [];
+      for (const r of listed) rules.push(r.replace(/"/g, ''));
+    }
     if (promos) rules.push('#header-notices');
     if (ads) rules.push('ins.adsbygoogle');
     if (!rules.length) return '';
@@ -1160,6 +1181,32 @@ console.log('\nLoading bar off also hides the one Facebook draws');
   ok('the animated bar is hidden', hidden('.loading-bar-animation'));
   ok('the bar background is hidden', hidden('.loading-bar-background'));
   ok('the feed is untouched', !hidden('#feed'));
+
+  {
+    // Facebook's real loading markup, and the two things that must survive.
+    // Both are separate classes: .dialog-screen for real dialogs and
+    // .overlay for content overlays. Neither is a loading indicator.
+    const dm = new JSDOM(
+      '<style>' + emit(true, true, true) + '</style>' +
+      '<div class="loading-overlay revamped revamped-progress-bar-color" id="dim">' +
+      '  <div class="loading-bar-animation revamped-animation" id="bar"></div>' +
+      '  <div class="loading-bar-background" id="barbg"></div>' +
+      '  <div class="loading-overlay-background dark" id="dimbg"></div>' +
+      '</div>' +
+      '<div class="dialog-screen" id="realDialog">a real dialog</div>' +
+      '<div class="overlay" id="contentOverlay">a content overlay</div>' +
+      '<div id="page">the page</div>'
+    );
+    const dw = dm.window;
+    const gone = (id) =>
+      dw.getComputedStyle(dw.document.getElementById(id)).display === 'none';
+
+    ok('the wash the user was left staring at is gone', gone('dim'));
+    ok('and its dark backing with it', gone('dimbg'));
+    ok('a real dialog still shows', !gone('realDialog'));
+    ok('a content overlay still shows', !gone('contentOverlay'));
+    ok('the page still shows', !gone('page'));
+  }
 
   // And with the setting on, nothing about the bar is emitted.
   ok('with the bar switched on no bar rule is emitted',

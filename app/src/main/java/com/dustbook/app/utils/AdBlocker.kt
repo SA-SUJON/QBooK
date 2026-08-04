@@ -986,12 +986,34 @@ object AdBlocker {
             // So the setting has to hide Facebook's element too, or it only
             // ever removed a bar the user was not looking at.
             //
-            // Only the bar itself is hidden. loading-overlay is the dimming
-            // layer that carries it and is also used on its own, so touching
-            // it here would change unrelated screens.
+            // The dimming layer has to go with it, and an earlier version of
+            // this comment was wrong to leave it. One function builds all
+            // three, and the overlay is the bar's own parent:
+            //
+            //   a.g.className='loading-overlay';
+            //   a.e.className='loading-bar-animation';
+            //   a.f.className='loading-bar-background';
+            //   a.g.appendChild(a.e); a.g.appendChild(a.f);
+            //
+            // Hiding only the bar left the grey wash behind - in dark mode
+            // rgba(0,0,0,0.6) over the whole screen - with nothing moving on
+            // it. Tapping anything appeared to make the app freeze, because
+            // the one element that said "this is loading" was the part that
+            // had been removed. That is worse than either extreme.
+            //
+            // Checked before touching it: 'loading-overlay' is assigned in
+            // exactly one place in the whole lite bundle, the function above.
+            // Real dialogs use .dialog-screen and content uses .overlay, both
+            // of which are left alone.
+            //
+            // display:none rather than opacity:0 - the overlay also sets
+            // pointer-events, and a wash that still swallows taps would be a
+            // worse bug than the one being fixed.
             rules += listOf(
                 ".loading-bar-animation",
-                ".loading-bar-background"
+                ".loading-bar-background",
+                ".loading-overlay",
+                ".loading-overlay-background"
             )
         }
         if (blockPromos) {
