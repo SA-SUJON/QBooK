@@ -1095,6 +1095,20 @@ object AdBlocker {
                 /* momentum scrolling */
                 /* momentum scrolling only on real scrollers, not every node */
                 'html,body{-webkit-overflow-scrolling:touch;}',
+
+                /* Pressed state.
+                   The line above turns off the browser's own tap highlight,
+                   which is right for a native feel - but only if something
+                   replaces it. Facebook's lite renderer ships a highlight of
+                   its own, .mtfi [data-action-id].highlight, and it never
+                   fires here: .mtfi appears in its stylesheet and on no
+                   element on the page. So a tap produced no response at all
+                   until the next screen arrived, and the wait read as the app
+                   being slow rather than as the page loading.
+                   Applied on a class we add ourselves, so it cannot fight
+                   whatever Facebook does with :active. */
+                '.__db_press{opacity:.55 !important;', 
+                'transition:opacity .04s ease-out !important;}',
                 /* kill the browser-ish install/notification prompts */
                 '[data-testid="cookie-policy-manage-dialog"],',
                 'div[role="dialog"]:has(a[href*="play.google.com"]){display:none !important;}',
@@ -1123,6 +1137,65 @@ object AdBlocker {
               window.addEventListener('beforeinstallprompt', function(e) {
                 e.preventDefault(); return false;
               });
+
+              /* ---- instant response to a tap --------------------------------
+                 A native app dims a control the moment it is touched, before
+                 anything loads. The page does nothing until the next screen
+                 arrives, so every tap felt like a delay even when the load
+                 was perfectly quick.
+
+                 touchstart, not click: touchstart fires immediately, click
+                 only after the gesture is judged not to be a scroll - which
+                 is exactly the delay being complained about.
+
+                 The class is removed on touchend, on touchcancel, and on the
+                 first scroll, so a swipe that merely began on a control does
+                 not leave it dimmed. A timer clears it as a last resort: if
+                 the page is replaced while the finger is down there may be no
+                 touchend at all, and a control stuck at half opacity would be
+                 a worse bug than the one being fixed. */
+              (function() {
+                var held = null, timer = null;
+
+                function release() {
+                  if (timer) { clearTimeout(timer); timer = null; }
+                  if (!held) return;
+                  try { held.classList.remove('__db_press'); } catch (e) {}
+                  held = null;
+                }
+
+                /* What counts as a control. Anything Facebook gives an action
+                   to, plus the ordinary interactive elements. Kept to the
+                   nearest one so a tap dims the button, not the whole card. */
+                var SEL = 'a,button,[role="button"],[role="link"],' +
+                          '[role="tab"],[role="menuitem"],[data-action-id],' +
+                          '[data-fd-action],[data-sigil]';
+
+                document.addEventListener('touchstart', function(ev) {
+                  release();
+                  var t = ev.target;
+                  if (!t || !t.closest) return;
+                  var el = t.closest(SEL);
+                  if (!el) return;
+                  /* Never dim something enormous: on a lite screen the whole
+                     scroller can carry a data-sigil, and dimming that is a
+                     flash of the entire page. */
+                  try {
+                    var r = el.getBoundingClientRect();
+                    if (r.height > window.innerHeight * 0.6) return;
+                  } catch (e) {}
+                  held = el;
+                  try { el.classList.add('__db_press'); } catch (e) {}
+                  timer = setTimeout(release, 1200);
+                }, {passive: true, capture: true});
+
+                ['touchend', 'touchcancel'].forEach(function(e) {
+                  document.addEventListener(e, release,
+                    {passive: true, capture: true});
+                });
+                document.addEventListener('scroll', release,
+                  {passive: true, capture: true});
+              })();
 
               /* Report scroll position to the app.
                  Facebook sometimes scrolls an inner container instead of the

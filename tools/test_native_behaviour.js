@@ -1345,6 +1345,95 @@ console.log('\nBackground audio is for Reels, and only when audible');
   await wait(1300);
   ok('an unlabelled full-viewport player still counts', bare.includes(true));
 
+  // ------------------------------------------------ instant response to a tap
+  //
+  // Reported as: tapping anything does nothing until the next screen arrives,
+  // so the app reads as slow even when the load is quick.
+  //
+  // The native-feel CSS turns off the browser's own tap highlight, which is
+  // correct for an app - but only if something replaces it. Facebook's lite
+  // renderer ships its own, .mtfi [data-action-id].highlight, and it never
+  // fires: .mtfi appears in the stylesheet and on no element of the page.
+  // Measured on a captured screen - 6 occurrences, all inside CSS text, zero as
+  // a class attribute. So there was no feedback at all.
+  console.log('\nA tap responds immediately');
+  {
+    const ab = fs.readFileSync(KT('utils/AdBlocker.kt'), 'utf8');
+    const script = rawString(KT('utils/AdBlocker.kt'), 'fun getNativeFeelScript');
+
+    ok('the browser highlight is still off, as an app would have it',
+       /-webkit-tap-highlight-color:transparent/.test(ab));
+    ok('but something replaces it',
+       /__db_press\{opacity/.test(ab));
+    ok('it reacts on touchstart, not on click',
+       /addEventListener\('touchstart'/.test(ab));
+    ok('and click is not used for the press, since it waits for the gesture',
+       !/addEventListener\('click', function\(ev\) \{[\s\S]{0,200}__db_press/.test(ab));
+
+    const build = () => {
+      const dom = new JSDOM(
+        '<body>' +
+        '<div data-action-id="1" id="btn"><span id="label">Comment</span></div>' +
+        '<div data-sigil="huge" id="huge">the whole scroller</div>' +
+        '<div id="plain">not a control</div>' +
+        '</body>',
+        { runScripts: 'outside-only', pretendToBeVisual: true,
+          url: 'https://m.facebook.com/' }
+      );
+      const w = dom.window, d = w.document;
+      w.FBPro = {
+        onScrollState() {}, onMediaState() {}, onAuthState() {},
+        onLoginFormReady() {}, onBlobDownload() {},
+      };
+      w.requestAnimationFrame = (f) => setTimeout(f, 0);
+      Object.defineProperty(w, 'innerHeight', { value: 800, configurable: true });
+      const rect = (h, wd) => () => ({ height: h, width: wd, top: 0, left: 0,
+                                       bottom: h, right: wd });
+      d.getElementById('btn').getBoundingClientRect = rect(100, 300);
+      d.getElementById('huge').getBoundingClientRect = rect(900, 1080);
+      w.eval(script);
+      return { w, d };
+    };
+    const fire = (w, el, type) => el.dispatchEvent(new w.Event(type, { bubbles: true }));
+    const pressed = (d, id) => d.getElementById(id).classList.contains('__db_press');
+
+    {
+      const { w, d } = build();
+      fire(w, d.getElementById('label'), 'touchstart');
+      ok('tapping a label dims the control around it', pressed(d, 'btn'));
+      fire(w, d.getElementById('label'), 'touchend');
+      ok('lifting the finger clears it', !pressed(d, 'btn'));
+    }
+    {
+      const { w, d } = build();
+      fire(w, d.getElementById('huge'), 'touchstart');
+      ok('a node taller than most of the screen is left alone',
+         !pressed(d, 'huge'));
+    }
+    {
+      const { w, d } = build();
+      fire(w, d.getElementById('plain'), 'touchstart');
+      ok('something that is not a control is left alone', !pressed(d, 'plain'));
+    }
+    {
+      // A swipe that happens to start on a button must not leave it dimmed.
+      const { w, d } = build();
+      fire(w, d.getElementById('label'), 'touchstart');
+      d.dispatchEvent(new w.Event('scroll', { bubbles: true }));
+      ok('scrolling away releases the press', !pressed(d, 'btn'));
+    }
+    {
+      // If the page is swapped while the finger is down there may be no
+      // touchend, and a control stuck at half opacity is worse than no
+      // feedback at all.
+      const { w, d } = build();
+      fire(w, d.getElementById('label'), 'touchstart');
+      ok('a press is held while the finger is down', pressed(d, 'btn'));
+      await wait(1400);
+      ok('and a stuck press clears itself', !pressed(d, 'btn'));
+    }
+  }
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })();
