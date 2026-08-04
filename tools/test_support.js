@@ -222,6 +222,103 @@ console.log('\nDonate: the amount now leads somewhere');
   ok('the animation is dropped for users who ask for less motion',
      /prefers-reduced-motion[\s\S]{0,400}animation:none !important/.test(html));
 
+  // --------------------------------------------------- the celebration
+  //
+  // The first version was a disc, one ring and two lines of text. It read
+  // as a form confirmation rather than a thank-you, so it was rebuilt: a
+  // ring that traces itself, a bloom, two staggered halos, a twelve-spark
+  // burst and a hairline that draws out under the text.
+  //
+  // Every assertion below fails against that first version.
+
+  const a5 = build();
+  ok('nothing is thrown before the button is pressed',
+     a5.d.querySelectorAll('.spark').length === 0);
+
+  tap(a5.w, a5.d.getElementById('donate'));
+  const sparks = [...a5.d.querySelectorAll('.spark')];
+  ok('pressing it throws a burst of sparks', sparks.length === 12,
+     'found ' + sparks.length);
+
+  // A spark with no angle sits on top of every other spark: the burst
+  // would be one dot. A spark with no distance never leaves the centre.
+  const angles = sparks.map((s) => s.style.getPropertyValue('--a'));
+  const dists = sparks.map((s) => parseFloat(s.style.getPropertyValue('--d')));
+  ok('each spark is thrown its own way',
+     new Set(angles).size === 12 && angles.every((a) => /-?\d+deg/.test(a)));
+  ok('and its own distance, so the burst is not a ring',
+     dists.every((d) => d > 0) && new Set(dists).size > 3);
+
+  // Evenly spaced angles at identical speeds read as a loading spinner.
+  const gaps = [];
+  for (let i = 1; i < angles.length; i++) {
+    gaps.push(parseFloat(angles[i]) - parseFloat(angles[i - 1]));
+  }
+  ok('the spacing is uneven, so it does not read as a spinner',
+     new Set(gaps).size > 1);
+  ok('and they do not all move at the same speed',
+     new Set(sparks.map((s) => s.style.getPropertyValue('--t'))).size > 1 &&
+     new Set(sparks.map((s) => s.style.getPropertyValue('--del'))).size > 1);
+
+  ok('the burst is built in code, not twelve copies in the markup',
+     (html.match(/class="spark/g) || []).length === 0);
+
+  // Pressing twice must not stack a second burst on the first.
+  tap(a5.w, a5.d.getElementById('donate'));
+  ok('pressing again does not pile a second burst on top',
+     a5.d.querySelectorAll('.spark').length === 12);
+
+  const a6 = build();
+  tap(a6.w, a6.d.getElementById('donate'));
+  ok('the ring traces itself around the tick',
+     !!a6.d.querySelector('.ring-path') && /@keyframes trace/.test(html));
+  ok('two halos land in turn, rather than one flat pulse',
+     a6.d.querySelectorAll('.halo').length === 2 &&
+     /\.halo\.one\{animation:ring[^}]*?\s\.30s/.test(html) &&
+     /\.halo\.two\{animation:ring[^}]*?\s\.46s/.test(html));
+  ok('a bloom swells behind it', !!a6.d.querySelector('.glow'));
+  ok('and a hairline draws out under the text as a full stop',
+     !!a6.d.querySelector('.rule'));
+
+  // This is the part that decides whether it feels smooth on a phone.
+  // transform and opacity are composited; width, top, height, margin and
+  // box-shadow force a layout or a repaint on every single frame.
+  {
+    const frames = [...html.matchAll(/@keyframes\s+(\w+)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g)];
+    const allowed = new Set(['transform', 'opacity', 'stroke-dashoffset']);
+    const offenders = [];
+    for (const [, name, bodyText] of frames) {
+      for (const prop of new Set([...bodyText.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]))) {
+        if (!allowed.has(prop)) offenders.push(name + ':' + prop);
+      }
+    }
+    ok('every keyframe animates only composited properties',
+       frames.length >= 8 && offenders.length === 0, offenders.join(', '));
+  }
+
+  // The sparks fly outward past the disc. Without a clip they would hang
+  // off the card and give the dialog a scrollbar mid-animation.
+  ok('the burst is clipped to the card, so no scrollbar appears',
+     /\.thanks\{[\s\S]{0,200}overflow:hidden/.test(html));
+
+  // A keyboard sliding away resizes the WebView underneath the animation,
+  // which is exactly what makes it stutter on a real device.
+  ok('the amount field is blurred first, so no keyboard slides away mid-animation',
+     /activeElement\.blur\(\)[\s\S]{0,400}classList\.add\('show'\)/.test(html));
+
+  // Adding the class in the same style pass as the sparks being inserted
+  // lets the browser collapse both states into one, and the burst never
+  // animates at all.
+  ok('a layout read forces the start state before the class lands',
+     /offsetHeight[\s\S]{0,200}classList\.add\('show'\)/.test(html));
+
+  // A hardcoded delay drifts out of step every time a timing changes.
+  ok('it closes when the animation ends, not on a number typed by hand',
+     /animationend/.test(html));
+  ok('with a timer behind it, since reduced motion fires no animationend',
+     /addEventListener\('animationend'[\s\S]{0,400}setTimeout\(done/.test(html));
+  ok('and it can only close once', /if \(closed\) return/.test(html));
+
   ok('pressing Donate stops the prompt for good',
      /fun donated\(\)[\s\S]{0,220}supportHidden = true/.test(prompt));
   ok('and the decision is recorded', /supportDonatedAt/.test(prompt) &&
