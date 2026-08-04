@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Flat fill, sampled from the artwork's own corner. An adaptive icon's
-  background has to cover the entire tile: the launcher crops it to whatever
-  shape the device uses, and any detail near the edge is shaved off.
+  Transparent fill. The old solid #000000 here was fine for icon designs
+  that already included their own background shape/color, but the default
+  launcher icon has no background of its own - so this layer's black was
+  showing straight through as a solid black square behind it, both on the
+  home screen and in the in-app icon picker preview.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#000000" />
+    <solid android:color="@android:color/transparent" />
 </shape>
