@@ -57,7 +57,6 @@ class Prefs(context: Context) {
 
         // Updates
         const val KEY_PUSH_NOTIFICATIONS = "push_notifications"
-        const val KEY_LAYOUT_PROBE = "layout_probe"
 
         // Support the developer
         const val KEY_SUPPORT_HIDDEN = "support_hidden"
@@ -211,7 +210,6 @@ class Prefs(context: Context) {
      * layout fault can be measured on the device instead of guessed at from
      * the source. Off by default and draws nothing until it is switched on.
      */
-    val layoutProbe: Boolean get() = sp.getBoolean(KEY_LAYOUT_PROBE, false)
 
     /** Set by the "Don't show again" box. Silences the automatic prompt only. */
     var supportHidden: Boolean

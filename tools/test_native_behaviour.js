@@ -1436,96 +1436,53 @@ console.log('\nBackground audio is for Reels, and only when audible');
     }
   }
 
-  // ------------------------------------------- the layout investigation
+  // ------------------------------- the layout investigation, packed away
   //
-  // The reel is sometimes centred and sometimes high on one unchanged device,
-  // which a fixed geometry cannot explain: same screen, same build, same
-  // page, different result. That makes it a difference in sequence, so the
-  // sequence is recorded rather than reasoned about.
+  // The reel-shifting bug is fixed and confirmed on the device, so the
+  // instrumentation that found it is gone: LayoutProbe, LayoutTrace,
+  // LayoutTraceScript, the two-finger hold, the "Layout diagnostics" switch
+  // and the FBPro.log bridge they reported through.
   //
-  // The tracer must never become the cause of what it measures.
+  // It earned its keep - the traces are what disproved the aspect-ratio and
+  // the scrolling theories - but it is a debug tool, and a debug tool left in
+  // a shipped build is a gesture a user can hit by accident, a switch that
+  // means nothing to them, and a page-callable logging bridge that has no
+  // reason to exist. These assertions keep it out.
   {
-    const ts = read(KT('utils/LayoutTraceScript.kt'));
-    const tt = read(KT('utils/LayoutTrace.kt'));
     const ma = read(KT('ui/MainActivity.kt'));
-    ok('the tracer exists', ts.length > 0 && tt.length > 0);
-    ok('it is off unless the diagnostic is on',
-       /var enabled: Boolean = false/.test(tt) &&
-       /if \(!enabled\) return/.test(tt));
-    ok('and it is only injected then',
-       /if \(prefs\.layoutProbe\)[\s\S]{0,160}LayoutTraceScript\.script\(\)/.test(ma));
-    ok('the buffer is bounded', /MAX_LINES/.test(tt));
+    const pf = read(KT('utils/Prefs.kt'));
+    const browsingXml = read(path.join(ROOT, 'app/src/main/res/xml/settings_browsing.xml'));
+    const strings = read(path.join(ROOT, 'app/src/main/res/values/strings.xml'));
+    const gone = (rel) => !fs.existsSync(KT(rel));
 
-    const jsStart = ts.indexOf('"""');
-    const js = ts.slice(jsStart + 3, ts.indexOf('""".trimIndent()', jsStart));
-    ok('it never moves anything: no class changes',
-       !/classList\.(add|remove)/.test(js));
-    ok('no scroll writes', !/\.scrollTop\s*=/.test(js));
-    ok('no markup writes', !/innerHTML\s*=/.test(js));
-    ok('the one element it makes is hidden and removed',
-       (js.match(/createElement/g) || []).length === 1 &&
-       /visibility:hidden/.test(js) && /p\.remove\(\)/.test(js));
+    ok('the tracer files are gone',
+       gone('utils/LayoutProbe.kt') && gone('utils/LayoutTrace.kt') &&
+       gone('utils/LayoutTraceScript.kt'));
+    ok('and the gesture that opened it', gone('utils/TwoFingerHoldDetector.kt'));
 
-    // Every stage that was asked for has to actually be reported.
-    for (const stage of ['DOMContentLoaded', 'load', 'frame1', 'resize',
-                         'visualViewport', 'MutationObserver', 'ResizeObserver',
-                         'safe-area', 'player', 'meta', 'scroller']) {
-      const probe = stage === 'safe-area' ? 'safe-area-inset-top'
-                  : stage === 'MutationObserver' ? 'MutationObserver'
-                  : stage === 'ResizeObserver' ? 'ResizeObserver'
-                  : stage;
-      ok('it records ' + stage, js.includes(probe));
-    }
+    // A dangling import or call would not compile, and CI is the only place
+    // this can be built - so the cheap check runs here first.
+    ok('nothing still refers to them',
+       !/LayoutProbe|LayoutTrace|LayoutTraceScript|TwoFingerHoldDetector/.test(ma));
+    ok('the touch hook is clean again',
+       /fun dispatchTouchEvent[\s\S]{0,220}gestureDetector\.onTouchEvent/.test(ma) &&
+       !/probeDetector/.test(ma));
 
-    ok('and it reports when the player actually moves', /MOVED top/.test(js));
+    ok('the setting is gone from Prefs', !/layout_probe|layoutProbe/.test(pf));
+    ok('and from the settings screen', !/layout_probe/.test(browsingXml));
+    ok('with no orphan strings left behind', !/pref_layout_probe/.test(strings));
 
-    // Round two. The first trace showed player.top == 50 - scrollTop in
-    // every sample, with viewport, scale, player height, video size and
-    // object-fit all constant - so the layout is stable and something is
-    // scrolling the reel container. These find out what.
-    ok('scrollTop writes are trapped and attributed',
-       /Object\.defineProperty\(proto, 'scrollTop'/.test(js) &&
-       /SET scrollTop/.test(js));
-    ok('scrollIntoView is trapped, with its options',
-       /scrollIntoView = function\(\)/.test(js) && /opts=/.test(js));
-    ok('focus is trapped, recording preventScroll',
-       /focusProto\.focus = function/.test(js) && /preventScroll=/.test(js));
-    ok('IntersectionObserver is trapped', /IntersectionObserver = function/.test(js));
-    ok('scroll events report what is under the middle and what has focus',
-       /elementFromPoint/.test(js) && /activeElement/.test(js));
-    ok('players are identified across a recycle', /__dbId/.test(js));
-    ok('each of those names its caller', /function who\(/.test(js));
+    // The three-finger double tap is the real hidden entry point and stays.
+    ok('the hidden settings gesture is untouched',
+       /ThreeFingerDoubleTapDetector/.test(ma) && /openHiddenSettings/.test(ma));
 
-    // Absent APIs must be reported, not throw: jsdom has neither
-    // scrollIntoView nor IntersectionObserver, and a device might differ too.
-    ok('a missing API is reported rather than fatal',
-       /scrollIntoView absent/.test(js) && /IntersectionObserver absent/.test(js));
-
-    // Round three. scrollTop stayed 0 in the second trace with the screen
-    // still wrong, so nothing is scrolling - an element is the wrong height.
-    // Stories are affected identically (376 px gap on a reel, 375 on a
-    // story), and a story is not a 9:16 video, so the cap belongs to the
-    // shared page area. 676 css is 380 * 16/9: the height a 16:9 device
-    // would have at this width, on a 20:9 phone.
-    ok('the ancestor chain is walked from the player upwards',
-       /function chain\(tag\)/.test(js) && /chain\[/.test(js));
-    ok('each level reports its measured box', /rect top=/.test(js));
-    ok('and the CSS that produced it', /function cssOf/.test(js) &&
-       /minH=/.test(js) && /aspect=/.test(js));
-    ok('inline styles are shown, since that is where the cap lives',
-       /inline="/.test(js));
-    ok('html and body are reported separately, being able to cap everything',
-       /HTML rect h=/.test(js) && /BODY rect h=/.test(js));
-    // The lite renderer swaps screens without navigating, so injection-time
-    // events never fire again - which is why the last trace held only the
-    // census. Sampling has to be on a timer.
-    ok('the chain is re-sampled whenever the box changes',
-       /CHANGED /.test(js) && /chain\('changed'\)/.test(js) &&
-       /lastSig/.test(js));
-
-    const tt2 = read(KT('utils/LayoutTrace.kt'));
-    ok('the buffer holds enough for a whole episode',
-       /MAX_LINES = 1200/.test(tt2));
+    // FBPro.log existed only to carry trace lines out of the page. Every
+    // other bridge method is a real feature and must survive.
+    ok('the diagnostic logging bridge is gone',
+       !/fun log\(line: String\)/.test(ma));
+    ok('but the bridge itself still works',
+       /fun onMediaState\(playing: Boolean\)/.test(ma) &&
+       /addJavascriptInterface\(JsBridge\(\), "FBPro"\)/.test(ma));
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

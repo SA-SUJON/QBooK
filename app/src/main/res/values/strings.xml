@@ -30,8 +30,6 @@
     <string name="notif_channel_requests">Friend requests</string>
     <string name="notif_channel_requests_sum">New and accepted friend requests</string>
     <string name="grp_notifications">Notifications</string>
-    <string name="pref_layout_probe">Layout diagnostics</string>
-    <string name="pref_layout_probe_sum">Long-press the page to show the real layout measurements</string>
     <string name="pref_support">Support the developer</string>
     <string name="pref_support_sum">Buy me a coffee</string>
     <string name="cat_browsing">Browsing</string>
