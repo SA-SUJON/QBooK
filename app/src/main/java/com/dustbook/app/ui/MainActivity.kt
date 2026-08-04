@@ -342,6 +342,11 @@ class MainActivity : AppCompatActivity() {
         binding.webView.keepMediaAlive = false
         binding.webView.onResume()
         binding.webView.resumeTimers()
+        // Leaving with the keyboard up and coming back is the other way to
+        // find the window still shrunken, so check here too. Posted, because
+        // a height cannot be read until this pass has laid out. Costs two
+        // reads and does nothing when the size is already right.
+        binding.root.post { if (!isFinishing && !isDestroyed) recoverWindowSizeIfStale() }
         applyBlockerFlags()
         applyRuntimeOptions()
         applyOfflineFlags()
@@ -1640,6 +1645,12 @@ class MainActivity : AppCompatActivity() {
                 requestedOrientation = originalOrientation
                 endFullscreenTransition()
 
+                // Before the page is asked to re-measure, make sure the thing
+                // it will measure against is the right size. If the window is
+                // still short, a reflow just re-fits the page to a short
+                // window and the band stays.
+                recoverWindowSizeIfStale()
+
                 // Twice, because the size the page should settle at is not
                 // known yet at the first one: the system bars are still
                 // animating in and the WebView has not been through the inset
@@ -1652,7 +1663,10 @@ class MainActivity : AppCompatActivity() {
                 // enough to do both: two layout reads, once per exit.
                 forcePageRelayout(binding.webView)
                 binding.root.postDelayed({
-                    if (!isFinishing && !isDestroyed) forcePageRelayout(binding.webView)
+                    if (!isFinishing && !isDestroyed) {
+                        recoverWindowSizeIfStale()
+                        forcePageRelayout(binding.webView)
+                    }
                 }, 650)
 
                 // V4 Step 3: Re-inject after exiting fullscreen (helps restore feed state)
@@ -1734,6 +1748,56 @@ class MainActivity : AppCompatActivity() {
             """.trimIndent(),
             null
         )
+    }
+
+    /**
+     * The window itself can be left short, and no pass says so.
+     *
+     * windowSoftInputMode is adjustResize. That does not pad the window, it
+     * *shrinks* it, and the activity only learns it has grown back through an
+     * inset pass. Reels and Stories are reached from a feed where a comment
+     * box may have been focused, and the lite renderer swaps those screens in
+     * place without navigating - no navigation, no resize, no pass. The
+     * activity carries on laid out for the smaller window.
+     *
+     * Measured on the device, on a reel and on a story minutes apart: content
+     * ends at y=2024 of 2400 on both, to the pixel, and the 375px below it is
+     * RGB(5,5,5). root is painted @color/fb_bg (#18191A, reads as 24,25,27),
+     * so that strip is not root and not the page - it is the bare window,
+     * black because the AMOLED overlay is on by default. Being outside root
+     * is why neither padding nor a page reflow can reach it.
+     *
+     * So: measure the window against the display, and if it is short with no
+     * keyboard to account for it, ask for a pass.
+     *
+     * Deliberately not a listener on every layout - that risks a loop, since
+     * requesting insets causes a layout. This is called at the few moments
+     * the window is known to be suspect.
+     */
+    private fun recoverWindowSizeIfStale() {
+        val root = binding.root
+        val insets = ViewCompat.getRootWindowInsets(root) ?: return
+        // A visible keyboard is a legitimate reason to be short.
+        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return
+
+        val windowH = root.height
+        if (windowH <= 0) return
+
+        val screenH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager.maximumWindowMetrics.bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            resources.displayMetrics.heightPixels
+        }
+
+        // Split screen and freeform are genuinely smaller and must be left
+        // alone, so only a shortfall in the range a keyboard leaves counts.
+        // A tolerance keeps rounding and a cutout from triggering it.
+        val short = screenH - windowH
+        if (short > 24 && short < screenH / 2) {
+            ViewCompat.requestApplyInsets(root)
+            root.requestLayout()
+        }
     }
 
     private fun enterImmersive(on: Boolean) {

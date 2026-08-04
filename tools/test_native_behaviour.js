@@ -1436,6 +1436,88 @@ console.log('\nBackground audio is for Reels, and only when audible');
     }
   }
 
+  // --------------------- the window itself can be left the wrong size
+  //
+  // Measured, 2026-08-05, from two screenshots taken minutes apart - one on a
+  // reel, one on a story:
+  //
+  //   screen            1080 x 2400
+  //   content ends      y=2024 on BOTH, to the pixel
+  //   dead band         375 px on BOTH
+  //   band colour       RGB(5,5,5)
+  //
+  // A story is not a 9:16 video, so this is not a letterbox and not either
+  // player. The colour is what settles it: root is painted @color/fb_bg,
+  // #18191A, which reads as (24,25,27). The band is (5,5,5) - #000000, the
+  // AMOLED window colour, which is the default. So the strip is not root and
+  // not the page. It is the bare window, and root is match_parent, so the
+  // window is genuinely 375px shorter than the display.
+  //
+  // windowSoftInputMode is adjustResize: the keyboard shrinks the window
+  // rather than padding it. Closing it restores the window, but the activity
+  // only hears about that through an inset pass, and the lite renderer swaps
+  // Reels and Stories in place without navigating - no navigation, no resize,
+  // no pass.
+  //
+  // This is also why the previous fix could not have worked: it reflows the
+  // page, and the band is outside root entirely.
+  {
+    const ma = read(KT('ui/MainActivity.kt'));
+
+    ok('there is a check for the window being left short',
+       /private fun recoverWindowSizeIfStale\(\)/.test(ma));
+
+    const body = (/private fun recoverWindowSizeIfStale\(\)[\s\S]{0,1800}?\n    }/
+      .exec(ma) || [''])[0];
+
+    ok('it measures the window against the display, not against itself',
+       /maximumWindowMetrics/.test(body) && /root\.height/.test(body));
+    ok('and asks for a fresh inset pass when they disagree',
+       /requestApplyInsets/.test(body));
+
+    // A visible keyboard is a legitimate reason for a short window. Acting
+    // then would fight the IME every time the user typed.
+    ok('a visible keyboard is left alone',
+       /isVisible\(WindowInsetsCompat\.Type\.ime\(\)\)\)? return/.test(body));
+
+    // Split screen and freeform really are smaller windows.
+    ok('a genuinely smaller window is not "recovered"',
+       /short < screenH \/ 2/.test(body));
+    ok('and rounding does not trigger it', /short > 24/.test(body));
+
+    // maximumWindowMetrics is API 30. Below that it must still compile and
+    // still do something sane.
+    ok('older versions have a path too',
+       /Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.R/.test(body) &&
+       /displayMetrics\.heightPixels/.test(body));
+
+    // A listener on every layout would loop: requesting insets causes a
+    // layout, which would request insets again.
+    ok('it is not hung off every layout pass, which would loop',
+       !/addOnGlobalLayoutListener[\s\S]{0,200}recoverWindowSizeIfStale/.test(ma));
+
+    // Order matters. Reflowing the page while the window is still short just
+    // re-fits the page to the wrong size.
+    {
+      const hide = (/override fun onHideCustomView\(\)[\s\S]{0,2400}?\n            }/
+        .exec(ma) || [''])[0];
+      ok('leaving fullscreen checks the window', /recoverWindowSizeIfStale/.test(hide));
+      const iRecover = hide.indexOf('recoverWindowSizeIfStale');
+      const iReflow = hide.indexOf('forcePageRelayout');
+      ok('and does it before asking the page to re-measure',
+         iRecover > -1 && iReflow > -1 && iRecover < iReflow);
+      ok('the delayed pass re-checks as well, since the bars settle later',
+         /postDelayed\(\{[\s\S]{0,240}recoverWindowSizeIfStale\(\)[\s\S]{0,120}forcePageRelayout/.test(hide));
+    }
+
+    // Leaving the app with the keyboard up and coming back is the other way
+    // to land on a stale window.
+    ok('coming back to the app checks too',
+       /override fun onResume\(\)[\s\S]{0,700}recoverWindowSizeIfStale/.test(ma));
+    ok('and does it after layout, when a height can be read',
+       /binding\.root\.post \{[^}]*recoverWindowSizeIfStale/.test(ma));
+  }
+
   // ------------------- leaving fullscreen must re-measure the page itself
   //
   // The bug came back the moment the diagnostics were removed, and the
@@ -1475,8 +1557,12 @@ console.log('\nBackground audio is for Reels, and only when audible');
     ok('and neither is a page that refuses', /catch \(e\) \{ return 'err'/.test(body));
 
     // Leaving fullscreen is the moment the page is stale.
-    const hide = (/override fun onHideCustomView\(\)[\s\S]{0,2000}?\n            }/
+    // The window has to be wide enough to hold the whole method: it has
+    // grown, and a window that stops short would pass by not looking.
+    const hide = (/override fun onHideCustomView\(\)[\s\S]{0,3000}?\n            }/
       .exec(ma) || [''])[0];
+    ok('the whole method is under test, not just its opening',
+       /injectAll/.test(hide));
     ok('it runs on leaving fullscreen', /forcePageRelayout/.test(hide));
 
     // Once immediately and once after the inset pass. The first cannot be
@@ -1486,6 +1572,7 @@ console.log('\nBackground audio is for Reels, and only when audible');
        (hide.match(/forcePageRelayout/g) || []).length === 2 &&
        /postDelayed\(\{[\s\S]{0,140}forcePageRelayout[\s\S]{0,60}\}, 650\)/.test(hide));
     ok('the delayed one checks the activity is still alive',
+       /if \(!isFinishing && !isDestroyed\) \{[\s\S]{0,200}forcePageRelayout/.test(hide) ||
        /if \(!isFinishing && !isDestroyed\) forcePageRelayout/.test(hide));
 
     // The settle callback fires at 500ms, so the second pass has to be
