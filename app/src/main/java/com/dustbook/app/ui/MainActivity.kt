@@ -2112,17 +2112,25 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val cm = getSystemService(Context.CLIPBOARD_SERVICE)
                         as android.content.ClipboardManager
+                    // Append captured video URLs if the logger is on.
+                    val full = if (prefs.logVideoUrls && Companion.capturedVideoUrls.isNotEmpty()) {
+                        val count = Companion.capturedVideoUrls.size
+                        val urls = Companion.capturedVideoUrls.joinToString("\n")
+                        Companion.capturedVideoUrls.clear()
+                        text + "\n\n--- captured video URLs (${count}) ---\n" + urls
+                    } else text
                     cm.setPrimaryClip(
-                        android.content.ClipData.newPlainText("Dustbook ad markup", text)
+                        android.content.ClipData.newPlainText("Dustbook ad markup", full)
                     )
                     if (prefs.haptics) {
                         binding.root.performHapticFeedback(
                             android.view.HapticFeedbackConstants.LONG_PRESS
                         )
                     }
+                    val extra = if (full != text) " + captured video URLs" else ""
                     Toast.makeText(
                         this@MainActivity,
-                        getString(R.string.inspect_copied),
+                        getString(R.string.inspect_copied) + extra,
                         Toast.LENGTH_LONG
                     ).show()
                 } catch (e: Exception) {
@@ -2552,15 +2560,16 @@ class MainActivity : AppCompatActivity() {
     // ---- developer tools ---------------------------------------------------
 
     private fun captureVideoUrl(url: String) {
-        if (url in capturedVideoUrls) return
-        capturedVideoUrls.add(url)
-        if (capturedVideoUrls.size <= 5) {
-            runOnUiThread { toast("Video URL captured (${capturedVideoUrls.size})") }
+        if (url in Companion.capturedVideoUrls) return
+        Companion.capturedVideoUrls.add(url)
+        val size = Companion.capturedVideoUrls.size
+        if (size <= 5) {
+            runOnUiThread { toast("Video URL captured ($size)") }
         }
     }
 
     fun showCapturedUrls() {
-        val urls = capturedVideoUrls.toList()
+        val urls = Companion.capturedVideoUrls.toList()
         if (urls.isEmpty()) {
             toast("No URLs yet. Scroll reels until an ad appears.")
             return
@@ -2573,9 +2582,9 @@ class MainActivity : AppCompatActivity() {
                 val cm = getSystemService(android.content.ClipboardManager::class.java)
                 cm?.setPrimaryClip(android.content.ClipData.newPlainText("video_urls", text))
                 toast("Copied ${urls.size} URLs")
-                capturedVideoUrls.clear()
+                Companion.capturedVideoUrls.clear()
             }
-            .setNegativeButton("Clear") { _, _ -> capturedVideoUrls.clear(); toast("Cleared") }
+            .setNegativeButton("Clear") { _, _ -> Companion.capturedVideoUrls.clear(); toast("Cleared") }
             .setNeutralButton("Close", null)
             .show()
     }

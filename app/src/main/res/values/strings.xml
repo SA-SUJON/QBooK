@@ -259,7 +259,7 @@
     <string name="dev_dump_dom">DOM dump</string>
     <string name="dev_dump_dom_sum">Long-press anywhere on the page while Ad Inspector is on to copy the full HTML markup of the element under your finger. Paste into a bug report so filter rules can be written from real data.</string>
     <string name="dev_howto_title">How to capture reel ad URLs</string>
-    <string name="dev_howto_sum">1. Turn on \"Log reel video URLs\" above.\n2. Enable USB debugging on your phone (Settings → Developer Options).\n3. Connect to a PC and run: adb logcat -s DUSTBOOK_VIDEO:I\n4. Open Dustbook, go to Reels, scroll until an ad appears.\n5. Copy every URL from the log — these are the ad reel\'s video sources.\n6. Paste them into a bug report so a network-level block can be written.</string>
+    <string name="dev_howto_sum">1. Turn on both \"Log reel video URLs\" and \"Ad Inspector\" above.\n2. Open Dustbook, go to Reels, keep scrolling.\n3. When an ad appears (with Order Now / Shop Now / Send Message button), LONG-PRESS anywhere on that ad.\n4. Wait 1 second — the DOM markup AND video URLs are auto-copied to your clipboard.\n5. Paste them into your chat with the assistant.\n\nThe URLs tell us which CDN servers serve ad reels so we can block them at the network level (no DOM touch, smooth scrolling).</string>
 
     <!-- developer info -->
     <string name="grp_developer">Developer</string>
