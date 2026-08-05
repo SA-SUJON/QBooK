@@ -470,12 +470,13 @@ function posts(n, prefix) {
       </div>
     </div>`);
   console.log('K) reel ad CTA buttons');
-  // CTA reels are now completely removed from DOM (removeChild), not just hidden.
-  // The scroller position is corrected so snap never shifts.
-  check('Shop Now reel GONE from DOM', gone(w, '#ctaReel'), true);
-  check('Send Message reel GONE from DOM', gone(w, '#msgReel'), true);
-  check('Order Now reel GONE from DOM', gone(w, '#orderReel'), true);
-  check('Learn More reel GONE from DOM', gone(w, '#learnReel'), true);
+  // CTA reel cards are kept in DOM (visibility:hidden + pointer-events:none)
+  // so the snap scroller layout never shifts.  The card occupies its natural
+  // height but is invisible and unreachable.
+  check('Shop Now reel hidden (in DOM, invisible)', hidden(w, '#ctaReel'), true);
+  check('Send Message reel hidden (in DOM, invisible)', hidden(w, '#msgReel'), true);
+  check('Order Now reel hidden (in DOM, invisible)', hidden(w, '#orderReel'), true);
+  check('Learn More reel hidden (in DOM, invisible)', hidden(w, '#learnReel'), true);
   // Follow is NOT an ad marker — a real page's reel also has it.
   check('Follow reel survives (not an ad)', hidden(w, '#followReel'), false);
   check('real reel survives', hidden(w, '#realReel'), false);

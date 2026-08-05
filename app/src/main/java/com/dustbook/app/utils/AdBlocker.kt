@@ -747,54 +747,17 @@ object AdBlocker {
 
                   killVideos(card);
 
-                  // Completely remove the ad card from the DOM, then fix
-                  // the snap scroller's scroll position so the user never
-                  // notices the removal.  opacity:0 leaves a blank gap,
-                  // and display:none shifts every snap point.
-                  //
-                  // The card is a direct child of the scroller.  Removing
-                  // it shrinks scrollHeight, which makes the scroller think
-                  // the viewport has moved past the bottom and triggers a
-                  // snap reset to the preview reel.
-                  //
-                  // We save the scroll position before removing, then
-                  // correct it afterwards.  If the ad was above the current
-                  // snap the index drops by one; if it was at or below,
-                  // no shift is needed.
-                  var ch = reel.clientHeight;
-                  if (ch > 0) {
-                    var oldTop = reel.scrollTop;
-                    var oldSnap = Math.round(oldTop / ch);
-
-                    // Which direct-child index is this card?
-                    var cardIdx = -1;
-                    var kids = reel.children;
-                    for (var k = 0; k < kids.length; k++) {
-                      if (kids[k] === card) { cardIdx = k; break; }
-                    }
-
-                    card.parentElement.removeChild(card);
-
-                    // If the removed card was above the current snap, we
-                    // shifted down by one position — the snap index drops.
-                    var newSnap = cardIdx >= 0 && cardIdx < oldSnap
-                      ? oldSnap - 1 : oldSnap;
-                    reel.scrollTop = Math.max(0, newSnap * ch);
-                    reel.dispatchEvent(new Event('scroll', {bubbles:true}));
-
-                    // One more correction after a paint cycle, in case
-                    // Facebook's own snap handler fought ours.
-                    (window.requestAnimationFrame || function(f){setTimeout(f,16)})(
-                      function() {
-                        if (reel.scrollTop !== newSnap * ch) {
-                          reel.scrollTop = Math.max(0, newSnap * ch);
-                          reel.dispatchEvent(new Event('scroll', {bubbles:true}));
-                        }
-                      }
-                    );
-                  } else {
-                    card.parentElement.removeChild(card);
-                  }
+                  // visibility:hidden keeps the card's layout space (snap
+                  // scroller height unchanged) while making it invisible.
+                  // removeChild + scrollTop recovery loses to Facebook's
+                  // own snap handler on real devices; opacity:0 and
+                  // display:none both have documented side-effects here.
+                  // The card stays in DOM at its natural height — the
+                  // scroller snap positions never shift and the user sees
+                  // nothing.
+                  card.setAttribute(TAG, '1');
+                  card.style.setProperty('visibility', 'hidden', 'important');
+                  card.style.setProperty('pointer-events', 'none', 'important');
                 }
               }
 
