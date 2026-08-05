@@ -1015,9 +1015,54 @@ object AdBlocker {
                 }, wait);
               }
 
+              // ---- reel CTA fast track: no debounce, runs on every frame -----
+              // Reel ads must be caught before the user sees them, or scrolling
+              // stutters while a full ad loads.  The generic schedule() above
+              // waits 250ms + an idle callback — long enough for the ad video
+              // to start buffering and the scroll to hitch.  This runs only
+              // killReelCtaAds() (cheap text-match, no DOM walk) on animation
+              // frames while a reel scroller is present, so the card is hidden
+              // in the same frame it appears.
+              var reelRafId = 0, reelRafRunning = false, reelRafMisses = 0;
+              function startReelRaf() {
+                if (reelRafRunning) { reelRafMisses = 0; return; }
+                reelRafRunning = true;
+                reelRafMisses = 0;
+                (function loop() {
+                  reelRafId = (window.requestAnimationFrame ||
+                               function(f){ setTimeout(f, 16); })(function() {
+                    if (!reelRafRunning) return;
+                    try {
+                      var sc = document.querySelector('.vscroller-snap,[data-type="vscroller"]');
+                      if (sc && BLOCK_ADS) { killReelCtaAds(); reelRafMisses = 0; }
+                      else { reelRafMisses++; }
+                    } catch (e) { reelRafMisses++; }
+                    // Stop after ~1 second without a reel scroller so we
+                    // are not burning frames on the home feed or Watch.
+                    if (reelRafMisses >= 60) { stopReelRaf(); return; }
+                    if (reelRafRunning) loop();
+                  });
+                })();
+              }
+              function stopReelRaf() {
+                reelRafRunning = false;
+                if (reelRafId) {
+                  (window.cancelAnimationFrame || clearTimeout)(reelRafId);
+                  reelRafId = 0;
+                }
+              }
+
               var mo = new MutationObserver(function(muts) {
                 for (var i = 0; i < muts.length; i++) {
-                  if (muts[i].addedNodes && muts[i].addedNodes.length) { schedule(); return; }
+                  if (muts[i].addedNodes && muts[i].addedNodes.length) {
+                    schedule();
+                    // A new reel scroller or reel cards may have arrived —
+                    // start the RAF loop so ads caught in the same frame.
+                    if (BLOCK_ADS && document.querySelector('.vscroller-snap,[data-type=\"vscroller\"]')) {
+                      startReelRaf();
+                    }
+                    return;
+                  }
                 }
               });
 
