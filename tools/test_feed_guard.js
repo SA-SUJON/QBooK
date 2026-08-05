@@ -377,6 +377,95 @@ function posts(n, prefix) {
   check('real post 3 survives', hidden(w, '#spnReal2'), false);
   check('feed area survives', hidden(w, '#feedArea'), false);
 
+  // 11. Reel ad CTA buttons — Order Now, Shop Now, etc.
+  //
+  //     These are the only signal on promoted reels in the reels feed.
+  //     An organic reel has none of them. "Follow" is NOT an ad marker
+  //     (a real page the user does not follow yet also shows one).
+  //     The CTA must be inside a reel scroller, so the same words on
+  //     a real Marketplace product post are not matched.
+  w = await run(`<div id="screenRoot">
+      <script>var pad = "${'x'.repeat(26000)}";</script>
+      <div data-type="vscroller" data-mcomponent="MContainer"
+           class="m vscroller vscroller-snap" data-scrollable="true"
+           id="reelScroller">
+        <div data-mcomponent="MContainer" class="m bg-s2" id="ctaReel">
+          <div><div><span>Brand Page</span></div></div>
+          <div data-mcomponent="MVideo" role="button"
+               data-video-id="100001"><video src="blob:a"></video></div>
+          <div class="native-text">Amazing product, buy now!</div>
+          <div>
+            <a data-action-id="cta1">Shop Now</a>
+          </div>
+        </div>
+        <div data-mcomponent="MContainer" class="m bg-s2" id="msgReel">
+          <div><div><span>Business Page</span></div></div>
+          <div data-mcomponent="MVideo" role="button"
+               data-video-id="100002"><video src="blob:b"></video></div>
+          <div class="native-text">Contact us for details</div>
+          <div>
+            <button data-action-id="cta2">Send Message</button>
+          </div>
+        </div>
+        <div data-mcomponent="MContainer" class="m bg-s2" id="orderReel">
+          <div><div><span>Shop Page</span></div></div>
+          <div data-mcomponent="MVideo" role="button"
+               data-video-id="100003"><video src="blob:c"></video></div>
+          <div class="native-text">Limited time offer</div>
+          <div>
+            <div role="button" data-action-id="cta3">Order Now</div>
+          </div>
+        </div>
+        <div data-mcomponent="MContainer" class="m bg-s2" id="learnReel">
+          <div><div><span>Course Page</span></div></div>
+          <div data-mcomponent="MVideo" role="button"
+               data-video-id="100004"><video src="blob:d"></video></div>
+          <div class="native-text">Master a new skill</div>
+          <div>
+            <a role="link" data-action-id="cta4">Learn More</a>
+          </div>
+        </div>
+        <div data-mcomponent="MContainer" class="m bg-s2" id="followReel">
+          <div><div>
+            <div class="native-text"><span>Gazipur News</span></div>
+            <div class="native-text"><span>Follow</span></div>
+          </div></div>
+          <div data-mcomponent="MVideo" role="button"
+               data-video-id="100005"><video src="blob:e"></video></div>
+          <div class="native-text">বাবা খোর ছেলে কে ধরিয়ে দিল...</div>
+        </div>
+        <div data-mcomponent="MContainer" class="m bg-s2" id="realReel">
+          <div><div><span>Friend Name</span></div></div>
+          <div data-mcomponent="MVideo" role="button"
+               data-video-id="100006"><video src="blob:f"></video></div>
+          <div class="native-text">A genuine reel from a friend</div>
+        </div>
+      </div>
+    </div>`);
+  console.log('K) reel ad CTA buttons');
+  check('Shop Now reel removed', hidden(w, '#ctaReel'), true);
+  check('Send Message reel removed', hidden(w, '#msgReel'), true);
+  check('Order Now reel removed', hidden(w, '#orderReel'), true);
+  check('Learn More reel removed', hidden(w, '#learnReel'), true);
+  // Follow is NOT an ad marker — a real page's reel also has it.
+  check('Follow reel survives (not an ad)', hidden(w, '#followReel'), false);
+  check('real reel survives', hidden(w, '#realReel'), false);
+  check('scroller survives', hidden(w, '#reelScroller'), false);
+  // CTA outside a reel scroller must NOT match.
+  w = await run(`<div id="screenRoot">
+      <script>var pad = "${'x'.repeat(26000)}";</script>
+      <div id="marketplace">
+        <div class="card" id="mpCard">
+          <div><span>Seller</span></div>
+          <div>Great product for sale</div>
+          <div><a href="/shop/123">Shop Now</a></div>
+        </div>
+      </div>
+    </div>`);
+  console.log('L) CTA outside reels must not match');
+  check('Marketplace Shop Now survives', hidden(w, '#mpCard'), false);
+  check('Marketplace container survives', hidden(w, '#marketplace'), false);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) {
     console.log('\n::error::feed guard failed - the blank-page or unblocked-ad bug is back');

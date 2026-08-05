@@ -663,6 +663,70 @@ object AdBlocker {
                 }
               }
 
+              // ---- reel ad CTA buttons (no label, no /ads/about/) -------------
+              //
+              // Promoted reels in the reels feed carry a call-to-action button
+              // where an organic reel shows none. These are the only markers
+              // on those ads — no is_sponsored, no adid, no "Ad" label.
+              // Captured from a real device and confirmed the organic reel
+              // has none of these.
+              //
+              // "Follow" is deliberately NOT in this list: a real page the
+              // user does not follow yet also shows a Follow button on its
+              // organic reels, so treating it as an ad marker would destroy
+              // the real reels feed.
+              function killReelCtaAds() {
+                var CTA = [
+                  'order now','shop now','learn more','sign up',
+                  'send message','message','install now','download',
+                  'buy now','book now','subscribe','watch now',
+                  'get offer','get deal','try now','play now',
+                  'register now','claim offer','get quote','contact us',
+                  'অর্ডার করুন','এখনই কিনুন','মেসেজ পাঠান','সাইন আপ',
+                  'আরও জানুন','সাবস্ক্রাইব','ডাউনলোড করুন'
+                ];
+
+                // CTA buttons are short text on a button-ish element, inside
+                // the reel container. Match exact after normalising PUA/bidi.
+                function normCta(s) {
+                  if (!s) return '';
+                  var o = '';
+                  for (var i = 0; i < s.length; i++) {
+                    var c = s.codePointAt(i);
+                    if (c > 0xFFFF) i++;
+                    if (c >= 0xE000 && c <= 0xF8FF) continue;
+                    if (c >= 0xF0000) continue;
+                    if (c === 0x200E || c === 0x200F) continue;
+                    if (c === 0x200B || c === 0xFEFF) continue;
+                    o += String.fromCodePoint(c);
+                  }
+                  return o.trim().toLowerCase();
+                }
+
+                var buttons = document.querySelectorAll(
+                  'a,button,[role="button"],[role="link"],[data-action-id]'
+                );
+                for (var i = 0; i < buttons.length && i < 4000; i++) {
+                  var el = buttons[i];
+                  if (el.hasAttribute(TAG)) continue;
+                  var txt = normCta(el.innerText || el.textContent || '');
+                  if (!txt || txt.length > 40) continue;
+                  var match = false;
+                  for (var j = 0; j < CTA.length; j++) {
+                    if (txt === CTA[j]) { match = true; break; }
+                  }
+                  if (!match) continue;
+
+                  // The CTA button must be inside a VC scroller (reels feed)
+                  // to avoid matching on Marketplace posts that use the same
+                  // words for real shopping.
+                  var reel = el.closest('.vscroller-snap,[data-type="vscroller"]');
+                  if (!reel) continue;
+
+                  hideStory(el, 8);
+                }
+              }
+
               // ---- app download / "get the app" -------------------------------
               // Three strategies, because Facebook keeps shipping new banner
               // variants and a fixed selector list always falls behind:
@@ -917,7 +981,7 @@ object AdBlocker {
                 busy = true;
                 try {
                   refreshPageText();
-                  if (BLOCK_ADS) killSponsored();
+                  if (BLOCK_ADS) { killSponsored(); killReelCtaAds(); }
                   if (BLOCK_PROMOS) killPromos();
                   for (var key in FLAGS) { if (FLAGS[key]) killSection(key); }
                 } catch (e) {}
