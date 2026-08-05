@@ -2621,7 +2621,7 @@ class MainActivity : AppCompatActivity() {
         else -> false
     }
 
-    private companion object {
+    companion object {
         /** Root of the currently-resumed activity so developer tools can reach it. */
         @Volatile var resumed: MainActivity? = null
             private set
