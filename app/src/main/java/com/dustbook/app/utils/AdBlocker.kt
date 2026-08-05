@@ -668,14 +668,18 @@ object AdBlocker {
               // Promoted reels in the reels feed carry a call-to-action button
               // where an organic reel shows none. These are the only markers
               // on those ads — no is_sponsored, no adid, no "Ad" label.
-              // Captured from a real device and confirmed the organic reel
-              // has none of these.
+              // Captured from a real device.
               //
               // "Follow" is deliberately NOT in this list: a real page the
               // user does not follow yet also shows a Follow button on its
-              // organic reels, so treating it as an ad marker would destroy
-              // the real reels feed.
-              function killReelCtaAds() {
+              // organic reels.
+              //
+              // Two entry points:
+              //   1. run() — full sweep of the page, for the initial load
+              //   2. scanAddedNodes() — called synchronously from the MO
+              //      callback so cards are hidden in the same paint cycle
+              function killReelCtaAds(root) {
+                root = root || document;
                 var CTA = [
                   'order now','shop now','learn more','sign up',
                   'send message','message','install now','download',
@@ -686,8 +690,6 @@ object AdBlocker {
                   'আরও জানুন','সাবস্ক্রাইব','ডাউনলোড করুন'
                 ];
 
-                // CTA buttons are short text on a button-ish element, inside
-                // the reel container. Match exact after normalising PUA/bidi.
                 function normCta(s) {
                   if (!s) return '';
                   var o = '';
@@ -703,7 +705,20 @@ object AdBlocker {
                   return o.trim().toLowerCase();
                 }
 
-                var buttons = document.querySelectorAll(
+                // Kill videos before hiding — or the <video> starts buffering
+                // its blob: source and the scroller hitches.
+                function killVideos(el) {
+                  try {
+                    var vs = el.querySelectorAll('video');
+                    for (var i = 0; i < vs.length; i++) {
+                      vs[i].pause();
+                      vs[i].removeAttribute('src');
+                      vs[i].load();
+                    }
+                  } catch (e) {}
+                }
+
+                var buttons = root.querySelectorAll(
                   'a,button,[role="button"],[role="link"],[data-action-id]'
                 );
                 for (var i = 0; i < buttons.length && i < 4000; i++) {
@@ -717,35 +732,23 @@ object AdBlocker {
                   }
                   if (!match) continue;
 
-                  // The CTA button must be inside a VC scroller (reels feed)
-                  // to avoid matching on Marketplace posts that use the same
-                  // words for real shopping.
                   var reel = el.closest('.vscroller-snap,[data-type="vscroller"]');
                   if (!reel) continue;
 
-                  // Walk up from the CTA button to the reel card: the nearest
-                  // MContainer whose parent is the scroller.  hideStory()
-                  // cannot do this here — its ctrls() guard stops at a
-                  // reel card precisely because the card holds several
-                  // controls (Like, Comment, Share, CTA).  We already know
-                  // this is a reel ad from the CTA match and the scroller
-                  // check, so we bypass the walk and hide the card directly.
                   var card = el;
                   for (var d = 0; d < 10 && card && card.parentElement; d++) {
                     if (card.parentElement === reel) break;
                     card = card.parentElement;
                   }
-                  if (card && card.parentElement === reel && card !== reel) {
-                    // display:none removes the card from layout, which
-                    // shrinks the snap scroller's scrollHeight and causes
-                    // it to reset to the first reel.  Instead the card is
-                    // made invisible in place: opacity keeps it out of
-                    // sight, pointer-events keeps it out of reach, and
-                    // its layout slot stays — the snap positions never shift.
-                    card.setAttribute(TAG, '1');
-                    card.style.setProperty('opacity', '0', 'important');
-                    card.style.setProperty('pointer-events', 'none', 'important');
-                  }
+                  if (!card || card.parentElement !== reel || card === reel) continue;
+
+                  // Already handled.
+                  if (card.hasAttribute(TAG)) continue;
+
+                  killVideos(card);
+                  card.setAttribute(TAG, '1');
+                  card.style.setProperty('opacity', '0', 'important');
+                  card.style.setProperty('pointer-events', 'none', 'important');
                 }
               }
 
@@ -1023,54 +1026,46 @@ object AdBlocker {
                 }, wait);
               }
 
-              // ---- reel CTA fast track: no debounce, runs on every frame -----
-              // Reel ads must be caught before the user sees them, or scrolling
-              // stutters while a full ad loads.  The generic schedule() above
-              // waits 250ms + an idle callback — long enough for the ad video
-              // to start buffering and the scroll to hitch.  This runs only
-              // killReelCtaAds() (cheap text-match, no DOM walk) on animation
-              // frames while a reel scroller is present, so the card is hidden
-              // in the same frame it appears.
-              var reelRafId = 0, reelRafRunning = false, reelRafMisses = 0;
-              function startReelRaf() {
-                if (reelRafRunning) { reelRafMisses = 0; return; }
-                reelRafRunning = true;
-                reelRafMisses = 0;
-                (function loop() {
-                  reelRafId = (window.requestAnimationFrame ||
-                               function(f){ setTimeout(f, 16); })(function() {
-                    if (!reelRafRunning) return;
-                    try {
-                      var sc = document.querySelector('.vscroller-snap,[data-type="vscroller"]');
-                      if (sc && BLOCK_ADS) { killReelCtaAds(); reelRafMisses = 0; }
-                      else { reelRafMisses++; }
-                    } catch (e) { reelRafMisses++; }
-                    // Stop after ~1 second without a reel scroller so we
-                    // are not burning frames on the home feed or Watch.
-                    if (reelRafMisses >= 60) { stopReelRaf(); return; }
-                    if (reelRafRunning) loop();
-                  });
-                })();
-              }
-              function stopReelRaf() {
-                reelRafRunning = false;
-                if (reelRafId) {
-                  (window.cancelAnimationFrame || clearTimeout)(reelRafId);
-                  reelRafId = 0;
+              // ---- reel CTA sync scan: no delay, same paint cycle -----------
+              // The generic schedule() above waits 250ms + idle callback.
+              // For reel ads that is long enough for the <video> to start
+              // buffering and the scroller to hitch.  This runs synchronously
+              // in the MutationObserver callback — before the browser paints
+              // the new nodes — so the ad card is hidden with zero flash.
+              //
+              // Scoped to the added nodes' subtrees only; killReelCtaAds()
+              // is passed a root so it never walks the full document from
+              // this path.
+              function scanAddedNodes(muts) {
+                if (!BLOCK_ADS) return;
+                for (var i = 0; i < muts.length; i++) {
+                  var added = muts[i].addedNodes;
+                  if (!added) continue;
+                  for (var j = 0; j < added.length; j++) {
+                    var n = added[j];
+                    if (n.nodeType !== 1) continue;
+                    // Only scan subtrees that could contain reel cards:
+                    // a vscroller itself, an MContainer (reel card), or
+                    // a container that holds them.
+                    var c = n.className || '';
+                    var mc = n.getAttribute && n.getAttribute('data-mcomponent');
+                    var dt = n.getAttribute && n.getAttribute('data-type');
+                    var isReel = c.indexOf('vscroller-snap') !== -1 ||
+                                 mc === 'MContainer' ||
+                                 dt === 'vscroller';
+                    if (!isReel) continue;
+                    killReelCtaAds(n);
+                  }
                 }
               }
 
               var mo = new MutationObserver(function(muts) {
+                // Synchronous CTA scan — runs before next paint.
+                scanAddedNodes(muts);
+                // Full deferred sweep for everything else (sponsored, promos,
+                // sections, blocklist rules).
                 for (var i = 0; i < muts.length; i++) {
-                  if (muts[i].addedNodes && muts[i].addedNodes.length) {
-                    schedule();
-                    // A new reel scroller or reel cards may have arrived —
-                    // start the RAF loop so ads caught in the same frame.
-                    if (BLOCK_ADS && document.querySelector('.vscroller-snap,[data-type=\"vscroller\"]')) {
-                      startReelRaf();
-                    }
-                    return;
-                  }
+                  if (muts[i].addedNodes && muts[i].addedNodes.length) { schedule(); return; }
                 }
               });
 
