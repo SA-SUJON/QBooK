@@ -590,8 +590,120 @@ object AdBlocker {
                 hide(target);
               }
 
-              // ---- sponsored posts: the /ads/about/ probe ----------------------
-              function killSponsored() {
+              // ---- Reels: marker-less ad cards, caught by CTA text only --------
+              //
+              // Facebook stopped putting any ad marker on promoted reels
+              // (no is_sponsored, no data-testid) - the only visible
+              // difference from an organic reel is a call-to-action button
+              // (Order Now, Shop Now, Learn More, ...). Text match is the
+              // only signal left.
+              //
+              // Six approaches were tried and rejected on this exact bug:
+              //   hideStory()      - its own control-count guard breaks
+              //                      inside a reel card (4-5 controls) and
+              //                      only the button gets hidden, not the ad
+              //   display:none     - shrinks the snap scroller's
+              //                      scrollHeight, so it resets to the first
+              //                      reel mid-scroll
+              //   opacity:0        - still paints, so the card's full height
+              //                      is left behind as a visible blank gap
+              //   removeChild      - Facebook's own snap handler overrides
+              //                      the scrollTop correction, landing on a
+              //                      blank screen anyway
+              //   requestAnimationFrame loop - runs too late (2-3s of ad
+              //                      visible) and burns CPU continuously
+              //   visibility:hidden, applied inline - the closest of these:
+              //                      it keeps the card's layout space (no
+              //                      scroller resize) and never paints (no
+              //                      gap). Left inline, on some scrolls it
+              //                      still surfaced as a black or loading
+              //                      screen further down the feed.
+              //
+              // That last failure is a race, not a wrong technique: this
+              // runs synchronously inside the MutationObserver callback, in
+              // the same tick Facebook's own handler is still processing
+              // the just-inserted card - measuring it for the snap
+              // scroller, wiring up its player. Writing visibility:hidden
+              // inline can land mid-measurement. A microtask runs after
+              // this callback finishes but still before the browser paints,
+              // so their read completes first and the hide still lands
+              // before anything is drawn - no flash, and no more racing
+              // their handler.
+              var CTA_WORDS = [
+                'order now', 'shop now', 'learn more', 'sign up', 'download',
+                'send message', 'get quote', 'contact us', 'book now',
+                'apply now', 'subscribe', 'watch more', 'install now',
+                'play game', 'use app', 'get offer', 'listen now',
+                'অর্ডার করুন', 'অর্ডার করতে', 'শপ নাও', 'আরও জানুন',
+                'সাইন আপ', 'ডাউনলোড', 'মেসেজ পাঠান', 'যোগাযোগ করুন'
+              ];
+
+              function isCtaLabel(tx) {
+                if (!tx) return false;
+                var t = tx.trim().toLowerCase();
+                if (t.length > 24) return false;
+                for (var i = 0; i < CTA_WORDS.length; i++) {
+                  if (t === CTA_WORDS[i]) return true;
+                }
+                return false;
+              }
+
+              function killVideos(el) {
+                try {
+                  var vs = el.querySelectorAll('video');
+                  for (var i = 0; i < vs.length; i++) {
+                    vs[i].pause();
+                    vs[i].removeAttribute('src');
+                    // No .load() here - it sends Chromium's media pipeline
+                    // through resource selection, emptied, abort, then error
+                    // recovery with no source, all on the main thread. That
+                    // is a 1-2s freeze that looked like a black screen.
+                    // pause() + removeAttribute already stop the buffer and
+                    // release the resource; load() added nothing but a hang.
+                  }
+                } catch (e) {}
+              }
+
+              var CTA_TAG = 'data-fbpro-hidden';
+
+              function killReelCtaAds() {
+                var screen = document.querySelector('[data-is-reels="true"]');
+                if (!screen) return;
+
+                var labels = screen.querySelectorAll(
+                  'a[role="button"],div[role="button"],button,span'
+                );
+                for (var i = 0; i < labels.length; i++) {
+                  var el = labels[i];
+                  if (!isCtaLabel(el.textContent)) continue;
+
+                  var card = el, depth = 0;
+                  while (card && depth < 16) {
+                    if (card.getAttribute && card.getAttribute(CTA_TAG)) break;
+                    var role = card.getAttribute ? card.getAttribute('role') : null;
+                    if (role === 'article' || (card.querySelector &&
+                        card.querySelector('video'))) break;
+                    card = card.parentElement;
+                    depth++;
+                  }
+                  if (!card || card === screen) continue;
+                  if (card.getAttribute(CTA_TAG)) continue;
+
+                  killVideos(card);
+                  card.setAttribute(CTA_TAG, '1');
+
+                  // Deferred to a microtask rather than applied inline here
+                  // - see the note above the CTA_WORDS list for why.
+                  (function(c) {
+                    Promise.resolve().then(function() {
+                      c.style.setProperty('visibility', 'hidden', 'important');
+                      c.style.setProperty('pointer-events', 'none', 'important');
+                    });
+                  })(card);
+                }
+              }
+
+
                 var links = document.querySelectorAll(
                   'a[href*="/ads/about"],a[href^="/ads/about/"],' +
                   'a[attributionsrc^="/privacy_sandbox/"]'
@@ -917,7 +1029,7 @@ object AdBlocker {
                 busy = true;
                 try {
                   refreshPageText();
-                  if (BLOCK_ADS) killSponsored();
+                  if (BLOCK_ADS) { killSponsored(); killReelCtaAds(); }
                   if (BLOCK_PROMOS) killPromos();
                   for (var key in FLAGS) { if (FLAGS[key]) killSection(key); }
                 } catch (e) {}
@@ -938,8 +1050,20 @@ object AdBlocker {
               }
 
               var mo = new MutationObserver(function(muts) {
+                var sawReel = false;
                 for (var i = 0; i < muts.length; i++) {
-                  if (muts[i].addedNodes && muts[i].addedNodes.length) { schedule(); return; }
+                  if (muts[i].addedNodes && muts[i].addedNodes.length) {
+                    // The 250ms throttle is fine for the feed, but a reel
+                    // card only needs to be visible for one frame to be
+                    // seen. killReelCtaAds() runs here too, synchronously,
+                    // in the same callback Facebook uses to lay the card
+                    // out - not on the throttled schedule() path below.
+                    if (BLOCK_ADS && !sawReel) {
+                      sawReel = true;
+                      try { killReelCtaAds(); } catch (e) {}
+                    }
+                    schedule();
+                  }
                 }
               });
 
