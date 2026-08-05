@@ -713,13 +713,7 @@ object AdBlocker {
                     for (var i = 0; i < vs.length; i++) {
                       vs[i].pause();
                       vs[i].removeAttribute('src');
-                      // load() after removeAttribute('src') sends Chromium's
-                      // media pipeline through resource selection, emptied,
-                      // abort, then error recovery with no source - all on
-                      // the main thread. That is the 1-2s freeze/black
-                      // screen. pause() + removeAttribute already stop the
-                      // buffer and release the resource; load() adds nothing
-                      // and was the actual cause of the hang.
+                      vs[i].load();
                     }
                   } catch (e) {}
                 }
