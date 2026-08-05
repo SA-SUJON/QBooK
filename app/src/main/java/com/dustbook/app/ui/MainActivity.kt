@@ -1312,6 +1312,13 @@ class MainActivity : AppCompatActivity() {
                     view?.evaluateJavascript(CosmeticFilters.styleScript(), null)
                     view?.evaluateJavascript(MFacebookAds.script(), null)
                 }
+                // The long-press inspector also powers "Log reel video URLs":
+                // a long-press then flushes the captured video CDN URLs to the
+                // clipboard, so it must be present whenever that switch is on,
+                // not only when full ad inspection is.
+                if (prefs.inspectAds || prefs.logVideoUrls) {
+                    view?.evaluateJavascript(AdInspector.script(), null)
+                }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -1424,7 +1431,7 @@ class MainActivity : AppCompatActivity() {
                     if (videoUrl.contains("/video/") ||
                         (videoUrl.contains("fbcdn.net") &&
                          (videoUrl.contains(".mp4") || videoUrl.contains("video")))) {
-                        try { addVideoUrl(videoUrl) } catch (_: Exception) {}
+                        try { addVideoUrl(videoUrl, request.requestHeaders) } catch (_: Exception) {}
                     }
                 }
 
@@ -1516,7 +1523,10 @@ class MainActivity : AppCompatActivity() {
             ),
             null
         )
-        if (prefs.inspectAds) {
+        // Long-press capture must run when either the full inspector is on or
+        // when "Log reel video URLs" is on: that switch makes a long-press on
+        // a reel ad copy its video URL to the clipboard.
+        if (prefs.inspectAds || prefs.logVideoUrls) {
             view.evaluateJavascript(AdInspector.script(), null)
         }
         if (prefs.adBlock && prefs.cosmeticFilter) {
@@ -2607,10 +2617,30 @@ class MainActivity : AppCompatActivity() {
          *  (AdInspector), never automatically. */
         private val videoUrlRing = mutableListOf<String>()
 
-        private fun addVideoUrl(url: String) {
+        private fun addVideoUrl(url: String, headers: Map<String, String>? = null) {
             synchronized(videoUrlRing) {
-                videoUrlRing.removeAll { it == url }
-                videoUrlRing.add(url)
+                val sb = StringBuilder(url)
+                if (!headers.isNullOrEmpty()) {
+                    // Only the headers most likely to differ between an ad
+                    // reel and an organic reel, to keep the clip readable.
+                    val keys = headers.keys.filter { k ->
+                        k.equals("Referer", true) ||
+                            k.equals("Origin", true) ||
+                            k.equals("Sec-Fetch-Site", true) ||
+                            k.equals("Sec-Fetch-Dest", true) ||
+                            k.startsWith("X-FB", true)
+                    }
+                    if (keys.isNotEmpty()) {
+                        sb.append("\n    » headers:")
+                        for (k in keys) sb.append("\n      ").append(k)
+                            .append(" = ").append(headers[k])
+                    }
+                }
+                val entry = sb.toString()
+                // De-dupe on the URL itself so re-fetched byte ranges do not
+                // pile up; the header suffix is ignored for the comparison.
+                videoUrlRing.removeAll { it == url || it.startsWith(url + "\n") }
+                videoUrlRing.add(entry)
                 while (videoUrlRing.size > 10) videoUrlRing.removeAt(0)
             }
         }

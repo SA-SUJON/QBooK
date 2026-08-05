@@ -245,7 +245,7 @@
     <string name="grp_debug">Diagnostics</string>
     <string name="pref_inspect">Inspect ads</string>
     <string name="pref_inspect_sum">Long-press an ad that got through to copy its markup, so a filter rule can be written for it</string>
-    <string name="inspect_copied">Markup copied. Paste it into the bug report.</string>
+    <string name="inspect_copied">Copied to clipboard. Paste it into the bug report.</string>
 
     <!-- Developer Options — reachable from About -->
     <string name="dev_options_title">Developer Options</string>
@@ -253,7 +253,7 @@
     <string name="dev_cat_inspect">Diagnostic Tools</string>
     <string name="dev_cat_howto">How to use</string>
     <string name="dev_log_video">Log reel video URLs</string>
-    <string name="dev_log_video_sum">Logs video CDN URLs to Android logcat (tag: DUSTBOOK_VIDEO). Connect USB, run \"adb logcat -s DUSTBOOK_VIDEO:I\", then scroll reels. Copy the URLs when an ad appears — use them to write a network-level block rule.</string>
+    <string name="dev_log_video_sum">Turn on, then long-press a reel ad to copy its video URL (and the last few reel video URLs) straight to the clipboard — no PC needed. URLs are also logged to logcat (tag: DUSTBOOK_VIDEO). Paste them in to write a network-level block rule for reel ads.</string>
     <string name="dev_dump_dom">DOM dump</string>
     <string name="dev_dump_dom_sum">Turn on Ad Inspector, then long-press any element on the page to copy its full HTML markup. Paste it into a bug report so filter rules can be written from real data.</string>
     <string name="dev_howto_title">How to capture reel ad video URLs</string>

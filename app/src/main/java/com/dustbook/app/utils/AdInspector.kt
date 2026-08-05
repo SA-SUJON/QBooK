@@ -113,7 +113,7 @@ object AdInspector {
                             .test(an) ||
                           /ads\/about|sponsored|AdStory|quick_promotion|ad_id/i.test(av)) {
                         var line = e.tagName.toLowerCase() + '[' + an + '="' +
-                                   av.slice(0, 80) + '"]';
+                                   av.slice(0, 200) + '"]';
                         if (found.indexOf(line) === -1) found.push(line);
                       }
                     }
@@ -136,6 +136,31 @@ object AdInspector {
                   }
                 }
                 lines.push('  ' + (suggestion || '(no reliable marker - text or link based rule needed)'));
+
+                // Direct media URL of the card under the finger. This is the
+                // whole point of "Log reel video URLs": the real fbcdn mp4 the
+                // pressed reel is playing, so it can be blocked at the network
+                // layer. Read-only walk from the pressed element up to the
+                // card, grabbing the first <video> source (currentSrc preferred).
+                // Nothing here mutates the DOM, so the snap scroller is untouched.
+                lines.push('');
+                lines.push('--- pressed card video URL ---');
+                var vurl = null, vp = el, vg = 0;
+                while (vp && vp.tagName && vg < 14) {
+                  if (vp.tagName === 'VIDEO') {
+                    vurl = vp.currentSrc || vp.src || null;
+                    if (vurl) break;
+                  }
+                  var vEl = vp.querySelector ? vp.querySelector('video') : null;
+                  if (vEl) {
+                    vurl = vEl.currentSrc || vEl.src || null;
+                    if (vurl) break;
+                  }
+                  if (vp.tagName === 'BODY') break;
+                  vp = vp.parentElement;
+                  vg++;
+                }
+                lines.push(vurl ? '  ' + vurl : '  (no <video> source found on this card)');
 
                 var text = lines.join('\n');
                 try {
