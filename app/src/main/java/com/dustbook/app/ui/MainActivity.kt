@@ -1414,13 +1414,15 @@ class MainActivity : AppCompatActivity() {
             ): WebResourceResponse? {
                 request ?: return null
 
-                // Diagnostic: log video URLs for reel ad network blocking.
-                // Enable USB debugging, then: adb logcat -s DUSTBOOK_VIDEO:I
-                // Scroll reels until you see an ad — copy all logged URLs.
-                // REMOVE this block once the ad-reel video URL pattern is found.
-                val videoUrl = request.url.toString()
-                if (videoUrl.contains("/video/") || (videoUrl.contains("fbcdn.net") && (videoUrl.contains(".mp4") || videoUrl.contains("video")))) {
-                    Log.i("DUSTBOOK_VIDEO", videoUrl)
+                // Developer: log video URLs for reel ad network blocking.
+                // Enable in Hidden Settings → About → Developer Options.
+                if (prefs.logVideoUrls) {
+                    val videoUrl = request.url.toString()
+                    if (videoUrl.contains("/video/") ||
+                        (videoUrl.contains("fbcdn.net") &&
+                         (videoUrl.contains(".mp4") || videoUrl.contains("video")))) {
+                        Log.i("DUSTBOOK_VIDEO", videoUrl)
+                    }
                 }
 
                 if (AdBlocker.shouldBlockRequest(request)) {

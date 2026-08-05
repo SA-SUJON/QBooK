@@ -6,9 +6,10 @@
             android:summary="@string/pref_check_update_sum" app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_debug" app:iconSpaceReserved="false">
-        <SwitchPreferenceCompat android:key="inspect_ads"
-            android:title="@string/pref_inspect" android:summary="@string/pref_inspect_sum"
-            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <Preference android:key="nav_developer"
+            android:title="@string/dev_options_title"
+            android:summary="@string/dev_options_sum"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/cat_about" app:iconSpaceReserved="false">
         <Preference android:key="app_version" android:title="@string/pref_version"

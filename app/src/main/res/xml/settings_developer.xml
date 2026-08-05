@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Developer Options — diagnostic & inspection tools.
+  Reachable from: Hidden Settings → About → Developer Options.
+  Nothing here affects normal use; every setting is off by default.
+  Tools here are what let us write filter rules from real Facebook markup
+  instead of guessing, and capture ad-reel video URLs for network blocking.
+-->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="@string/dev_cat_inspect"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat android:key="inspect_ads"
+            android:title="@string/pref_inspect"
+            android:summary="@string/pref_inspect_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat android:key="log_video_urls"
+            android:title="@string/dev_log_video"
+            android:summary="@string/dev_log_video_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+
+        <Preference android:key="dump_dom"
+            android:title="@string/dev_dump_dom"
+            android:summary="@string/dev_dump_dom_sum"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/dev_cat_howto"
+        app:iconSpaceReserved="false">
+
+        <Preference android:key="dev_howto"
+            android:title="@string/dev_howto_title"
+            android:summary="@string/dev_howto_sum"
+            android:selectable="false"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

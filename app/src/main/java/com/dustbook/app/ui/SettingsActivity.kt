@@ -146,6 +146,7 @@ class SettingsActivity : AppCompatActivity() {
             "browsing" -> R.string.cat_browsing
             "offline" -> R.string.cat_offline
             "privacy" -> R.string.cat_data
+            "developer" -> R.string.dev_options_title
             else -> R.string.cat_about
         }
 
@@ -157,6 +158,7 @@ class SettingsActivity : AppCompatActivity() {
                 "browsing" -> R.xml.settings_browsing
                 "offline" -> R.xml.settings_offline
                 "privacy" -> R.xml.settings_privacy
+                "developer" -> R.xml.settings_developer
                 else -> R.xml.settings_about
             }
             setPreferencesFromResource(res, rootKey)
@@ -193,6 +195,18 @@ class SettingsActivity : AppCompatActivity() {
         private var tick: Runnable? = null
 
         private fun wire() {
+            // ---- about → developer nav ----
+            findPreference<Preference>("nav_developer")?.setOnPreferenceClickListener {
+                (activity as? SettingsActivity)?.openSub("developer")
+                true
+            }
+
+            // ---- developer ----
+            findPreference<Preference>("dump_dom")?.setOnPreferenceClickListener {
+                toast("Long-press the page → Copy markup to capture DOM")
+                true
+            }
+
             // ---- blocking ----
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_AD_BLOCK)
                 ?.setOnPreferenceChangeListener { _, v ->

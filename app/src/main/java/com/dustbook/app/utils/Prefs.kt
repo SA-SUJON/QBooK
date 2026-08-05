@@ -78,6 +78,7 @@ class Prefs(context: Context) {
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_HAPTICS = "haptics_enabled"
         const val KEY_INSPECT_ADS = "inspect_ads"
+        const val KEY_LOG_VIDEOS = "log_video_urls"
         const val KEY_HOMEPAGE = "homepage_url"
 
         // Data
@@ -277,6 +278,7 @@ class Prefs(context: Context) {
 
     /** Debug: long-press an ad to capture its markup. Off by default. */
     val inspectAds: Boolean get() = sp.getBoolean(KEY_INSPECT_ADS, false)
+    val logVideoUrls: Boolean get() = sp.getBoolean(KEY_LOG_VIDEOS, false)
     val saveSession: Boolean get() = sp.getBoolean(KEY_SAVE_SESSION, false)
 
     val homepage: String
