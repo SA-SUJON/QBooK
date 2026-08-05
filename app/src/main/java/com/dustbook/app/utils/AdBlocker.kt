@@ -723,7 +723,21 @@ object AdBlocker {
                   var reel = el.closest('.vscroller-snap,[data-type="vscroller"]');
                   if (!reel) continue;
 
-                  hideStory(el, 8);
+                  // Walk up from the CTA button to the reel card: the nearest
+                  // MContainer whose parent is the scroller.  hideStory()
+                  // cannot do this here — its ctrls() guard stops at a
+                  // reel card precisely because the card holds several
+                  // controls (Like, Comment, Share, CTA).  We already know
+                  // this is a reel ad from the CTA match and the scroller
+                  // check, so we bypass the walk and hide the card directly.
+                  var card = el;
+                  for (var d = 0; d < 10 && card && card.parentElement; d++) {
+                    if (card.parentElement === reel) break;
+                    card = card.parentElement;
+                  }
+                  if (card && card.parentElement === reel && card !== reel) {
+                    hide(card);
+                  }
                 }
               }
 

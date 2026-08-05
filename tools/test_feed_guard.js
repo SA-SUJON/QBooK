@@ -390,12 +390,19 @@ function posts(n, prefix) {
            class="m vscroller vscroller-snap" data-scrollable="true"
            id="reelScroller">
         <div data-mcomponent="MContainer" class="m bg-s2" id="ctaReel">
-          <div><div><span>Brand Page</span></div></div>
+          <div><div>
+            <div class="native-text"><span>Brand Page</span></div>
+          </div></div>
           <div data-mcomponent="MVideo" role="button"
                data-video-id="100001"><video src="blob:a"></video></div>
           <div class="native-text">Amazing product, buy now!</div>
           <div>
             <a data-action-id="cta1">Shop Now</a>
+          </div>
+          <div data-mcomponent="MContainer">
+            <div data-action-id="l1">Like</div>
+            <div data-action-id="c1">Comment</div>
+            <div data-action-id="s1">Share</div>
           </div>
         </div>
         <div data-mcomponent="MContainer" class="m bg-s2" id="msgReel">
@@ -406,6 +413,11 @@ function posts(n, prefix) {
           <div>
             <button data-action-id="cta2">Send Message</button>
           </div>
+          <div data-mcomponent="MContainer">
+            <div data-action-id="l2">Like</div>
+            <div data-action-id="c2">Comment</div>
+            <div data-action-id="s2">Share</div>
+          </div>
         </div>
         <div data-mcomponent="MContainer" class="m bg-s2" id="orderReel">
           <div><div><span>Shop Page</span></div></div>
@@ -415,6 +427,11 @@ function posts(n, prefix) {
           <div>
             <div role="button" data-action-id="cta3">Order Now</div>
           </div>
+          <div data-mcomponent="MContainer">
+            <div data-action-id="l3">Like</div>
+            <div data-action-id="c3">Comment</div>
+            <div data-action-id="s3">Share</div>
+          </div>
         </div>
         <div data-mcomponent="MContainer" class="m bg-s2" id="learnReel">
           <div><div><span>Course Page</span></div></div>
@@ -423,6 +440,11 @@ function posts(n, prefix) {
           <div class="native-text">Master a new skill</div>
           <div>
             <a role="link" data-action-id="cta4">Learn More</a>
+          </div>
+          <div data-mcomponent="MContainer">
+            <div data-action-id="l4">Like</div>
+            <div data-action-id="c4">Comment</div>
+            <div data-action-id="s4">Share</div>
           </div>
         </div>
         <div data-mcomponent="MContainer" class="m bg-s2" id="followReel">
