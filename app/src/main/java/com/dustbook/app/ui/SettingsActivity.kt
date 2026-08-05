@@ -1,7 +1,5 @@
 package com.dustbook.app.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -205,36 +203,7 @@ class SettingsActivity : AppCompatActivity() {
 
             // ---- developer ----
             findPreference<Preference>("dump_dom")?.setOnPreferenceClickListener {
-                toast("Long-press the page → Copy markup to capture DOM")
-                true
-            }
-            findPreference<Preference>("view_urls")?.setOnPreferenceClickListener {
-                val main = MainActivity.resumed
-                if (main != null && !main.isFinishing && !main.isDestroyed) {
-                    main.runOnUiThread { main.showCapturedUrls() }
-                } else {
-                    // Activity not alive — show urls from saved list
-                    val urls = MainActivity.capturedVideoUrls.toList()
-                    if (urls.isEmpty()) {
-                        toast("No URLs captured yet")
-                    } else {
-                        val text = urls.joinToString("\n\n")
-                        AlertDialog.Builder(requireContext())
-                            .setTitle("Captured Video URLs (${urls.size})")
-                            .setMessage(text)
-                            .setPositiveButton("Copy All") { _, _ ->
-                                val cm = requireContext().getSystemService(android.content.ClipboardManager::class.java)
-                                cm?.setPrimaryClip(android.content.ClipData.newPlainText("video_urls", text))
-                                toast("Copied ${urls.size} URLs")
-                            }
-                            .setNegativeButton("Clear") { _, _ ->
-                                MainActivity.capturedVideoUrls.clear()
-                                toast("Cleared")
-                            }
-                            .setNeutralButton("Close", null)
-                            .show()
-                    }
-                }
+                toast("Turn on Ad Inspector, then long-press any element on the page to copy its markup.")
                 true
             }
 

@@ -254,12 +254,10 @@
     <string name="dev_cat_howto">How to use</string>
     <string name="dev_log_video">Log reel video URLs</string>
     <string name="dev_log_video_sum">Logs video CDN URLs to Android logcat (tag: DUSTBOOK_VIDEO). Connect USB, run \"adb logcat -s DUSTBOOK_VIDEO:I\", then scroll reels. Copy the URLs when an ad appears — use them to write a network-level block rule.</string>
-    <string name="dev_view_urls">View captured video URLs</string>
-    <string name="dev_view_urls_sum">Shows all reel video URLs captured since the switch was turned on. Copy and paste to the assistant.</string>
     <string name="dev_dump_dom">DOM dump</string>
-    <string name="dev_dump_dom_sum">Long-press anywhere on the page while Ad Inspector is on to copy the full HTML markup of the element under your finger. Paste into a bug report so filter rules can be written from real data.</string>
-    <string name="dev_howto_title">How to capture reel ad URLs</string>
-    <string name="dev_howto_sum">1. Turn on both \"Log reel video URLs\" and \"Ad Inspector\" above.\n2. Open Dustbook, go to Reels, keep scrolling.\n3. When an ad appears (with Order Now / Shop Now / Send Message button), LONG-PRESS anywhere on that ad.\n4. Wait 1 second — the DOM markup AND video URLs are auto-copied to your clipboard.\n5. Paste them into your chat with the assistant.\n\nThe URLs tell us which CDN servers serve ad reels so we can block them at the network level (no DOM touch, smooth scrolling).</string>
+    <string name="dev_dump_dom_sum">Turn on Ad Inspector, then long-press any element on the page to copy its full HTML markup. Paste it into a bug report so filter rules can be written from real data.</string>
+    <string name="dev_howto_title">How to capture reel ad video URLs</string>
+    <string name="dev_howto_sum">1. Turn on both \"Log reel video URLs\" and \"Ad Inspector\" above.\n2. Open Dustbook, go to Reels, keep scrolling.\n3. When an ad appears (with Order Now / Shop Now / Send Message), LONG-PRESS on it.\n4. Wait — the DOM markup AND the reel\'s video URLs will be auto-copied to your clipboard.\n5. Paste to your assistant.\n\nVideo URLs are collected silently in the background whenever \"Log reel video URLs\" is on. They only get copied when you long-press — never automatically.</string>
 
     <!-- developer info -->
     <string name="grp_developer">Developer</string>

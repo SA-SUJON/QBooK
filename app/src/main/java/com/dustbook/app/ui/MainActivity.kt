@@ -19,7 +19,6 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.util.Base64
-import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -1417,15 +1416,15 @@ class MainActivity : AppCompatActivity() {
             ): WebResourceResponse? {
                 request ?: return null
 
-                // Developer: log video URLs for reel ad network blocking.
+                // Developer: silently capture video CDN URLs for reel ad blocking.
                 // Enable in Hidden Settings → About → Developer Options.
+                // URLs are flushed to clipboard ONLY on long-press (AdInspector).
                 if (prefs.logVideoUrls) {
                     val videoUrl = request.url.toString()
                     if (videoUrl.contains("/video/") ||
                         (videoUrl.contains("fbcdn.net") &&
                          (videoUrl.contains(".mp4") || videoUrl.contains("video")))) {
-                        Log.i("DUSTBOOK_VIDEO", videoUrl)
-                        captureVideoUrl(videoUrl)
+                        try { addVideoUrl(videoUrl) } catch (_: Exception) {}
                     }
                 }
 
@@ -2112,12 +2111,13 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val cm = getSystemService(Context.CLIPBOARD_SERVICE)
                         as android.content.ClipboardManager
-                    // Append captured video URLs if the logger is on.
-                    val full = if (prefs.logVideoUrls && Companion.capturedVideoUrls.isNotEmpty()) {
-                        val count = Companion.capturedVideoUrls.size
-                        val urls = Companion.capturedVideoUrls.joinToString("\n")
-                        Companion.capturedVideoUrls.clear()
-                        text + "\n\n--- captured video URLs (${count}) ---\n" + urls
+                    // Append captured video CDN URLs if the logger is on.
+                    val full = if (prefs.logVideoUrls) {
+                        val urls = drainVideoUrls()
+                        if (urls.isNotEmpty()) {
+                            text + "\n\n--- reel video URLs (last " + urls.size + ") ---\n" +
+                                urls.joinToString("\n")
+                        } else text
                     } else text
                     cm.setPrimaryClip(
                         android.content.ClipData.newPlainText("Dustbook ad markup", full)
@@ -2127,10 +2127,9 @@ class MainActivity : AppCompatActivity() {
                             android.view.HapticFeedbackConstants.LONG_PRESS
                         )
                     }
-                    val extra = if (full != text) " + captured video URLs" else ""
                     Toast.makeText(
                         this@MainActivity,
-                        getString(R.string.inspect_copied) + extra,
+                        getString(R.string.inspect_copied),
                         Toast.LENGTH_LONG
                     ).show()
                 } catch (e: Exception) {
@@ -2557,38 +2556,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---- developer tools ---------------------------------------------------
-
-    private fun captureVideoUrl(url: String) {
-        if (url in Companion.capturedVideoUrls) return
-        Companion.capturedVideoUrls.add(url)
-        val size = Companion.capturedVideoUrls.size
-        if (size <= 5) {
-            runOnUiThread { toast("Video URL captured ($size)") }
-        }
-    }
-
-    fun showCapturedUrls() {
-        val urls = Companion.capturedVideoUrls.toList()
-        if (urls.isEmpty()) {
-            toast("No URLs yet. Scroll reels until an ad appears.")
-            return
-        }
-        val text = urls.joinToString("\n\n")
-        AlertDialog.Builder(this)
-            .setTitle("Captured Video URLs (${urls.size})")
-            .setMessage(text)
-            .setPositiveButton("Copy All") { _, _ ->
-                val cm = getSystemService(android.content.ClipboardManager::class.java)
-                cm?.setPrimaryClip(android.content.ClipData.newPlainText("video_urls", text))
-                toast("Copied ${urls.size} URLs")
-                Companion.capturedVideoUrls.clear()
-            }
-            .setNegativeButton("Clear") { _, _ -> Companion.capturedVideoUrls.clear(); toast("Cleared") }
-            .setNeutralButton("Close", null)
-            .show()
-    }
-
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     private fun startBgAudioService() {
@@ -2635,8 +2602,27 @@ class MainActivity : AppCompatActivity() {
         @Volatile var resumed: MainActivity? = null
             private set
 
-        /** Captured reel video URLs shared with Developer Options screen. */
-        val capturedVideoUrls = mutableListOf<String>()
+        /** Silent ring buffer — last 10 unique video CDN URLs captured while
+         *  Log reel video URLs is ON.  Flushed to clipboard only on long-press
+         *  (AdInspector), never automatically. */
+        private val videoUrlRing = mutableListOf<String>()
+
+        private fun addVideoUrl(url: String) {
+            synchronized(videoUrlRing) {
+                videoUrlRing.removeAll { it == url }
+                videoUrlRing.add(url)
+                while (videoUrlRing.size > 10) videoUrlRing.removeAt(0)
+            }
+        }
+
+        private fun drainVideoUrls(): List<String> {
+            synchronized(videoUrlRing) {
+                val copy = videoUrlRing.toList()
+                videoUrlRing.clear()
+                return copy
+            }
+        }
+
         /** Enough to ride out a radio coming up, short enough to stay honest. */
         const val MAX_MAIN_FRAME_RETRIES = 3
     }
