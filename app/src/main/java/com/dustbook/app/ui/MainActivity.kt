@@ -14,11 +14,11 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.util.Base64
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -1413,6 +1413,15 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): WebResourceResponse? {
                 request ?: return null
+
+                // Diagnostic: log video URLs for reel ad network blocking.
+                // Enable USB debugging, then: adb logcat -s DUSTBOOK_VIDEO:I
+                // Scroll reels until you see an ad — copy all logged URLs.
+                // REMOVE this block once the ad-reel video URL pattern is found.
+                val videoUrl = request.url.toString()
+                if (videoUrl.contains("/video/") || (videoUrl.contains("fbcdn.net") && (videoUrl.contains(".mp4") || videoUrl.contains("video")))) {
+                    Log.i("DUSTBOOK_VIDEO", videoUrl)
+                }
 
                 if (AdBlocker.shouldBlockRequest(request)) {
                     viewModel.incrementBlocked()
