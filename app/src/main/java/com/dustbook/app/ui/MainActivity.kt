@@ -1790,6 +1790,37 @@ class MainActivity : AppCompatActivity() {
      * a second to paper over a stale one would cost battery on every screen
      * in the app to fix a bug on one.
      */
+    /**
+     * Attempt #119 on the fullscreen/Reels stale-layout bug.
+     *
+     * The native side has been correct since attempt #2: padding on
+     * contentRoot, measured ignoring bar visibility, the feed kept
+     * INVISIBLE rather than GONE so it never loses its size. None of that
+     * reaches the layout *inside* the WebView, which is where the actual
+     * fault lives.
+     *
+     * The lite renderer works out its own screen height once - the tracer
+     * caught it holding "min-height:100vh;width:360px" - and only recomputes
+     * when something tells it to. Leaving fullscreen is not one of those
+     * things by itself, so the page can return still laid out for the
+     * immersive viewport: content shifted up, a dead strip at the bottom.
+     *
+     * A single dispatched resize (attempt #4) was correct in kind but not
+     * in dose: it landed once, at a guessed delay, and if the renderer's own
+     * transition hadn't finished settling by then the event arrived too
+     * early to matter. The diagnostic tracer from attempt #3 made the bug
+     * vanish purely as a side effect - a raw property read forces layout,
+     * and it was doing that unconditionally five times a second for as long
+     * as diagnostics were on. That is what was actually fixing it, and
+     * removing the tracer (attempt #5) is what brought the bug back.
+     *
+     * This reproduces that effect on purpose instead of by accident: poll
+     * the real layout height on animation frames - cheap, and automatically
+     * paced to the display - firing a resize each time it is still moving,
+     * and stop as soon as two consecutive frames agree or a frame budget
+     * runs out. Unlike the tracer this cannot run forever: it is only ever
+     * started from a fullscreen exit, and it terminates itself.
+     */
     private fun forcePageRelayout(view: WebView?) {
         view ?: return
         view.evaluateJavascript(
@@ -1810,6 +1841,41 @@ class MainActivity : AppCompatActivity() {
                 try { window.dispatchEvent(new Event('resize')); } catch (e) {}
                 return h + 'x' + Math.round(bh);
               } catch (e) { return 'err'; }
+            })();
+            """.trimIndent(),
+            null
+        )
+        settleRelayout(view)
+    }
+
+    /**
+     * A single dispatched resize can land before the renderer's own
+     * transition has settled - it fires once, at a guessed moment. The
+     * diagnostic tracer made the bug vanish purely by accident: a raw
+     * property read forces layout, and it was doing that unconditionally
+     * five times a second for as long as diagnostics were on. Removing the
+     * tracer is what brought the bug back, so that effect is reproduced here
+     * on purpose instead of by accident - reading on animation frames, which
+     * are already paced to the display, until two consecutive frames agree
+     * or a frame budget runs out, then stopping. A flag on the page guards
+     * against a quick second exit stacking a second loop.
+     */
+    private fun settleRelayout(view: WebView?) {
+        view ?: return
+        view.evaluateJavascript(
+            """
+            (function() {
+              if (window.__dbSettle) return;
+              window.__dbSettle = true;
+              (function s(last, n, f) {
+                var H = document.documentElement ? document.documentElement.clientHeight : 0;
+                if (H === last) { n++; } else {
+                  n = 0;
+                  try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+                }
+                if (n >= 2 || f >= 40) { window.__dbSettle = false; return; }
+                requestAnimationFrame(function() { s(H, n, f + 1); });
+              })(-1, 0, 0);
             })();
             """.trimIndent(),
             null
