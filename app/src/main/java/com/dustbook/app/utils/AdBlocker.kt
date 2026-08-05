@@ -663,104 +663,6 @@ object AdBlocker {
                 }
               }
 
-              // ---- reel ad CTA buttons (no label, no /ads/about/) -------------
-              //
-              // Promoted reels in the reels feed carry a call-to-action button
-              // where an organic reel shows none. These are the only markers
-              // on those ads — no is_sponsored, no adid, no "Ad" label.
-              // Captured from a real device.
-              //
-              // "Follow" is deliberately NOT in this list: a real page the
-              // user does not follow yet also shows a Follow button on its
-              // organic reels.
-              //
-              // Two entry points:
-              //   1. run() — full sweep of the page, for the initial load
-              //   2. scanAddedNodes() — called synchronously from the MO
-              //      callback so cards are hidden in the same paint cycle
-              function killReelCtaAds(root) {
-                root = root || document;
-                var CTA = [
-                  'order now','shop now','learn more','sign up',
-                  'send message','message','install now','download',
-                  'buy now','book now','subscribe','watch now',
-                  'get offer','get deal','try now','play now',
-                  'register now','claim offer','get quote','contact us',
-                  'অর্ডার করুন','এখনই কিনুন','মেসেজ পাঠান','সাইন আপ',
-                  'আরও জানুন','সাবস্ক্রাইব','ডাউনলোড করুন'
-                ];
-
-                function normCta(s) {
-                  if (!s) return '';
-                  var o = '';
-                  for (var i = 0; i < s.length; i++) {
-                    var c = s.codePointAt(i);
-                    if (c > 0xFFFF) i++;
-                    if (c >= 0xE000 && c <= 0xF8FF) continue;
-                    if (c >= 0xF0000) continue;
-                    if (c === 0x200E || c === 0x200F) continue;
-                    if (c === 0x200B || c === 0xFEFF) continue;
-                    o += String.fromCodePoint(c);
-                  }
-                  return o.trim().toLowerCase();
-                }
-
-                // Kill videos before hiding — or the <video> starts buffering
-                // its blob: source and the scroller hitches.
-                function killVideos(el) {
-                  try {
-                    var vs = el.querySelectorAll('video');
-                    for (var i = 0; i < vs.length; i++) {
-                      vs[i].pause();
-                      vs[i].removeAttribute('src');
-                      vs[i].load();
-                    }
-                  } catch (e) {}
-                }
-
-                var buttons = root.querySelectorAll(
-                  'a,button,[role="button"],[role="link"],[data-action-id]'
-                );
-                for (var i = 0; i < buttons.length && i < 4000; i++) {
-                  var el = buttons[i];
-                  if (el.hasAttribute(TAG)) continue;
-                  var txt = normCta(el.innerText || el.textContent || '');
-                  if (!txt || txt.length > 40) continue;
-                  var match = false;
-                  for (var j = 0; j < CTA.length; j++) {
-                    if (txt === CTA[j]) { match = true; break; }
-                  }
-                  if (!match) continue;
-
-                  var reel = el.closest('.vscroller-snap,[data-type="vscroller"]');
-                  if (!reel) continue;
-
-                  var card = el;
-                  for (var d = 0; d < 10 && card && card.parentElement; d++) {
-                    if (card.parentElement === reel) break;
-                    card = card.parentElement;
-                  }
-                  if (!card || card.parentElement !== reel || card === reel) continue;
-
-                  // Already handled.
-                  if (card.hasAttribute(TAG)) continue;
-
-                  killVideos(card);
-
-                  // visibility:hidden keeps the card's layout space (snap
-                  // scroller height unchanged) while making it invisible.
-                  // removeChild + scrollTop recovery loses to Facebook's
-                  // own snap handler on real devices; opacity:0 and
-                  // display:none both have documented side-effects here.
-                  // The card stays in DOM at its natural height — the
-                  // scroller snap positions never shift and the user sees
-                  // nothing.
-                  card.setAttribute(TAG, '1');
-                  card.style.setProperty('visibility', 'hidden', 'important');
-                  card.style.setProperty('pointer-events', 'none', 'important');
-                }
-              }
-
               // ---- app download / "get the app" -------------------------------
               // Three strategies, because Facebook keeps shipping new banner
               // variants and a fixed selector list always falls behind:
@@ -1015,7 +917,7 @@ object AdBlocker {
                 busy = true;
                 try {
                   refreshPageText();
-                  if (BLOCK_ADS) { killSponsored(); killReelCtaAds(); }
+                  if (BLOCK_ADS) killSponsored();
                   if (BLOCK_PROMOS) killPromos();
                   for (var key in FLAGS) { if (FLAGS[key]) killSection(key); }
                 } catch (e) {}
@@ -1035,44 +937,7 @@ object AdBlocker {
                 }, wait);
               }
 
-              // ---- reel CTA sync scan: no delay, same paint cycle -----------
-              // The generic schedule() above waits 250ms + idle callback.
-              // For reel ads that is long enough for the <video> to start
-              // buffering and the scroller to hitch.  This runs synchronously
-              // in the MutationObserver callback — before the browser paints
-              // the new nodes — so the ad card is hidden with zero flash.
-              //
-              // Scoped to the added nodes' subtrees only; killReelCtaAds()
-              // is passed a root so it never walks the full document from
-              // this path.
-              function scanAddedNodes(muts) {
-                if (!BLOCK_ADS) return;
-                for (var i = 0; i < muts.length; i++) {
-                  var added = muts[i].addedNodes;
-                  if (!added) continue;
-                  for (var j = 0; j < added.length; j++) {
-                    var n = added[j];
-                    if (n.nodeType !== 1) continue;
-                    // Only scan subtrees that could contain reel cards:
-                    // a vscroller itself, an MContainer (reel card), or
-                    // a container that holds them.
-                    var c = n.className || '';
-                    var mc = n.getAttribute && n.getAttribute('data-mcomponent');
-                    var dt = n.getAttribute && n.getAttribute('data-type');
-                    var isReel = c.indexOf('vscroller-snap') !== -1 ||
-                                 mc === 'MContainer' ||
-                                 dt === 'vscroller';
-                    if (!isReel) continue;
-                    killReelCtaAds(n);
-                  }
-                }
-              }
-
               var mo = new MutationObserver(function(muts) {
-                // Synchronous CTA scan — runs before next paint.
-                scanAddedNodes(muts);
-                // Full deferred sweep for everything else (sponsored, promos,
-                // sections, blocklist rules).
                 for (var i = 0; i < muts.length; i++) {
                   if (muts[i].addedNodes && muts[i].addedNodes.length) { schedule(); return; }
                 }
