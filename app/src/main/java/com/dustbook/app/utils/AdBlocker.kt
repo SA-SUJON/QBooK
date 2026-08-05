@@ -736,7 +736,15 @@ object AdBlocker {
                     card = card.parentElement;
                   }
                   if (card && card.parentElement === reel && card !== reel) {
-                    hide(card);
+                    // display:none removes the card from layout, which
+                    // shrinks the snap scroller's scrollHeight and causes
+                    // it to reset to the first reel.  Instead the card is
+                    // made invisible in place: opacity keeps it out of
+                    // sight, pointer-events keeps it out of reach, and
+                    // its layout slot stays — the snap positions never shift.
+                    card.setAttribute(TAG, '1');
+                    card.style.setProperty('opacity', '0', 'important');
+                    card.style.setProperty('pointer-events', 'none', 'important');
                   }
                 }
               }
