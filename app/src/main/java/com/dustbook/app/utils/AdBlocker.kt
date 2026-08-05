@@ -506,6 +506,17 @@ object AdBlocker {
                   } catch (e) { return 0; }
                 }
                 var startCtrls = ctrls(el);
+                // querySelectorAll only sees descendants, not the element
+                // itself. A bare <a href="/ads/about/"> or an element that
+                // carries a data-action-id would read as zero otherwise,
+                // and the "+3" guard would let a header's 5 controls pass.
+                if (el.tagName === 'A' || el.tagName === 'BUTTON' ||
+                    (el.getAttribute &&
+                     (el.getAttribute('role') === 'button' ||
+                      el.getAttribute('role') === 'link' ||
+                      el.hasAttribute('data-action-id')))) {
+                  startCtrls++;
+                }
 
                 while (n && d < cap) {
                   if (isCard(n)) break;
@@ -531,7 +542,23 @@ object AdBlocker {
                   //
                   // The text guard could not catch it - the header is a few
                   // dozen characters against a page of tens of thousands.
-                  if (ctrls(p) > startCtrls + 1) break;
+                  //
+                  // Only stop for a bar-like ancestor (fixed-container or
+                  // MContainer) that brings in many unrelated controls.
+                  // A sponsored-post card's nearest parent is a plain div
+                  // with 2-6 controls, so the walk continues through it.
+                  // The header's MContainer holds 5+ controls and triggers
+                  // the guard.  "+3" with self-counting: a bare <a> reads
+                  // as startCtrls=1 after the tagName check above; three
+                  // more in the parent signals we left the banner.
+                  var looksLikeBar = false;
+                  try {
+                    var mc = p.getAttribute('data-mcomponent');
+                    var cls = p.className || '';
+                    looksLikeBar = cls.indexOf('fixed-container') !== -1 ||
+                                   mc === 'MContainer';
+                  } catch (e) {}
+                  if (looksLikeBar && ctrls(p) > startCtrls + 3) break;
 
                   try {
                     if (p.querySelector('input[type="password"],input[type="email"],form')) break;

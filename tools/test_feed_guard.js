@@ -319,6 +319,64 @@ function posts(n, prefix) {
   // The standalone bar is a promo through and through, so it still goes.
   check('the app-download bar still goes', hidden(w, '#promoBar'), true);
 
+  // 10. killSponsored() must hide sponsored posts even when the card
+  //     carries other controls (Shop Now link, brand link, etc.).
+  //
+  //     The ctrls() guard was tuned to "+1" to stop the promo walk from
+  //     taking the 8-control header. A bare <a href="/ads/about/"> reads as
+  //     startCtrls=0 (querySelectorAll sees descendants, not the element),
+  //     so the threshold was "parent has >1 control" — any ad card with 2+
+  //     controls was left alone. Fixed by counting the element itself when
+  //     it IS a control, and widening to "+3": an ad card's nearest parent
+  //     has 2-5 controls, a header has 5+.
+  w = await run(`<div id="screenRoot">
+      <script>var pad = "${'x'.repeat(26000)}";</script>
+      <div id="feedArea">
+        <div data-sigil="story_div" class="card" id="sponAbout">
+          <div class="ad-header">
+            <span><a href="/brand-page">Ad Brand</a></span>
+            <span>Sponsored</span>
+            <a href="/ads/about/?entry_product=ad_preferences">Why am I seeing this?</a>
+            <a href="https://shop.example.com/product">Shop Now</a>
+          </div>
+          <div class="ad-body">Buy our amazing product today! Limited time offer.</div>
+          <div class="reactions">
+            <span data-action-id="r1">Like</span>
+            <span data-action-id="r2">Comment</span>
+            <span data-action-id="r3">Share</span>
+          </div>
+        </div>
+        <div data-sigil="story_div" class="card" id="sponText">
+          <div class="ad-header">
+            <span>Another Brand</span>
+            <span>Ad ·</span>
+            <a href="https://shop.example.com/item2">Learn More</a>
+          </div>
+          <div class="ad-body">Special discount for new customers.</div>
+        </div>
+        <div class="card" id="sponLabel">
+          <article aria-label="Sponsored" id="sponArt">
+            <div class="ad-header">
+              <span>Third Brand</span>
+              <span>Ad</span>
+            </div>
+            <div class="ad-body">Quality products since 1999.</div>
+            <div><button data-action-id="b1">Shop</button></div>
+          </article>
+        </div>
+        ${posts(3, 'spnReal')}
+      </div>
+    </div>`);
+  console.log('J) sponsored posts with multiple controls');
+  check('/ads/about/ sponsored card with Shop Now link removed', hidden(w, '#sponAbout'), true);
+  check('Ad · text label card with Learn More link removed', hidden(w, '#sponText'), true);
+  // The article itself is hidden; the wrapper div is just a test fixture shell.
+  check('aria-label Sponsored article hidden directly', hidden(w, '#sponArt'), true);
+  check('real post 1 survives', hidden(w, '#spnReal0'), false);
+  check('real post 2 survives', hidden(w, '#spnReal1'), false);
+  check('real post 3 survives', hidden(w, '#spnReal2'), false);
+  check('feed area survives', hidden(w, '#feedArea'), false);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) {
     console.log('\n::error::feed guard failed - the blank-page or unblocked-ad bug is back');
