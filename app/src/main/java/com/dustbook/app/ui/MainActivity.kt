@@ -391,6 +391,7 @@ class MainActivity : AppCompatActivity() {
         // a height cannot be read until this pass has laid out. Costs two
         // reads and does nothing when the size is already right.
         binding.root.post { if (!isFinishing && !isDestroyed) recoverWindowSizeIfStale() }
+        resumed = this
         applyBlockerFlags()
         applyRuntimeOptions()
         applyOfflineFlags()
@@ -460,6 +461,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (resumed == this) resumed = null
 
         saveOfflinePosition()
 
@@ -1423,6 +1425,7 @@ class MainActivity : AppCompatActivity() {
                         (videoUrl.contains("fbcdn.net") &&
                          (videoUrl.contains(".mp4") || videoUrl.contains("video")))) {
                         Log.i("DUSTBOOK_VIDEO", videoUrl)
+                        captureVideoUrl(videoUrl)
                     }
                 }
 
@@ -2546,6 +2549,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---- developer tools ---------------------------------------------------
+
+    private fun captureVideoUrl(url: String) {
+        if (url in capturedVideoUrls) return
+        capturedVideoUrls.add(url)
+        if (capturedVideoUrls.size <= 5) {
+            runOnUiThread { toast("Video URL captured (${capturedVideoUrls.size})") }
+        }
+    }
+
+    fun showCapturedUrls() {
+        val urls = capturedVideoUrls.toList()
+        if (urls.isEmpty()) {
+            toast("No URLs yet. Scroll reels until an ad appears.")
+            return
+        }
+        val text = urls.joinToString("\n\n")
+        AlertDialog.Builder(this)
+            .setTitle("Captured Video URLs (${urls.size})")
+            .setMessage(text)
+            .setPositiveButton("Copy All") { _, _ ->
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("video_urls", text))
+                toast("Copied ${urls.size} URLs")
+                capturedVideoUrls.clear()
+            }
+            .setNegativeButton("Clear") { _, _ -> capturedVideoUrls.clear(); toast("Cleared") }
+            .setNeutralButton("Close", null)
+            .show()
+    }
+
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     private fun startBgAudioService() {
@@ -2588,6 +2622,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
+        /** Root of the currently-resumed activity so developer tools can reach it. */
+        @Volatile var resumed: MainActivity? = null
+            private set
+
+        /** Captured reel video URLs shared with Developer Options screen. */
+        val capturedVideoUrls = mutableListOf<String>()
         /** Enough to ride out a radio coming up, short enough to stay honest. */
         const val MAX_MAIN_FRAME_RETRIES = 3
     }

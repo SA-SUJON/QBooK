@@ -29,6 +29,11 @@
             android:summary="@string/dev_dump_dom_sum"
             app:iconSpaceReserved="false" />
 
+        <Preference android:key="view_urls"
+            android:title="@string/dev_view_urls"
+            android:summary="@string/dev_view_urls_sum"
+            app:iconSpaceReserved="false" />
+
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/dev_cat_howto"
