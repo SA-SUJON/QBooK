@@ -383,3 +383,81 @@ function posts(n, prefix) {
     process.exit(1);
   }
 })();
+
+// -----------------------------------------------------------------------
+// Reels: marker-less ad cards, caught by CTA text only.
+//
+// Facebook stopped labelling promoted reels at all. The only difference
+// from an organic reel is a call-to-action button. Six approaches were
+// tried and rejected on this exact bug (display:none resets the snap
+// scroller; opacity:0 leaves a visible blank gap; removeChild loses to
+// Facebook's own snap handler; an RAF loop runs too late and burns CPU) -
+// see failed-attempts.md for the full history. This guards the shape that
+// finally held: CTA text match, scoped to data-is-reels, hidden with
+// visibility so the card's layout space survives (no scroller resize, no
+// gap), video torn down without .load() (which was its own separate
+// freeze), and the actual style write deferred to a microtask so it lands
+// after Facebook's own synchronous handling of the same insert rather than
+// racing it.
+(async () => {
+  const reelScript = extract('getCosmeticScript', 'stories:false');
+
+  function reelCard(id, cta, hasVideo) {
+    return `<div id="${id}" class="card">
+        <div class="reel-body">${hasVideo ? '<video src="https://cdn.example.com/clip.mp4"></video>' : ''}</div>
+        <div><span role="button">${cta}</span></div>
+      </div>`;
+  }
+
+  async function runReels(html) {
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    w.requestIdleCallback = undefined;
+    w.requestAnimationFrame = (f) => setTimeout(f, 0);
+    w.FBPro = {
+      onAuthState() {}, onScrollState() {},
+      onLoginFormReady() {}, onBlobDownload() {},
+    };
+    w.eval(reelScript);
+    // Long enough for the 900ms-scale settle used elsewhere in this file,
+    // and generous for the microtask the hide is deferred through.
+    return new Promise((res) => setTimeout(() => res(w), 900));
+  }
+
+  const w = await runReels(`<div data-is-reels="true" id="reelsScreen">
+      ${reelCard('ctaOrderNow', 'Order Now', true)}
+      ${reelCard('ctaShopNow', 'Shop Now', true)}
+      ${reelCard('ctaBangla', 'অর্ডার করুন', false)}
+      ${reelCard('realReel1', 'Like', true)}
+      ${reelCard('realReel2', 'Comment', true)}
+    </div>`);
+
+  console.log('\nReels: marker-less CTA ads');
+  check('an Order Now reel card is hidden', hidden(w, '#ctaOrderNow'), true);
+  check('a Shop Now reel card is hidden', hidden(w, '#ctaShopNow'), true);
+  check('a Bangla CTA reel card is hidden', hidden(w, '#ctaBangla'), true);
+  check('a real reel with a Like control survives', hidden(w, '#realReel1'), false);
+  check('a real reel with a Comment control survives', hidden(w, '#realReel2'), false);
+
+  // The layout-preservation requirement itself: a hidden card must still
+  // occupy its natural height, or the snap scroller's scrollHeight shrinks
+  // and the previous display:none regression (reset to the first reel
+  // mid-scroll) is back.
+  const hiddenCard = w.document.querySelector('#ctaOrderNow');
+  check('a hidden reel card keeps visibility, not display:none',
+    hiddenCard.style.display !== 'none' &&
+    hiddenCard.style.visibility === 'hidden', true);
+
+  // The video-freeze regression: .load() after removeAttribute('src') sent
+  // Chromium's media pipeline through resource selection, emptied, abort,
+  // then error recovery on the main thread - a 1-2s hang that looked like a
+  // black screen. It must not come back inside the reel-ad path either.
+  check('killVideos never calls load() on an ad reel\'s video',
+    !/killVideos[\s\S]{0,260}\.load\(\)/.test(reelScript), true);
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  if (fail) {
+    console.log('\n::error::reel CTA ad guard failed - the black/blank/loading-screen bug is back');
+    process.exit(1);
+  }
+})();
