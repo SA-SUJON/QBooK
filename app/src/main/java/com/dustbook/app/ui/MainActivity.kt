@@ -1718,6 +1718,12 @@ class MainActivity : AppCompatActivity() {
                 // covered by the fullscreen container and is not drawn.
                 binding.contentRoot.visibility = View.INVISIBLE
                 enterImmersive(true)
+                // Entering fullscreen straight after a fast Wi-Fi page load
+                // (the app opening directly into Reels, say) can race the
+                // page's own layout the same way leaving fullscreen always
+                // could - the exit path already settles the page for that
+                // reason; entry needs the same protection, not just exit.
+                settleRelayout(binding.webView)
                 // Reels/Stories are vertical (9:16) video. Forcing landscape here
                 // shrinks/letterboxes that content instead of filling the screen.
                 // Let the system rotate freely based on the device sensor instead
