@@ -1740,10 +1740,8 @@ class MainActivity : AppCompatActivity() {
                     removeAllViews()
                     visibility = View.GONE
                 }
-                // requestLayout before VISIBLE, not after: a view marked
-                // VISIBLE with a stale layout pass can accept touches at
-                // coordinates that still map to whatever was there before -
-                // the exact "the blank strip doesn't respond to taps" shape.
+                // Layout before VISIBLE: touches on a stale layout can hit
+                // whatever was there before - the dead-strip-no-tap shape.
                 binding.contentRoot.requestLayout()
                 binding.contentRoot.visibility = View.VISIBLE
                 customView = null
