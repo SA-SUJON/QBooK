@@ -294,3 +294,53 @@ v5.2.3 proved its fixes in the harness, but the user still saw the wrong count a
 - Per-section isolation, retention floors, reels video-required filter, exact-phase batching, bridge chunking, pipeline order: re-proved against the new files.
 
 > Session: 2026-08-07 | Tag: v5.2.4 | Tests: 909 passed, 0 failed (10 suites)
+
+---
+
+# Sync Phases Ran Concurrently Because the Wait Had a Timer (Aug 7, 2026, v5.2.5)
+
+**Reported (device, verbatim, with screenshot):** "tomake ki bolechilam? first 10 post save Hobe tarpor posts save stop / tarpor reels download hobe complete hole ... but screenshot ta dekho 29 ta posts save hoyeche abar reels o same eksathe 3 ta save hoyeche emon keno? eksathe to save hobar kotha na?" — status row showed `Posts: 29 • Reels: 4 of 30` climbing **together**.
+
+## Root cause (proven by code, not guessed)
+
+`BackgroundSyncManager.awaitThen` waited on `OfflineFeed.awaitPrefetch(300_000)` — a fixed **5-minute wall clock**. Thirty reels of video (~150-360 MB on this connection) cannot finish in 5 minutes, so the timer fired and step 3 (posts → 300) started while the reel vault was still downloading. Each vault drains its own queue with its own worker, so the two sections climbed side by side. Live-scroll capture was ruled out first: `MainActivity.injectAll` explicitly never populates the store from the visible page.
+
+## Fix
+
+`awaitThen(section, next)` now waits on the actual vault for that section: loop { `vault.awaitIdle(60_000)`; break only when `pending() == 0 && !busy` }; a progress watchdog (no new completed file for 3 consecutive minutes) breaks instead of hanging on a dead network. No fixed timeout remains; phases are truly sequential.
+
+> Session: 2026-08-07 | Tag: v5.2.5 | Tests: pipeline suite re-proved with progress-gating; 10/10 suites green locally
+
+---
+
+# Offline Blank-With-AdBlock + Tab Bar Missing From Its Place (Aug 7, 2026, v5.2.5)
+
+**Reported (device, verbatim, with screenshot):** "offline mode a open kore dekhi screen pura blank 1 seconds er jonno eshe shob hide hoye geche ... AdBlocker off korle screen a content ashe but Facebook er je options gula thake reels chat notification etc. eita tar nijer jaigai nai" — screenshot: no header on top, Facebook's tab row (home/friends/watch-4/reels-15+/bell/shop, badges and all) sitting **between** two feed posts.
+
+Every link below was reproduced in jsdom against the verbatim production scripts before any fix was written.
+
+## Bug A — the blank screen, two links in one chain
+
+1. **Ads leaked into the store through the sync WebView.** The capture's ad barrier checked only `data-fbpro-hidden` — the mark of the cosmetic pass that runs on the *visible* page. The background-sync WebView runs `MFacebookAds`, whose mark is `data-db-ad`. A sponsored post the sync page had *already condemned* was captured regardless (proven: `saved: [AD, post1, post2]` with the tag plainly present).
+2. **One leaked ad condemned the whole batch.** Offline, `MFacebookAds.cardOf` looked for `vscroller` or `MScreen` above the ad element. On the composed page the saved cards sit in `#__db_cards` **beside** the hidden scroller, so the walk's boundary became the screen root — whose direct child from that node is the holder itself. `hide()` then removed `#__db_cards`: every saved post gone in one operation (proven: `style= display: none !important` on the holder ~ms after injection — the user's "1 second then everything hides").
+
+## Bug B — the tab bar in the wrong place, also two links
+
+1. **The real header was being hidden.** A captured home document opens its screen root (`data-mcomponent="MScreen"`) **before** the feed scroller, and `PageAssembly`'s single alternating regex matches the *earliest* such tag — so the holder became the screen's first child and the sibling rule `#__db_cards ~ *` hid **the pinned header and the tab bar with it** (proven: the header and the whole scroller both matched the selector).
+2. **And a second tab bar was saved as a post.** `OfflineCapture.isChrome` never recognised the tab row: labels live on its buttons, not the row, and badge counters (`"15+ 15+ 4 15+"` — exactly the string in the user's store, proven) pass the six-character content floor. Offline it was served back inline between two posts — the screenshot.
+
+## Fixes (no structure, no UI change)
+
+- `OfflineCapture`: tab row detected by ≥2 tab-labelled buttons with no story link; `isAdCard` honours `data-db-ad` as well as `data-fbpro-hidden`.
+- `MFacebookAds`: `cardOf` treats `[data-db-cards]` as a scroller-level boundary (nearest-ancestor, so online behaviour is byte-identical); `hide()` refuses the holder outright.
+- `AdBlocker.getCosmeticScript`: `[data-db-cards]` is an `isContainer` stop node; `hide()` refuses it.
+- `PageAssembly`: the **non-snap** feed scroller is matched first and receives the cards (only its own stale children hide; the header keeps its place). The reels snap pager (`vscroller-snap`) is excluded by a negative lookahead, so reels/stories assembly is **unchanged** from the version that already worked.
+- `SectionVault`: junk markup (`data-db-ad` tags; the tab-row signature, feed section only) is filtered on add **and on read** — existing polluted stores heal themselves at first launch after the upgrade.
+
+## Proof battery
+
+- All three device symptoms reproduced before the fix and shown resolved after, with verbatim production scripts: compose placement (header survives, only stale scroller children hide), capture (tab row + condemned ad rejected), MFacebookAds (ad card hidden alone, holder untagged, organic posts survive), `getCosmeticScript` (holder is an untouchable stop node).
+- 10/10 suites green locally (940 assertions, incl. 23 new pipeline + 5 new feed-guard checks pinning all of the above).
+- `kotlinc` over the tree: identical fallout before/after — zero new compile errors introduced.
+
+> Session: 2026-08-07 | Tag: v5.2.5 | Tests: 940 passed, 0 failed (10 suites)

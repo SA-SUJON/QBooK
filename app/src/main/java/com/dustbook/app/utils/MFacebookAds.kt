@@ -47,7 +47,17 @@ object MFacebookAds {
                * direct child of the feed scroller.
                */
               function cardOf(el) {
-                var scroller = el.closest('[data-type="vscroller"]');
+                // The offline page replaces the feed with a holder of saved
+                // cards that sits NEXT TO the (hidden) scroller, inside the
+                // screen root. Without the holder as a boundary, an ad
+                // marker inside one saved card could not find the scroller
+                // above it, fell through to the screen root, and the
+                // "direct child" there is the holder itself - so every
+                // saved post vanished in one hide(). That is exactly the
+                // reported "feed paints, then everything disappears".
+                // Nearest-ancestor order keeps behaviour identical online:
+                // a live feed has no [data-db-cards] anywhere.
+                var scroller = el.closest('[data-type="vscroller"],[data-db-cards]');
                 if (!scroller) {
                   // Reels and some surfaces use a plain container. Fall back to
                   // the outermost MContainer under the screen root.
@@ -69,8 +79,10 @@ object MFacebookAds {
                 if (el.hasAttribute(TAG)) return;
                 var t = el.tagName;
                 if (t === 'BODY' || t === 'HTML') return;
-                // Never remove the scroller itself.
+                // Never remove the scroller itself, nor the offline card
+                // holder: one condemned card must never take the batch.
                 if (el.getAttribute('data-type') === 'vscroller') return;
+                if (el.hasAttribute('data-db-cards')) return;
                 if (el.getAttribute('data-mcomponent') === 'MScreen') return;
                 el.setAttribute(TAG, '1');
                 el.style.setProperty('display', 'none', 'important');

@@ -455,6 +455,38 @@ function posts(n, prefix) {
   check('killVideos never calls load() on an ad reel\'s video',
     !/killVideos[\s\S]{0,260}\.load\(\)/.test(reelScript), true);
 
+  // 11. The offline card holder is a container, never a card.
+  //
+  //     Report, proven end to end: offline, with the ad blocker on, the
+  //     whole feed painted for about a second and then vanished. An ad
+  //     that had slipped into the saved store sat inside [data-db-cards];
+  //     the sponsored walk climbed to the batch node and condemned every
+  //     saved post at once. The holder is now an explicit stop node AND
+  //     an explicit hide refusal, on both layers.
+  {
+    const abSrc = fs.readFileSync(KT, 'utf8');
+    check('the holder is a listed stop-node', 
+      /hasAttribute\('data-db-cards'\)\) return true;/.test(abSrc), true);
+    check('hide() refuses the holder even alone',
+      /hasAttribute\('data-db-cards'\)\) return;/.test(abSrc), true);
+
+    const adCard = `<div class="card" id="holdAd">
+        <span><a href="/brand-page">Ad Brand</a></span>
+        <span>Sponsored</span>
+        <a href="/ads/about/?entry_product=ad_preferences">Why am I seeing this?</a>
+      </div>`;
+    const realCard = `<div class="card" id="holdReal"><div><span>Mim with a real saved post for offline reading</span></div></div>`;
+    const w2 = await run(`<div id="screenRoot">
+      <script>var pad = "${'x'.repeat(26000)}";</script>
+      <div data-mcomponent="MScreen" data-type="container">
+        <div id="__db_cards" data-db-cards="1">${adCard}${realCard}</div>
+      </div></div>`);
+    console.log('J) the offline card holder is untouchable');
+    check('the holder survives', hidden(w2, '#__db_cards'), false);
+    check('the ad inside it still goes', hidden(w2, '#holdAd'), true);
+    check('the saved real post survives', hidden(w2, '#holdReal'), false);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) {
     console.log('\n::error::reel CTA ad guard failed - the black/blank/loading-screen bug is back');

@@ -129,9 +129,13 @@ open class SectionVault(
             val existing = load()
             val seen = HashSet<String>()
 
-            val filtered = if (videoRequired) {
-                incoming.filter { it.media.any { u -> isVideoUrl(u) } }
-            } else incoming
+            val filtered = incoming
+                .filter { !isJunk(it.html) }
+                .let { list ->
+                    if (videoRequired) {
+                        list.filter { it.media.any { u -> isVideoUrl(u) } }
+                    } else list
+                }
 
             val keep = maxOf(limit, keepFloor)
             val merged = ArrayList<Entry>(keep)
@@ -191,6 +195,11 @@ open class SectionVault(
                 val o = arr.optJSONObject(i) ?: return@mapNotNull null
                 val html = o.optString("h", "")
                 if (html.isBlank()) return@mapNotNull null
+                // Junk that entered older stores is filtered at the door of
+                // every read too, so one upgrade quietly heals an existing
+                // vault: condemned ad cards and the captured tab row simply
+                // stop existing for counting, serving and identity.
+                if (isJunk(html)) return@mapNotNull null
                 val m = o.optJSONArray("m")
                 val mediaUrls = if (m == null) emptyList() else
                     (0 until m.length()).mapNotNull { j -> m.optString(j, null) }
@@ -203,6 +212,37 @@ open class SectionVault(
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    /**
+     * Stored markup that is not content, decided from the markup alone.
+     *
+     * Two kinds, both proven against real captured stores:
+     *
+     *  - a card the m.facebook.com ad remover had already condemned when
+     *    the capture read it: the mark (`data-db-ad`) is part of the saved
+     *    outerHTML, so such a card stays recognisable forever. It is an
+     *    ad by definition and never belongs in the library.
+     *  - Facebook's pinned tab row, saved when the background scroll
+     *    caught it mid-scroller with badge counters showing. Six-plus
+     *    characters of badge text and no container-level label let it
+     *    pass every capture filter; offline it was served back between
+     *    two posts as if it were a story. The signature mirrors the
+     *    capture-side check in OfflineCapture.isChrome exactly: several
+     *    tab-labelled buttons and no link a story could have. Feed-only,
+     *    because only the home scroller ever contains that row.
+     */
+    private fun isJunk(html: String): Boolean {
+        if (html.contains(JUNK_AD_TAG, ignoreCase = true)) return true
+        if (section != SECTION_FEED_ID) return false
+        if (JUNK_STORY_LINK.containsMatchIn(html)) return false
+        var labels = 0
+        val it = JUNK_TAB_LABEL.findAll(html).iterator()
+        while (it.hasNext()) {
+            it.next()
+            if (++labels >= 2) return true
+        }
+        return false
     }
 
     /** Total stored entries (media may still be in flight). */
@@ -561,6 +601,19 @@ open class SectionVault(
 
         /** One media asset can be this large; bigger is an error, not content. */
         private const val MAX_ENTRY_BYTES = 60L * 1024 * 1024   // 60 MB
+
+        // Junk signatures for isJunk(), above. Kept as constants so the
+        // test suite can extract them verbatim.
+        private const val JUNK_AD_TAG = "data-db-ad="
+        private const val SECTION_FEED_ID = "feed"
+        private val JUNK_STORY_LINK = Regex(
+            "story_fbid|/posts/|/videos/|/reel/", RegexOption.IGNORE_CASE)
+        private val JUNK_TAB_LABEL = Regex(
+            "aria-label=[\"'](?:home|reels|watch|notifications|marketplace|" +
+                "menu|profile|friends|groups|gaming|messages|messenger|" +
+                "chats|search|create)[\"']",
+            RegexOption.IGNORE_CASE)
+
 
         fun isVideoUrl(url: String): Boolean {
             val clean = url.substringBefore('?').lowercase(Locale.ROOT)

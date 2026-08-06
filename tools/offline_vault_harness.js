@@ -63,6 +63,7 @@ const RX = {
   SCRIPT_BLOCK: kotlinRegex(assembly, 'SCRIPT_BLOCK'),
   SCRIPT_SELF: kotlinRegex(assembly, 'SCRIPT_SELF'),
   BASE_TAG: kotlinRegex(assembly, 'BASE_TAG'),
+  FEED_VSCROLLER: kotlinRegex(assembly, 'FEED_VSCROLLER'),
   CONTAINER: kotlinRegex(assembly, 'CONTAINER'),
   BODY: kotlinRegex(assembly, 'BODY'),
 };
@@ -89,8 +90,16 @@ function holderHtml(cards) {
 function compose(doc, cards) {
   if (!cards.length) return doc;
   const holder = holderHtml(cards);
+  // Feed scroller first, exactly as the Kotlin: only its later children
+  // hide, and the pinned header above it keeps its place.
+  RX.FEED_VSCROLLER.lastIndex = 0;
+  let m = RX.FEED_VSCROLLER.exec(doc);
+  if (m) {
+    const at = m.index + m[0].length;
+    return doc.slice(0, at) + HIDE_OLD + holder + doc.slice(at);
+  }
   RX.CONTAINER.lastIndex = 0;
-  let m = RX.CONTAINER.exec(doc);
+  m = RX.CONTAINER.exec(doc);
   if (m) {
     const at = m.index + m[0].length;
     return doc.slice(0, at) + HIDE_OLD + holder + doc.slice(at);
@@ -133,6 +142,30 @@ function isChrome(url) {
   const c = url.split('?')[0].toLowerCase();
   return c.includes('/emoji.php/') || c.includes('static.xx.fbcdn.net') ||
          c.includes('/rsrc.php/') || c.endsWith('.svg');
+}
+
+// ------------------------------------------------- vault junk filter
+
+/** Junk signatures, extracted verbatim from SectionVault's companion. */
+const JUNK = {
+  AD_TAG: kotlinConst(vault, 'JUNK_AD_TAG'),
+  FEED_ID: kotlinConst(vault, 'SECTION_FEED_ID'),
+  STORY_LINK: kotlinRegex(vault, 'JUNK_STORY_LINK'),
+  TAB_LABEL: kotlinRegex(vault, 'JUNK_TAB_LABEL'),
+};
+
+/** Mirror of SectionVault.isJunk(), branch for branch. */
+function isJunk(section, html) {
+  if (html.toLowerCase().includes(JUNK.AD_TAG.toLowerCase())) return true;
+  if (section !== JUNK.FEED_ID) return false;
+  JUNK.STORY_LINK.lastIndex = 0;
+  if (JUNK.STORY_LINK.test(html)) return false;
+  JUNK.TAB_LABEL.lastIndex = 0;
+  let labels = 0, m;
+  while ((m = JUNK.TAB_LABEL.exec(html)) !== null) {
+    if (++labels >= 2) return true;
+  }
+  return false;
 }
 
 /**
@@ -181,5 +214,6 @@ module.exports = {
   unescapeKotlin, kotlinRegex, kotlinConst,
   RX, HIDE_OLD, sanitize, holderHtml, compose,
   photoKey, isVideoUrl, isAvatar, isChrome, isComplete, addItems,
+  JUNK, isJunk,
   sources: { assembly, vault, docs, docsFeed },
 };

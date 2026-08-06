@@ -610,10 +610,18 @@ console.log('\nThe pipeline runs in the documented order');
 
   // A phase only ends when its downloads are drained: the count the user
   // reads is what actually plays, never markup still waiting on media.
-  ok('every phase waits for its downloads before moving on',
-     /fun awaitThen\(next: \(\) -> Unit\)/.test(bsm) &&
-     /OfflineFeed\.awaitPrefetch\(300_000\)/.test(bsm));
-  const awaits = (bsm.match(/awaitThen \{/g) || []).length;
+  // Giving up after five fixed minutes overlapped the phases - posts and
+  // reels climbed together - so the wait is per-section, by progress.
+  ok('each phase waits on its OWN section vault',
+     /fun awaitThen\(section: String, next: \(\) -> Unit\)/.test(bsm) &&
+     /OfflineVaults\.forSection\(section\)/.test(bsm));
+  ok('the fixed five-minute give-up is gone, phases cannot overlap',
+     !/300_000/.test(bsm) && /awaitIdle\(60_000\)/.test(bsm));
+  ok('the wait holds while files keep landing and bails only when dead',
+     /stalledMinutes\+\+/.test(bsm) && /stalledMinutes >= 3/.test(bsm));
+  ok('a phase ends when its queue genuinely stands empty',
+     /if \(pending == 0 && !busy\) break/.test(bsm));
+  const awaits = (bsm.match(/awaitThen\(OfflineFeed\.SECTION_/g) || []).length;
   ok('the wait follows every phase', awaits >= 4, String(awaits));
 }
 
@@ -847,6 +855,68 @@ console.log('\nEvery saved card reaches the page');
      res.doc.getElementById('__db_hide_old') !== null &&
      res.doc.querySelector('#feed .old') !== null);
 
+  // Round-5 report: offline, Facebook's own header and tab bar were not in
+  // their place. Proven with the real regex: a captured home document opens
+  // its screen root (MScreen) BEFORE the feed scroller, and one alternating
+  // regex matched that earlier tag - so the cards landed next to the header
+  // and the sibling rule then hid the header itself. The feed scroller is
+  // now matched first, deliberately.
+  ok('the feed scroller is ranked ahead of the screen root',
+     /FEED_VSCROLLER\.find\(doc\)[\s\S]{0,220}CONTAINER\.find\(doc\)/
+       .test(assemblySrc));
+  ok('the reels snap pager can never qualify as the feed',
+     /\(\?!\[\^>\]\*vscroller-snap\)/.test(assemblySrc));
+  {
+    // Full captured shape: screen root containing the pinned header AND
+    // the feed scroller (fixture 8 of test_feed_guard.js).
+    const home =
+      '<div data-mcomponent="MScreen" data-screen-id="65549"' +
+      ' data-crash-screen-id="42949673960" data-screen-keys="57,56,55"' +
+      ' data-type="container" class="m bg-s2">' +
+      '<div data-mcomponent="MContainer" class="m fixed-container top" id="hdr">' +
+      '<div>facebook logo</div><div role="button" aria-label="Reels">R</div></div>' +
+      '<div data-type="vscroller" data-mcomponent="MContainer"' +
+      ' data-is-pull-to-refresh-allowed="true" class="m" id="vs">' +
+      '<div data-mcomponent="MContainer" class="old" id="old1">stale</div>' +
+      '<div data-mcomponent="MContainer" class="old" id="old2">stale2</div>' +
+      '</div></div>';
+    const placed = renderOffline(
+      ['<div data-tracking-duration-id="n9"><span>saved post</span></div>'],
+      home);
+    const holder2 = placed.doc.querySelector('[data-db-cards]');
+    ok('the cards land inside the feed scroller',
+       !!holder2 &&
+       holder2.parentElement.getAttribute('data-type') === 'vscroller');
+    // The sibling-hiding rule as CSS would apply it, computed here by
+    // re-running its own selector, extracted from the same constant.
+    const hidden = [...placed.doc.querySelectorAll('#__db_cards ~ *')];
+    ok("the header stays: only the scroller's old children hide",
+       hidden.length === 2 &&
+       hidden.every((el) => el.classList.contains('old')),
+       hidden.map((el) => el.id || el.tagName).join(','));
+    ok("the tab row next to the header is not in the hide set either",
+       !hidden.some((el) => el.querySelector &&
+         el.querySelector('[aria-label="Reels"]')));
+
+    // A reels document must keep the old placement: its scroller is a snap
+    // pager, geometry computed by Facebook's layout; saved reels stay in
+    // the screen root, never inside the pager.
+    const reelsDoc =
+      '<div data-mcomponent="MScreen" data-type="container" class="m">' +
+      '<div data-type="vscroller" data-mcomponent="MContainer"' +
+      ' class="m vscroller vscroller-snap" id="pager">' +
+      '<div data-mcomponent="MContainer" class="old">old reel</div>' +
+      '</div></div>';
+    const placedR = renderOffline(
+      ['<div data-tracking-duration-id="r9"><span>saved reel</span></div>'],
+      reelsDoc);
+    const holderR = placedR.doc.querySelector('[data-db-cards]');
+    ok('reels: the snap pager is never the card home',
+       !!holderR &&
+       holderR.parentElement.getAttribute('data-mcomponent') === 'MScreen' &&
+       holderR.parentElement.getAttribute('data-type') !== 'vscroller');
+  }
+
   // Regression contrast: the OLD template-literal approach genuinely lost
   // exactly this bundle - the bug was real, and it could only die this way.
   {
@@ -1014,6 +1084,148 @@ console.log('\nAds never enter the offline store');
   const feed2 = runCapture(cap, 'https://m.facebook.com/',
     '<body><div data-type="vscroller">' + feedMarked + '</div></body>');
   ok('a feed card the ad blocker condemned is NOT saved', feed2.length === 0);
+
+  // Round-5 report, proven end to end before the fix: the background-sync
+  // WebView runs MFacebookAds, which tags its condemned cards data-db-ad -
+  // but this capture only honoured data-fbpro-hidden, so every sponsored
+  // post the sync page had already marked walked into the store. Offline,
+  // its ad markers then made the ad remover blank the whole card batch.
+  ok('the m.facebook.com ad mark is honoured too',
+     /hasAttribute\('data-db-ad'\)/.test(cap));
+  const syncTaggedAd =
+    '<div data-dcm-id="1" data-tracking-duration-id="f9" data-db-ad="1" ' +
+      'style="display: none !important;">' +
+      '<div><span>Promoted Page special offer for everyone</span></div>' +
+      '<img src="https://scontent.fcgp1-1.fbcdn.net/badad.jpg"></div>';
+  const feed3 = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' + syncTaggedAd + '</div></body>');
+  ok('a card the sync page already condemned is ALSO not saved',
+     feed3.length === 0, String(feed3.length));
+}
+
+console.log('\\nFacebook tab bar never enters the store, and old stores heal');
+{
+  const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const H2 = require('./offline_vault_harness.js');
+
+  // Round-5 report: the offline home feed showed Facebook's own tab row
+  // (home / friends / watch / reels / notifications / marketplace) wedged
+  // between two saved posts. The row passes capture's chrome checks:
+  // its buttons carry the aria-labels but the row itself does not, and
+  // badge counters ("15+ 15+ 4 15+") read as six-plus characters of text.
+  const tabRow =
+    '<div data-mcomponent="MContainer" class="m" id="tabrow"' +
+    ' style="margin-top:0px; height:35px; z-index:0; width:360px;">' +
+    '<div role="button" tabindex="0" aria-label="Home" data-action-id="1"><i></i><span>15+</span></div>' +
+    '<div role="button" tabindex="0" aria-label="Friends" data-action-id="2"><i></i><span>15+</span></div>' +
+    '<div role="button" tabindex="0" aria-label="Watch" data-action-id="3"><i></i><span>4</span></div>' +
+    '<div role="button" tabindex="0" aria-label="Reels" data-action-id="4"><i></i><span>15+</span></div>' +
+    '<div role="button" tabindex="0" aria-label="Notifications" data-action-id="5"><i></i></div>' +
+    '<div role="button" tabindex="0" aria-label="Marketplace" data-action-id="6"><i></i></div>' +
+    '</div>';
+  const feedPost2 =
+    '<div data-mcomponent="MContainer" data-tracking-duration-id="p2">' +
+      '<div data-mcomponent="TextArea"><div class="native-text">' +
+      '<span>a genuine post from a friend with real body text</span></div></div>' +
+      '<a href="https://m.facebook.com/story.php?story_fbid=777">Full story</a></div>';
+  const feed = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' + tabRow + feedPost2 + '</div></body>');
+  ok('the tab row is NOT captured as a story',
+     !feed.some((it) => it.h.indexOf('tabrow') >= 0),
+     JSON.stringify(feed.length));
+  ok('the real post beside it still is',
+     feed.some((it) => it.h.indexOf('story_fbid=777') >= 0));
+
+  // The same signature rejects rows already sitting in old stores, at the
+  // vault door, so one upgrade quietly cleans them (feed section only).
+  const adMarkup =
+    '<div data-dcm-id="1" data-tracking-duration-id="f9" data-db-ad="1" ' +
+      'style="display: none !important;">' +
+      '<div><span>Promoted Page special offer for everyone</span></div>' +
+      '<img src="https://scontent.fcgp1-1.fbcdn.net/badad.jpg"></div>';
+  ok('the vault filters condemned-ad markup on add and on read',
+     /filter \{ !isJunk\(it\.html\) \}/.test(vaultSrc) &&
+     /if \(isJunk\(html\)\) return@mapNotNull null/.test(vaultSrc));
+  ok('the tab-row signature is applied to the feed section only',
+     /section != SECTION_FEED_ID\) return false/.test(vaultSrc));
+  ok('vault mirror: a saved tab row is junk in the feed vault',
+     H2.isJunk('feed', tabRow));
+  ok('vault mirror: it is junk even with every badge counter showing',
+     H2.isJunk('feed', tabRow.replace('15+', '99+')));
+  ok('vault mirror: an organic post is never junk',
+     !H2.isJunk('feed', feedPost2));
+  ok('vault mirror: a condemned ad card is junk in every section',
+     H2.isJunk('feed', adMarkup) && H2.isJunk('reels', adMarkup) &&
+     H2.isJunk('stories', adMarkup));
+  ok('vault mirror: tab labels inside a reel stay safe elsewhere',
+     !H2.isJunk('reels', tabRow));
+  // A post that merely links one tab-shaped button is safe: two labels
+  // and no story link are required together.
+  const oneLabel =
+    '<div data-mcomponent="MContainer" data-tracking-duration-id="p3">' +
+      '<div><span>wrote about the new facebook home design today</span></div>' +
+      '<div role="button" aria-label="Home"><i></i></div></div>';
+  ok('vault mirror: one nav-shaped button does not condemn a post',
+     !H2.isJunk('feed', oneLabel));
+}
+
+console.log('\\nOne condemned card can never blank the whole offline feed');
+{
+  // Round-5 report: offline + ad blocker on -> content for ~1s, then the
+  // ENTIRE page hid. Proven with the real scripts: a sponsored card in the
+  // store made MFacebookAds.cardOf climb from the ad element to the
+  // holder (the direct child of the screen root) and hide() removed the
+  // batch. Now the holder is a hard boundary and a hard refusal.
+  const mfa = fs.readFileSync(KT('utils/MFacebookAds.kt'), 'utf8');
+  ok('cardOf treats the card holder as a scroller-level boundary',
+     /closest\('\[data-type="vscroller"\],\[data-db-cards\]'\)/.test(mfa));
+  ok('hide() can never take the holder itself',
+     /hasAttribute\('data-db-cards'\)\) return;/.test(mfa));
+
+  const i = mfa.indexOf('fun script()');
+  const s = mfa.indexOf('return """', i) + 'return """'.length;
+  const script = mfa.slice(s, mfa.indexOf('""".trimIndent()', s));
+
+  const H3 = require('./offline_vault_harness.js');
+  const sponsoredSaved =
+    '<div data-dcm-id="1" data-mcomponent="MContainer" id="SAVED_AD" class="m">' +
+    '<div role="button" aria-label="Video player" data-video-id="1452526892980986"' +
+    ' data-video-tracking=\'{"adid":"120251177608830592","qid":"-64386","is_sponsored":1}\'' +
+    ' data-testid="sponsored-story-photo"><video src="blob:x"></video></div>' +
+    '<div>Promoted Page special offer for everyone</div></div>';
+  const organicSaved =
+    '<div data-mcomponent="MContainer" id="SAVED_REAL" class="m">' +
+    '<div data-mcomponent="TextArea"><div class="native-text">' +
+    '<span>a genuine saved post from a friend with real text</span></div></div></div>';
+  const doc =
+    '<!DOCTYPE html><html><body><div data-mcomponent="MScreen" data-type="container">' +
+    '<div data-mcomponent="MContainer" class="m fixed-container top" id="hdr"><span>h</span></div>' +
+    '<div data-type="vscroller" data-is-pull-to-refresh-allowed="true">' +
+    '<div class="old">stale</div></div></div></body></html>';
+  const page = H3.compose(doc, [sponsoredSaved, organicSaved]);
+  const dom = new JSDOM(page, {
+    runScripts: 'outside-only', pretendToBeVisual: true,
+    url: 'https://m.facebook.com/' });
+  const w = dom.window;
+  w.requestIdleCallback = undefined;
+  w.requestAnimationFrame = (f) => setTimeout(f, 0);
+  w.HTMLMediaElement.prototype.pause = function () {};
+  w.eval(script);
+  // The installed pass runs synchronously on injection: document.body
+  // already exists, so start() calls run() before this line. No timers
+  // are needed to see the condemnations.
+  const holder = w.document.getElementById('__db_cards');
+  ok('the card holder is never tagged or hidden',
+     !!holder && !holder.getAttribute('data-db-ad') &&
+     (holder.getAttribute('style') || '').indexOf('display: none') < 0);
+  ok('an ad that entered the store earlier is hidden alone',
+     (w.document.getElementById('SAVED_AD')
+       .getAttribute('style') || '').indexOf('display: none') >= 0 ||
+     !!w.document.querySelector('#SAVED_AD[data-db-ad]'));
+  ok('every organic saved post survives',
+     (w.document.getElementById('SAVED_REAL').getAttribute('style') || '')
+       .indexOf('display: none') < 0);
 }
 
 console.log('\nNo post is too big or too small to be saved');
@@ -1159,7 +1371,7 @@ console.log('\nEvery section keeps what it saves, in its own store');
      /dirName = "stories"/.test(stories));
   ok('reels refuse entries with no playable video, at their own door',
      /videoRequired = true/.test(reels) &&
-     /fun addItems[\s\S]{0,300}if \(videoRequired\)/.test(vaultSrc));
+     /fun addItems[\s\S]{0,600}if \(videoRequired\)/.test(vaultSrc));
   ok('per-section retention floors exist',
      /keepFloor = 500/.test(home) && /keepFloor = 250/.test(reels) &&
      /keepFloor = 200/.test(stories));

@@ -25,14 +25,28 @@ package com.dustbook.app.offline
  *     m.facebook.com captures show) gets the cards as its FIRST child,
  *     and a stylesheet hides the block's old children, which are only
  *     grey server placeholders and stale posts nobody saved;
- *  2. if some stored document has no such container, the cards go right
- *     after <body> and nothing is hidden - content is guaranteed either
- *     way;
- *  3. a document with neither receives the cards at its end.
+ *  2. if some stored document has no feed container but still has a
+ *     screen root (`data-mcomponent="MScreen"` - the reels/documents use
+ *     one), the cards become ITS first child and the rest of that screen
+ *     hides;
+ *  3. if some stored document has neither, the cards go right after
+ *     <body> and nothing is hidden - content is guaranteed either way;
+ *  4. a document with no body receives the cards at its end.
  *
  * Facebook's own header and tab bar are never touched: they live outside
  * the feed container, which is exactly why the offline page still looks
  * like the online one.
+ *
+ * Why the feed container is ranked AHEAD of the screen root: on a
+ * captured home document the MScreen element opens first and CONTAINS
+ * both the pinned header (`.fixed-container.top`) and the feed scroller.
+ * A single alternating regex matches the earliest tag that carries either
+ * marker, which is the MScreen open tag, so the cards landed next to the
+ * header and the sibling-hiding rule below then removed everything after
+ * them - the header and the tab bar included. Offline, Facebook's own
+ * header was simply gone and the tab row's only copy was a stray saved
+ * card. Searching the two markers separately, feed container first, puts
+ * the cards back where the old posts lived and leaves the header alone.
  */
 object PageAssembly {
 
@@ -58,7 +72,7 @@ object PageAssembly {
             .replace(BASE_TAG, "")
 
     /**
-     * Everything past the cards inside the feed container. Those are grey
+     * Everything past the cards inside the same container. Those are grey
      * server placeholders and the stale posts the stored document shipped
      * with; the saved set replaces them wholesale, or the two would mix
      * on screen and look broken. Scoped to the container, so the header
@@ -67,7 +81,22 @@ object PageAssembly {
     private const val HIDE_OLD =
         "<style id=\"__db_hide_old\">#__db_cards~*{display:none!important}</style>"
 
-    /** The feed container in m.facebook.com markup, by its stable markers. */
+    /**
+     * The feed scroller in m.facebook.com markup.
+     *
+     * The reels screen also uses `data-type="vscroller"`, but as a snap
+     * pager (class "vscroller-snap") whose geometry Facebook's own layout
+     * computes; saved reels must keep sitting in the screen root, not in
+     * that pager. The negative lookahead keeps the pager out, so only the
+     * ordinary, vertically-flowing feed scroller ever matches here.
+     */
+    private val FEED_VSCROLLER = Regex(
+        "<div\\b(?=[^>]*data-type=[\"']vscroller[\"'])" +
+            "(?![^>]*vscroller-snap)[^>]*>",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Screen root / any scroller, for documents without a feed scroller. */
     private val CONTAINER = Regex(
         "<div\\b[^>]*(?:data-type=[\"']vscroller[\"']" +
             "|data-mcomponent=[\"']MScreen[\"'])[^>]*>",
@@ -91,6 +120,13 @@ object PageAssembly {
         if (cards.isEmpty()) return doc
         val holder = holderHtml(cards)
 
+        // Feed scroller first - see the note at the class level. Only its
+        // own later children are hidden then, and the pinned header above
+        // it keeps its place, exactly as online.
+        FEED_VSCROLLER.find(doc)?.let { m ->
+            val at = m.range.last + 1
+            return doc.substring(0, at) + HIDE_OLD + holder + doc.substring(at)
+        }
         CONTAINER.find(doc)?.let { m ->
             val at = m.range.last + 1
             return doc.substring(0, at) + HIDE_OLD + holder + doc.substring(at)

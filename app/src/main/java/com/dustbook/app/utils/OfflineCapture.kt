@@ -286,6 +286,31 @@ object OfflineCapture {
             if (!c.querySelector) return true;
             // Composer box
             if (c.querySelector('input,textarea,[role="textbox"]')) return true;
+            // Facebook's pinned tab row, caught mid-scroller with its badge
+            // counters. Its buttons carry the labels ("Home", "Reels", ...)
+            // but the row itself carries none, and the badge digits
+            // ("15+ 15+ 4 15+") are six-plus characters of text - so this
+            // row passed every check below and got saved as a card, which
+            // is why the offline feed showed the tab bar wedged between
+            // two posts. Proven against the saved store:
+            //   {id:"text:15+ 15+ 4 15+", h:"<div ... aria-label=Home ...>"}
+            // A real story never holds two tab-labelled buttons.
+            // SectionVault applies this same signature when reading an old
+            // store, so rows already saved are dropped there too.
+            var tabBtns = c.querySelectorAll(
+              '[aria-label="Home" i],[aria-label="Reels" i],' +
+              '[aria-label="Watch" i],[aria-label="Notifications" i],' +
+              '[aria-label="Marketplace" i],[aria-label="Menu" i],' +
+              '[aria-label="Profile" i],[aria-label="Friends" i],' +
+              '[aria-label="Groups" i],[aria-label="Gaming" i],' +
+              '[aria-label="Messages" i],[aria-label="Messenger" i],' +
+              '[aria-label="Chats" i],[aria-label="Search" i],' +
+              '[aria-label="Create" i]');
+            if (tabBtns.length >= 2 &&
+                !c.querySelector('a[href*="/posts/"],a[href*="story_fbid"],' +
+                                 'a[href*="/videos/"],a[href*="/reel/"]')) {
+              return true;
+            }
             // Facebook bottom tab bar — aria-labels from device captures
             var label = (c.getAttribute('aria-label') || '').toLowerCase();
             if (/^(home|reels|watch|notifications|menu|profile|search|create|messages|marketplace|friends|groups|gaming)$/i.test(label)) return true;
@@ -313,12 +338,13 @@ object OfflineCapture {
 
           // ---- Ads never enter the offline store ----------------------------
           //
-          // The capture only reads the DOM, and the ad blocker in the same
-          // page only marks it: every ad it condemns carries
-          // data-fbpro-hidden. visibility:hidden keeps a marked card's text
-          // and media fully readable here, so without this check every
-          // hidden ad was copied into the offline library - video download
-          // included.
+          // The capture only reads the DOM, and the ad blockers in the same
+          // page only mark it: condemned cards carry data-fbpro-hidden (the
+          // cosmetic pass) or data-db-ad (the m.facebook.com pass, which is
+          // the one the background-sync WebView runs). Both marks leave a
+          // card's text and media fully readable here, so without this
+          // check every hidden ad was copied into the offline library -
+          // video download included.
           //
           // Reels need a second line of defence. Facebook stripped every ad
           // marker off promoted reels (Aug 2026), so the only remaining
@@ -348,8 +374,16 @@ object OfflineCapture {
           }
 
           function isAdCard(c, sec) {
-            // Already condemned by the ad blocker running in this page.
-            if (c.hasAttribute && c.hasAttribute('data-fbpro-hidden')) return true;
+            // Already condemned by an ad blocker running in this page -
+            // either marker counts. getCosmeticScript tags data-fbpro-hidden
+            // on the visible page, but the background-sync WebView runs
+            // MFacebookAds, whose mark is data-db-ad. Checking only the
+            // first let every sponsored post the sync page had already
+            // condemned walk straight into the store; offline, the same
+            // ad markers then made the ad remover hide the whole card
+            // batch. Proven end to end against both scripts verbatim.
+            if (c.hasAttribute && (c.hasAttribute('data-fbpro-hidden') ||
+                                   c.hasAttribute('data-db-ad'))) return true;
             if (sec !== 'reels') return false;
             var els = c.querySelectorAll(
               'a[role="button"],div[role="button"],button,span');

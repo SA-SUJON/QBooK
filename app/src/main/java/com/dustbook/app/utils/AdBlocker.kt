@@ -361,6 +361,9 @@ object AdBlocker {
               function hide(el) {
                 if (!el || el.nodeType !== 1 || PROTECT[el.tagName]) return;
                 if (el.hasAttribute(TAG)) return;
+                // The offline card holder is never a single ad (see
+                // isContainer); refuse it even if some path lands here.
+                if (el.hasAttribute('data-db-cards')) return;
                 el.setAttribute(TAG, '1');
                 el.style.setProperty('display', 'none', 'important');
               }
@@ -401,6 +404,14 @@ object AdBlocker {
                 // and the comment control was missing entirely.
                 var mc = el.getAttribute('data-mcomponent') || '';
                 if (mc === 'MScreen') return true;
+
+                // The offline page's saved-card holder. It is one promoted
+                // node of the screen, not a story: a matched card inside it
+                // must stop the walk at its own boundary, exactly the way
+                // the feed scroller does. Without this an ad that entered
+                // the offline store let the walk condemn every saved post
+                // at once - the "page paints, then goes blank" report.
+                if (el.hasAttribute('data-db-cards')) return true;
 
                 // The screen root also carries these. Checked separately so a
                 // renamed component cannot reopen the same hole.
