@@ -1905,9 +1905,20 @@ class MainActivity : AppCompatActivity() {
         view.evaluateJavascript(
             """
             (function() {
-              if (window.__dbSettle) return;
+              // The guard flag can be left stuck at true forever if a prior
+              // loop was interrupted mid-run (SPA swap, fullscreen re-entry
+              // before the old loop's rAF fired again) - once that happens
+              // every later settleRelayout call becomes a silent no-op for
+              // the rest of the page's life, which matches "once it breaks
+              // it stays broken until the app is restarted". A timestamp
+              // instead of a bare boolean lets a new call detect a stale
+              // flag and take over instead of trusting it forever.
+              var now = Date.now();
+              if (window.__dbSettle && (now - (window.__dbSettleAt || 0)) < 1200) return;
               window.__dbSettle = true;
+              window.__dbSettleAt = now;
               (function s(last, n, f) {
+                window.__dbSettleAt = Date.now();
                 var H = document.documentElement ? document.documentElement.clientHeight : 0;
                 if (H === last) { n++; } else {
                   n = 0;
