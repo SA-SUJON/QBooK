@@ -1753,17 +1753,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 // Layout before VISIBLE: touches on a stale layout can hit
                 // whatever was there before - the dead-strip-no-tap shape.
-                //
-                // Same Wi-Fi-only / mobile-data-or-VPN-clean clue as the
-                // entry path: a bare requestLayout() call returns before the
-                // pass it requested has actually run, so on a fast network
-                // VISIBLE can still land ahead of it. A short forced delay
-                // stands in for the latency mobile data/VPN happened to add
-                // by accident.
                 binding.contentRoot.requestLayout()
-                binding.contentRoot.postDelayed({
-                    binding.contentRoot.visibility = View.VISIBLE
-                }, 60)
+                binding.contentRoot.visibility = View.VISIBLE
                 customView = null
                 customViewCallback?.onCustomViewHidden()
                 customViewCallback = null
