@@ -1723,7 +1723,18 @@ class MainActivity : AppCompatActivity() {
                 // page's own layout the same way leaving fullscreen always
                 // could - the exit path already settles the page for that
                 // reason; entry needs the same protection, not just exit.
-                settleRelayout(binding.webView)
+                //
+                // The clue that pointed here: the bug is Wi-Fi-only and a
+                // 100% clean on mobile data or VPN, both of which only add
+                // network latency, nothing else. That latency was doing the
+                // job of leaving the render pipeline time to actually finish
+                // before immersive mode and the settle read landed. Wi-Fi's
+                // near-zero latency removes that accidental cushion. This
+                // reproduces the same cushion on purpose, on every network,
+                // instead of leaving it to chance.
+                binding.contentRoot.postDelayed({
+                    settleRelayout(binding.webView)
+                }, 120)
                 // Reels/Stories are vertical (9:16) video. Forcing landscape here
                 // shrinks/letterboxes that content instead of filling the screen.
                 // Let the system rotate freely based on the device sensor instead
@@ -1742,8 +1753,17 @@ class MainActivity : AppCompatActivity() {
                 }
                 // Layout before VISIBLE: touches on a stale layout can hit
                 // whatever was there before - the dead-strip-no-tap shape.
+                //
+                // Same Wi-Fi-only / mobile-data-or-VPN-clean clue as the
+                // entry path: a bare requestLayout() call returns before the
+                // pass it requested has actually run, so on a fast network
+                // VISIBLE can still land ahead of it. A short forced delay
+                // stands in for the latency mobile data/VPN happened to add
+                // by accident.
                 binding.contentRoot.requestLayout()
-                binding.contentRoot.visibility = View.VISIBLE
+                binding.contentRoot.postDelayed({
+                    binding.contentRoot.visibility = View.VISIBLE
+                }, 60)
                 customView = null
                 customViewCallback?.onCustomViewHidden()
                 customViewCallback = null
