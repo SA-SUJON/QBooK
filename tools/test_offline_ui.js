@@ -100,34 +100,42 @@ console.log('\nA tab with nothing stored');
   ok('the control is still visible', mk.style.display !== 'none');
 }
 
-console.log('\nInjected content cannot duplicate');
+console.log('\nSaved content is IN the page, and cannot duplicate');
 {
-  const inject = raw(KT('utils/OfflineInject.kt'), 'fun script(')
-    .replace('$safe', JSON.stringify(['<div class="dbcard">post</div>']));
-
-  const dom = new JSDOM(
-    '<body><div data-type="vscroller">' +
+  // Delivery is now static: the served document IS the page, so nothing
+  // can run twice and there is no runtime script left to misbehave.
+  const H = require('./offline_vault_harness.js');
+  const doc = '<div data-type="vscroller">' +
       '<div class="skeleton"></div><div class="skeleton"></div>' +
-    '</div></body>',
-    { runScripts: 'outside-only', pretendToBeVisual: true,
-      url: 'https://m.facebook.com/' });
+    '</div>';
+  const page = '<html><body>' +
+    H.compose(doc, ['<div class="dbcard">post</div>']) + '</body></html>';
 
-  dom.window.eval(inject);
+  const dom = new JSDOM(page, { runScripts: 'dangerously',
+    pretendToBeVisual: true, url: 'https://m.facebook.com/' });
   const d = dom.window.document;
-  ok('the cards are added', d.querySelectorAll('.dbcard').length === 1);
-  ok('the skeleton blocks are removed',
-     d.querySelectorAll('.skeleton').length === 0);
-  ok('the container is marked',
-     d.querySelector('[data-type="vscroller"]').getAttribute('data-db-offline') === '1');
+  const box = d.querySelector('[data-type="vscroller"]');
+  const holder = d.querySelector('#__db_cards');
 
-  // Running the whole script again is what would happen if the page reloaded
-  // the injector, and is the duplication the user warned about.
-  dom.window.eval(inject);
-  ok('a second pass adds nothing',
-     d.querySelectorAll('.dbcard').length === 1,
-     String(d.querySelectorAll('.dbcard').length));
-  ok('and only one card holder exists',
-     d.querySelectorAll('[data-db-cards]').length === 1);
+  ok('the cards are in the document itself',
+     d.querySelectorAll('.dbcard').length === 1);
+  ok('inside the real feed container', !!box && box.contains(holder));
+  ok('ahead of what the server left behind',
+     !!holder && holder.parentElement === box &&
+     [...box.children].indexOf(holder) === 1);
+  ok('the server leftovers are only hidden, by one stylesheet',
+     d.querySelectorAll('.skeleton').length === 2 &&
+     d.getElementById('__db_hide_old') !== null);
+  ok('the hiding rule is scoped to that container',
+     (d.getElementById('__db_hide_old') || {}).parentElement === box);
+
+  // Serving is one string: asking for the page again returns the same
+  // page. There is no script that could add the cards a second time.
+  const again = new JSDOM(page, { runScripts: 'dangerously',
+    pretendToBeVisual: true, url: 'https://m.facebook.com/' });
+  ok('a second serve is the same page, nothing doubles',
+     again.window.document.querySelectorAll('.dbcard').length === 1 &&
+     again.window.document.querySelectorAll('[data-db-cards]').length === 1);
 }
 
 console.log('\nNone of this can reach a live page');
@@ -262,19 +270,23 @@ console.log('\nStories are captured from the story screen');
 console.log('\nNothing is reconstructed');
 {
   const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  const vault = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
   // The model is markup, not fields.
   ok('an item is markup plus its media',
      /val html: String/.test(feed) && /val media: List<String>/.test(feed));
   ok('no field-by-field model remains',
      !/val author: String/.test(feed) && !/val likes: String/.test(feed));
-  ok('cards are returned as saved',
-     /cardMarkupList\(section: String\)[\s\S]{0,120}map \{ it\.html \}/.test(feed));
+  ok('cards are returned as saved, from the same list that is counted',
+     /fun cards\(\): List<String> = completeItems\(\)\.map \{ it\.html \}/
+       .test(vault) &&
+     /fun cardMarkupList\(section: String\)[\s\S]{0,120}vault\(section\)\?\.cards\(\)/
+       .test(feed));
   ok('no card is drawn by us', !/dbcard|dbhead|dbactions/.test(feed));
   ok('the self-made offline screen is gone', !/fun renderPage/.test(feed));
 
-  const inject = fs.readFileSync(KT('utils/OfflineInject.kt'), 'utf8');
+  const assembly = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
   ok('injected markup is not restyled',
-     !/scroll-snap-type/.test(inject));
+     !/scroll-snap-type/.test(assembly));
 }
 
 console.log('\nThe settings screen is the six things asked for');
@@ -345,13 +357,14 @@ console.log('\nDownloading does not wait for the user');
      /MIN_INTERVAL_MS = 90_000L/.test(sync));
 
   // Downloads were dropped, not queued, so everything after the first batch
-  // was silently thrown away.
+  // was silently thrown away. Every section vault runs one worker of its own.
+  const vault = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
   ok('media requests are queued, never dropped',
-     /queued\.add\(u\)/.test(feed) && /queue\.add\(u\)/.test(feed));
+     /queued\.add\(u\)/.test(vault) && /queue\.add\(u\)/.test(vault));
   ok('a single worker drains the queue',
-     /private fun drain\(\)/.test(feed));
+     /private fun drain\(\)/.test(vault));
   ok('work added late is not stranded',
-     /if \(more && enabled\) drain\(\)/.test(feed));
+     /if \(more && enabled && writeEnabled\) drain\(\)/.test(vault));
 }
 
 console.log('\nOffline never shows the browser error page');

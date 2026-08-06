@@ -82,8 +82,13 @@ ok('a story already held is skipped too',
    /if \(KNOWN\[sid\]\) return \[\];/.test(cap));
 ok('both the live page and the sync pass send it',
    /knownIds/.test(main) && /knownIds = OfflineFeed\.knownIds\(section\)/.test(sync));
-ok('the store still de-duplicates as a backstop',
-   /seen\.add\(key\)/.test(feed));
+{
+  // The store moved to the per-section vaults (offline/SectionVault.kt);
+  // the backstop moved with it, unchanged.
+  const vault = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  ok('the store still de-duplicates as a backstop',
+     /seen\.add\(key\)/.test(vault), 'dedupe guard left the vault');
+}
 // A story is a pager, not a list, so scrolling it saves only the first one.
 ok('the story tray is advanced, not scrolled',
    /aria-label="Next card"/.test(cap));

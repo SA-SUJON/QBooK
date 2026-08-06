@@ -65,6 +65,7 @@ import com.dustbook.app.utils.OfflineCapture
 import com.dustbook.app.utils.OfflineDocs
 import com.dustbook.app.utils.OfflineFeed
 import com.dustbook.app.utils.AppExecutors
+import com.dustbook.app.offline.OfflineVaults
 import com.dustbook.app.utils.OfflineSync
 import com.dustbook.app.utils.Prefs
 import com.dustbook.app.utils.VideoHelper
@@ -1468,6 +1469,16 @@ class MainActivity : AppCompatActivity() {
                 if (isOnline) return null
 
                 if (!prefs.offlineRead) return null
+
+                // The saved content's own media lives in the section vaults
+                // (separate per-section folders), not in the chrome cache.
+                // The cards that reference these URLs are exactly the ones
+                // being counted, so their bytes are answered for first.
+                val rangeHdr = request.requestHeaders.entries
+                    .firstOrNull { it.key.equals("Range", true) }?.value
+                OfflineVaults.serveAny(request.url.toString(), rangeHdr)
+                    ?.let { return it }
+
                 if (!OfflineCache.isInterceptable(request)) return null
 
                 // Offline only: serve whatever we already stored.
@@ -2225,7 +2236,7 @@ class MainActivity : AppCompatActivity() {
             if (newItems.isEmpty()) return
 
             OfflineFeed.addItems(section, newItems, target)
-            OfflineFeed.prefetch(newItems, includeVideo = prefs.offlineVideo)
+            OfflineFeed.prefetch(section, newItems, includeVideo = prefs.offlineVideo)
         }
 
 

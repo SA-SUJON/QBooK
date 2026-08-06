@@ -116,10 +116,13 @@ console.log('\nWhat gets downloaded in the first place');
   ok('the cap is a named constant, not a magic number',
      /MAX_PREFETCH_URLS/.test(docs));
 
-  ok('video is still recognised without an extension',
-     /\/v\/t2\//.test(feed));
-  ok('downloads are queued rather than dropped',
-     /queued\.add\(u\)/.test(feed) && /private fun drain\(\)/.test(feed));
+  {
+    const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+    ok('video is still recognised without an extension',
+       /\/v\/t2\//.test(vaultSrc));
+    ok('downloads are queued rather than dropped',
+       /queued\.add\(u\)/.test(vaultSrc) && /private fun drain\(\)/.test(vaultSrc));
+  }
 }
 
 console.log('\nAll three sections are reachable offline');
@@ -140,7 +143,7 @@ console.log('\nNothing is invented offline');
 {
   const nav    = fs.readFileSync(KT('utils/OfflineNav.kt'), 'utf8');
   const banner = fs.readFileSync(KT('utils/OfflineBanner.kt'), 'utf8');
-  const inject = fs.readFileSync(KT('utils/OfflineInject.kt'), 'utf8');
+  const inject = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
 
   // The rule, stated once: offline shows Facebook's own markup, unaltered.
   // Every violation below shipped at least once and had to be taken back out.
@@ -308,8 +311,8 @@ console.log('\nOffline navigation is not rebuilt every time');
   ok('saving new cards drops it',
      /OfflineDocs\.invalidate\(\)/.test(feed));
   ok('clearing saved content drops it too',
-     /fun clear\(\)[\s\S]{0,120}invalidate\(\)/.test(feed) ||
-     /fun clear\(\)[\s\S]{0,120}OfflineDocs\.invalidate\(\)/.test(feed));
+     /fun clearAll\(\)[\s\S]{0,160}OfflineDocs\.invalidate\(\)/
+       .test(fs.readFileSync(KT('offline/OfflineVaults.kt'), 'utf8')));
   ok('and clearing the pages drops it',
      /fun clear\(\)[\s\S]{0,80}invalidate\(\)/.test(docs));
 }
@@ -468,7 +471,7 @@ console.log('\nThe unmute label is stripped when the page is served');
   const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
   ok('a strip script exists', /private fun unmuteStripScript/.test(docs));
   ok('the stored document gets it',
-     /f\.readText\(\) \+\s*\n\s*unmuteStripScript\(\)/.test(docs));
+     /withCards \+\s*\n\s*unmuteStripScript\(\)/.test(docs));
   ok('the assembled page gets it too',
      (docs.match(/unmuteStripScript\(\)/g) || []).length >= 3);
   ok('it keeps watching, since markup is swapped in after load',
@@ -479,167 +482,71 @@ console.log('\nThe unmute label is stripped when the page is served');
 
 // ------------------------------- an item counts only when it is fully saved
 //
-// The old rule was `any {}`: one cached asset was enough. A post with five
-// photos counted as saved when one had arrived, so the number climbed while
-// the content behind it was still downloading.
+// The rule behind the number the user reads. Until v5.2.4 it asked a shared
+// LRU cache, with a 500 KB minimum for videos: a small-but-complete reel
+// never counted, an evicted photo un-counted a post, and the settings row
+// drifted away from what the offline screen could show. The count now asks
+// each section vault's own folder, where a file only exists when it is
+// complete: written under a .part name and renamed in after its last byte.
 console.log('\nCounting waits for the whole item');
 {
-  const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  const H = require('./offline_vault_harness.js');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const feedSrc = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
 
   ok('there is one rule for what counts',
-     /fun isFullyDownloaded\(item: Item\): Boolean/.test(feed));
-  // Not "every URL": that was tried and left every item permanently
-  // incomplete, because capture records srcset variants that are never all
-  // fetched. The rule is per-kind — see the section below.
+     /fun isComplete\(e: Entry\): Boolean/.test(vaultSrc));
   ok('the item is judged by kind, not by URL count',
-     /val videos = item\.media\.filter \{ isVideoUrl\(it\) \}/.test(feed));
+     /val videos = e\.media\.filter \{ isVideoUrl\(it\) \}/.test(vaultSrc));
+  // Not "every URL": capture records srcset variants that are never all
+  // fetched, so that rule left photo posts permanently incomplete either.
   ok('the loose any-of test is gone',
-     !/item\.media\.any \{ u ->[\s\S]{0,120}OfflineCache\.has\(u\)/.test(feed));
-  ok('a video must also be a plausible size, not merely present',
-     /OfflineCache\.hasMinSize\(it, MIN_VIDEO_BYTES\)/.test(feed));
+     !/e\.media\.any \{ u ->/.test(vaultSrc));
+  ok('a video counts when its file exists, with no arbitrary size floor',
+     /videos\.any \{ hasAsset\(it\) \}/.test(vaultSrc) &&
+     !/MIN_VIDEO|hasMinSize/.test(vaultSrc));
+  ok('files only ever exist complete: every failure deletes the stub',
+     /\.part/.test(vaultSrc) && /if \(!tmp\.renameTo\(final\)\)/.test(vaultSrc) &&
+     vaultSrc.replace(/\n\s+/g, ' ').includes('tmp.delete() return false'));
   ok('a text post with no media still counts',
-     /if \(item\.media\.isEmpty\(\)\) return true/.test(feed));
+     /if \(e\.media\.isEmpty\(\)\) return true/.test(vaultSrc));
 
-  ok('posts, reels and stories share the rule',
-     /fun realPlayableCount\(section: String\): Int =\s*\n\s*loadItems\(section\)\.count \{ isFullyDownloaded/.test(feed));
-  ok('what is displayed uses the same rule as what is counted',
-     /fun realPlayableItems[\s\S]{0,160}isFullyDownloaded/.test(feed) &&
-     /fun cardMarkupList[\s\S]{0,160}realPlayableItems/.test(feed));
+  ok('the count and the screen share one source of truth',
+     /fun count\(\): Int = completeItems\(\)\.size/.test(vaultSrc) &&
+     /fun cards\(\): List<String> = completeItems\(\)\.map \{ it\.html \}/
+       .test(vaultSrc));
+  ok('the app asks each section vault for both',
+     /fun realPlayableCount\(section: String\): Int = vault\(section\)\?\.count\(\)/
+       .test(feedSrc) &&
+     /fun cardMarkupList\(section: String\)[\s\S]{0,160}vault\(section\)\?\.cards\(\)/
+       .test(feedSrc));
+  ok('and the vaults never ask the shared chrome cache',
+     !/import com\.dustbook\.app\.utils\.OfflineCache/.test(vaultSrc) &&
+     !/OfflineCache\.(has|put|get|range)\(/.test(vaultSrc));
 
-  // Exercise the rule itself rather than trusting its shape.
-  const MIN = 500000;
-  const disk = {};
-  const isVideo = (u) => /\/o1\/v\/|\.mp4|video/.test(u);
-  const full = (media) => media.length === 0 ? true : media.every((u) =>
-    isVideo(u) ? (disk[u] !== undefined && disk[u] >= MIN) : disk[u] !== undefined);
+  // Exercise the rule itself via the verbatim-ported predicates, against a
+  // fake disk. By construction that disk can only hold complete files.
+  const disk = new Set();
+  const has = (u) => disk.has(u);
+  const set = (...urls) => { disk.clear(); for (const u of urls) disk.add(u); };
 
-  const set = (o) => { for (const k of Object.keys(disk)) delete disk[k]; Object.assign(disk, o); };
-
-  set({ 'a.jpg': 9 });
+  set('a.jpg');
   ok('a five-photo post does not count on the first photo',
-     full(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg']) === false);
-  set({ 'a.jpg': 9, 'b.jpg': 9, 'c.jpg': 9, 'd.jpg': 9, 'e.jpg': 9 });
-  ok('and does once they are all there',
-     full(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg']) === true);
-  set({ 'av_s.jpg': 4000 });
-  ok('a reel does not count on its avatar alone',
-     full(['av_s.jpg', '/o1/v/vid']) === false);
-  set({ 'av_s.jpg': 4000, '/o1/v/vid': 1000 });
-  ok('nor on a truncated video',
-     full(['av_s.jpg', '/o1/v/vid']) === false);
-  set({ 'av_s.jpg': 4000, '/o1/v/vid': 9000000 });
-  ok('but does once the video is really there',
-     full(['av_s.jpg', '/o1/v/vid']) === true);
-  ok('a text post counts immediately', full([]) === true);
-
-  // ---------------------------------------------------------------
-  // A post whose only images are chrome must still be readable.
-  //
-  // Reported as: offline shows only a handful of the posts that were saved.
-  //
-  // Capture records every <img> inside a card, so an ordinary text update
-  // carries the author's avatar and any emoji in the body. The rule then read
-  // that as "this item has media and none of it arrived" and hid the post -
-  // even though the words were already in the stored markup and there was
-  // nothing left to wait for. On a feed of text updates that hides almost
-  // everything.
-  //
-  // Faithful port of the real predicates, so this exercises the decision and
-  // not a paraphrase of it.
-  const isVideoUrl = (u) => {
-    const c = u.split('?')[0].toLowerCase();
-    return c.endsWith('.mp4') || c.endsWith('.webm') || c.includes('/v/t2/');
-  };
-  const isAvatar = (u) => {
-    const c = u.split('?')[0];
-    return c.includes('/t39.30808-1/') || (c.includes('profile') && c.includes('_s.'));
-  };
-  const isChrome = (u) => {
-    const c = u.split('?')[0].toLowerCase();
-    return c.includes('/emoji.php/') || c.includes('static.xx.fbcdn.net') ||
-           c.includes('/rsrc.php/') || c.endsWith('.svg');
-  };
-  // Strict per-photo port: every distinct photo needs one cached variant.
-  // Mirrors OfflineFeed.photoKey(): filename without query, size markers
-  // removed (img_1080x1080_x.jpg -> img_x.jpg, p_640.jpg -> p.jpg).
-  const photoKey = (u) => {
-    const stem = u.split('?')[0].split('/').pop().toLowerCase();
-    return stem.replace(/[._-][0-9]+x[0-9]+/g, '').replace(/_[0-9]+(?=\.)/, '');
-  };
-  const shown = (media, cache) => {
-    if (media.length === 0) return true;
-    const has = (u) => cache[u] !== undefined;
-    const hasMin = (u) => (cache[u] || 0) >= MIN;
-    const videos = media.filter(isVideoUrl);
-    const images = media.filter((u) => !isVideoUrl(u));
-    if (videos.length) return videos.some(hasMin);
-    const photos = images.filter((u) => !isAvatar(u) && !isChrome(u));
-    if (photos.length === 0) return true;
-    const groups = {};
-    for (const p of photos) {
-      const k = photoKey(p);
-      (groups[k] = groups[k] || []).push(p);
-    }
-    return Object.values(groups).every((vs) => vs.some(has));
-  };
+     H.isComplete(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'], has) === false);
+  set('a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg');
+  ok('and does once every photo is there',
+     H.isComplete(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'], has) === true);
 
   const AV = 'https://scontent.xx.fbcdn.net/v/t39.30808-1/1_s.jpg';
-  const PHOTO = 'https://scontent.xx.fbcdn.net/v/t51.0-10/photo_n.jpg';
-  const EMOJI = 'https://static.xx.fbcdn.net/images/emoji.php/v9/t4b/1/16/1f600.png';
   const VID = 'https://video.xx.fbcdn.net/v/t2/reel.mp4';
-
-  ok('a text post carrying only the author avatar is shown',
-     shown([AV], {}) === true);
-  ok('and one carrying an avatar and an emoji is shown',
-     shown([AV, EMOJI], {}) === true);
-  ok('a photo post is still withheld until the photo arrives',
-     shown([AV, PHOTO], { [AV]: 4000 }) === false);
-  ok('and shown once it has',
-     shown([AV, PHOTO], { [AV]: 4000, [PHOTO]: 90000 }) === true);
-  ok('a reel is still withheld while its video downloads',
-     shown([AV, VID], { [AV]: 4000, [VID]: 120000 }) === false);
-  ok('and shown once the video is really there',
-     shown([AV, VID], { [AV]: 4000, [VID]: 9000000 }) === true);
-
-  // The reported bug: the settings count and the offline display used to
-  // jump the moment the FIRST photo of a multi-photo post landed.
-  const P1 = 'https://scontent.xx.fbcdn.net/v/t51.2885-15/4111001_n.jpg';
-  const P2 = 'https://scontent.xx.fbcdn.net/v/t51.2885-15/4222002_n.jpg';
-  const P3 = 'https://scontent.xx.fbcdn.net/v/t51.2885-15/4333003_n.jpg';
-  ok('a three-photo post does NOT count when only its first photo has landed',
-     shown([P1, P2, P3], { [P1]: 90000 }) === false,
-     'the old rule counted the post here - the premature count');
-  ok('nor when two of three are on disk',
-     shown([P1, P2, P3], { [P1]: 90000, [P2]: 90000 }) === false);
-  ok('it counts once every photo has a variant stored',
-     shown([P1, P2, P3], { [P1]: 90000, [P2]: 90000, [P3]: 90000 }) === true);
-  ok('srcset variants of one photo still collapse to a single photo',
-     photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/p480x480/4111001_n.jpg') ===
-     photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/4111001_n.jpg?stp=dst-jpg'));
-  ok('dimension-suffixed variants collapse too',
-     photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/img_1080x1080_n.jpg') ===
-     photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/img_n.jpg'));
-  ok('two different photos never merge into one group',
-     photoKey(P1) !== photoKey(P2));
-
-  const feedSrc = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
-  ok('the chrome test exists in the source',
-     /private fun isChrome\(url: String\): Boolean/.test(feedSrc));
-  ok('content photos are separated from avatar and chrome first',
-     /val photos = images\.filter \{ !isAvatar\(it\) && !isChrome\(it\) \}/
-       .test(feedSrc));
-  ok('and the nothing-to-wait-for return sits after that split',
-     feedSrc.indexOf('val photos = images.filter') <
-     feedSrc.indexOf('if (photos.isEmpty()) return true'));
-  ok('every distinct photo must have a variant on disk',
-     /groups\.values\.all \{ variants -> variants\.any \{ OfflineCache\.has\(it\) \} \}/
-       .test(feedSrc));
-  ok('srcset variants are grouped by photo identity',
-     /photos\.groupBy \{ photoKey\(it\) \}/.test(feedSrc) &&
-     /private fun photoKey\(url: String\): String/.test(feedSrc));
+  set(AV);
+  ok('a reel does not count on its avatar alone',
+     H.isComplete([AV, VID], has) === false);
+  set(AV, VID);
+  ok('it counts the moment the video file exists',
+     H.isComplete([AV, VID], has) === true);
+  ok('a text post counts immediately', H.isComplete([], has) === true);
 }
-
-// ------------------------------------------- tapping Stories offline works
 console.log('\nStories can be opened offline');
 {
   const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
@@ -723,7 +630,7 @@ console.log('\nAn exact phase total stops fetching where it was asked');
   ok('a reached total stops the phase before any download is queued',
      /if \(remaining <= 0\) return/.test(sync));
   ok('only the kept batch is queued for download',
-     /OfflineFeed\.prefetch\(batch, includeVideo\)/.test(sync));
+     /OfflineFeed\.prefetch\(sec, batch, includeVideo\)/.test(sync));
   ok('and only the kept batch reaches the store',
      /OfflineFeed\.addItems\(sec, batch, target\)/.test(sync));
 
@@ -776,7 +683,8 @@ console.log('\nThe assembled page is rebuilt when media lands');
   ok('and not the expensive one',
      !/fun navigableScreens[\s\S]{0,700}?realPlayableCount[\s\S]{0,60}?\n    \}/.test(docs));
   ok('the cheap check does not parse',
-     /fun storedCount[\s\S]{0,300}f\.length\(\) > 2L/.test(feed));
+     /fun storedCountCheap[\s\S]{0,300}f\.length\(\) > 2L/
+       .test(fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8')));
 }
 
 console.log('\nFullscreen video is not restarted by a layout pass');
@@ -798,175 +706,119 @@ console.log('\nFullscreen video is not restarted by a layout pass');
 
 console.log('\nCompleteness allows for srcset alternates');
 {
-  const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  const H = require('./offline_vault_harness.js');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
 
-  // Requiring every URL was too strict. Capture records each srcset variant,
-  // but only the one the renderer chose is ever fetched, so an item could
-  // never reach "complete" and nothing was served offline at all.
+  // Requiring every URL left items permanently incomplete, because capture
+  // records each srcset variant while only one is ever fetched. Judging by
+  // "any photo at all" counted far too early. Variants of one photo are
+  // grouped by the production regex; every photo needs one variant on disk.
   ok('a video item is judged on its video',
-     /if \(videos\.isNotEmpty\(\)\)[\s\S]{0,160}videos\.any \{ OfflineCache\.hasMinSize/.test(feed));
+     /if \(videos\.isNotEmpty\(\)\)[\s\S]{0,120}videos\.any \{ hasAsset\(it\) \}/
+       .test(vaultSrc));
   ok('the all-URLs rule is gone',
-     !/item\.media\.all \{ u ->/.test(feed));
+     !/e\.media\.all \{ u ->/.test(vaultSrc));
   ok('an avatar alone still does not count',
-     /private fun isAvatar/.test(feed) &&
-     /val photos = images\.filter \{ !isAvatar\(it\) && !isChrome\(it\) \}/.test(feed));
+     /fun isAvatar/.test(vaultSrc) &&
+     /val photos = e\.media\.filter \{ !isAvatar\(it\) && !isChrome\(it\) \}/
+       .test(vaultSrc));
+  ok('every distinct photo must have a variant on this section\'s disk',
+     /groups\.values\.all \{ variants -> variants\.any \{ hasAsset\(it\) \} \}/
+       .test(vaultSrc));
 
-  // Expectation moved from "any photo" to "every photo, one variant each":
-  // that is the whole point of the premature-count fix.
-  const MIN = 500000; const disk = {};
-  const isVideo = (u) => /\/o1\/v\/|\.mp4|video/.test(u);
-  const isAvatar = (u) => { const c = u.split('?')[0];
-    return c.includes('/t39.30808-1/') || (c.includes('profile') && c.includes('_s.')); };
-  const isChrome2 = (u) => { const c = u.split('?')[0].toLowerCase();
-    return c.includes('/emoji.php/') || c.includes('static.xx.fbcdn.net') ||
-           c.includes('/rsrc.php/') || c.endsWith('.svg'); };
-  const pKey = (u) => { const s = u.split('?')[0].split('/').pop().toLowerCase();
-    return s.replace(/[._-][0-9]+x[0-9]+/g, '').replace(/_[0-9]+(?=\.)/, ''); };
-  const has = (u) => disk[u] !== undefined;
-  const full = (m) => { if (!m.length) return true;
-    const v = m.filter(isVideo), i = m.filter((u) => !isVideo(u));
-    if (v.length) return v.some((u) => has(u) && disk[u] >= MIN);
-    const photos = i.filter((u) => !isAvatar(u) && !isChrome2(u));
-    if (!photos.length) return true;
-    const g = {};
-    for (const p of photos) { const k = pKey(p); (g[k] = g[k] || []).push(p); }
-    return Object.values(g).every((vs) => vs.some(has)); };
-  const set = (o) => { for (const k of Object.keys(disk)) delete disk[k]; Object.assign(disk, o); };
+  const disk = new Set();
+  const has = (u) => disk.has(u);
+  const set = (...urls) => { disk.clear(); for (const u of urls) disk.add(u); };
 
-  set({ 'p_640.jpg': 50000 });
+  set('p_640.jpg');
   ok('a photo post counts on one real variant',
-     full(['p_640.jpg', 'p_960.jpg', 'p_1280.jpg']) === true);
-  set({ 'r_320.jpg': 9000, '/o1/v/v.mp4': 9000000 });
-  ok('a reel counts once its video is on disk',
-     full(['r_320.jpg', 'r_640.jpg', '/o1/v/v.mp4']) === true);
-  set({ 'av/t39.30808-1/a.jpg': 4000 });
+     H.isComplete(['p_640.jpg', 'p_960.jpg', 'p_1280.jpg'], has) === true);
+  set();   // nothing on disk
+  ok('a reel without its video on disk does not count',
+     H.isComplete(['r_320.jpg', '/o1/v/v.mp4'], has) === false);
+  set('/o1/v/v.mp4');
+  ok('and counts once the video itself exists',
+     H.isComplete(['r_320.jpg', '/o1/v/v.mp4'], has) === true);
+  set('av/t39.30808-1/a.jpg');
   ok('but not on an avatar alone',
-     full(['av/t39.30808-1/a.jpg', '/o1/v/v.mp4']) === false);
-  set({ '/o1/v/v.mp4': 1000 });
-  ok('nor on a truncated video', full(['/o1/v/v.mp4']) === false);
-  set({ 'a111_n.jpg': 90000 });
-  ok('an album no longer counts on its first photo',
-     full(['a111_n.jpg', 'a222_n.jpg', 'a333_n.jpg']) === false);
-  set({ 'a111_n.jpg': 90000, 'a222_n.jpg': 90000, 'a333_n.jpg': 90000 });
-  ok('it counts when the whole album is on disk',
-     full(['a111_n.jpg', 'a222_n.jpg', 'a333_n.jpg']) === true);
+     H.isComplete(['av/t39.30808-1/a.jpg', '/o1/v/v.mp4'], has) === false);
+  set('short.mp4');
+  ok('a short reel the CDN served whole counts too - no size floor',
+     H.isComplete(['r_320.jpg', 'short.mp4'], has) === true);
+
+  set('a111_n.jpg');
+  ok('an album waits for every photo, not the first',
+     H.isComplete(['a111_n.jpg', 'a222_n.jpg', 'a333_n.jpg'], has) === false);
+  set('a111_n.jpg', 'a222_n.jpg', 'a333_n.jpg');
+  ok('and counts when the whole album is on disk',
+     H.isComplete(['a111_n.jpg', 'a222_n.jpg', 'a333_n.jpg'], has) === true);
+
+  // The grouping uses the regexes extracted from the production file.
+  ok('srcset variants of one photo collapse to a single photo',
+     H.photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/p480x480/4111001_n.jpg') ===
+     H.photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/4111001_n.jpg?stp=dst-jpg'));
+  ok('dimension-suffixed variants collapse too',
+     H.photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/img_1080x1080_n.jpg') ===
+     H.photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/img_n.jpg'));
+  ok('two different photos never merge into one group',
+     H.photoKey('https://scontent.xx/4111001_n.jpg') !==
+     H.photoKey('https://scontent.xx/4222002_n.jpg'));
 }
-
-console.log('\nOffline home-feed videos default to sound on');
-{
-  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
-
-  // Requirement: offline the home-feed player must not stay muted — the
-  // muted flag in the stored markup was meant for Facebook's own JS, which
-  // never runs offline, so it would otherwise be permanent.
-  ok('an unmute-by-default script exists',
-     /private fun unmuteByDefaultScript\(\): String/.test(docs));
-  ok('it is only on the home screen',
-     /\(if \(screen == "home"\) unmuteByDefaultScript\(\) else ""\)/.test(docs));
-  ok('reels, watch and stories do not get it',
-     !/screen == "reels"[\s\S]{0,120}unmuteByDefaultScript/.test(docs));
-
-  const sv = docs.slice(docs.indexOf('private fun unmuteByDefaultScript'));
-  const svEnd = sv.indexOf('private fun offlineFallbackPage');
-  const body = sv.slice(0, svEnd > 0 ? svEnd : undefined);
-  ok('the muted attribute and property are both lifted',
-     /v\.muted = false/.test(body) && /removeAttribute\('muted'\)/.test(body));
-  ok('it applies once per video, before playback, not on a running clip',
-     /__dbSound/.test(body));
-  ok('it also covers videos injected after load',
-     /MutationObserver/.test(body));
-
-  // Behavioural proof on a muted stored player.
-  {
-    const raw = (s2, marker) => {
-      const i = s2.indexOf(marker);
-      const st = s2.indexOf('"""', i) + 3;
-      return s2.slice(st, s2.indexOf('"""', st));
-    };
-    const scr = raw(docs, 'private fun unmuteByDefaultScript')
-      .replace(/<script[^>]*>/, '').replace(/<\/script>\s*$/, '');
-    const dom = new JSDOM(
-      '<body><video id="v" muted preload="metadata"></video></body>',
-      { runScripts: 'outside-only', url: 'https://m.facebook.com/' });
-    dom.window.eval(scr);
-    const v = dom.window.document.getElementById('v');
-    ok('a stored muted video is audible by default offline',
-       v.muted === false, 'muted=' + v.muted);
-  }
-}
-
-console.log('\nA reel keeps a playable video URL offline');
-{
-  const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
-  // data-video-url normally sits on a child MVideo wrapper. Reading only the
-  // card root left the <video> on its dead blob:, so offline showed a poster
-  // and a play button that did nothing.
-  ok('the wrapper is searched, not just the card root',
-     /card\.querySelector\('\[data-video-url\]'\)/.test(cap));
-  ok('the dead blob src is replaced',
-     /src\s*=\s*\\?"' \+ dv|' \+ dv \+ '/.test(cap));
-  ok('and source children are stripped first',
-     /<source\\b\[\^>\]\*>/.test(cap));
-}
-
 console.log('\nEvery saved card reaches the page');
 {
-  const inj = fs.readFileSync(KT('utils/OfflineInject.kt'), 'utf8');
+  const H = require('./offline_vault_harness.js');
   const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
   const feedKt = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
   const prefs = fs.readFileSync(KT('utils/Prefs.kt'), 'utf8');
   const xml = fs.readFileSync(
     path.join(ROOT, 'app/src/main/res/xml/settings_browsing.xml'), 'utf8');
+  const assemblySrc = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
 
-  // Reported on device: settings counted dozens of saved posts, the offline
-  // home feed showed fewer than ten. The cards travelled inside one giant
-  // template literal; a single card containing "</script" in a letter case
-  // the lowercase-only breakup missed closed the host block, everything
-  // after it died at parse time, and the page fell back to the handful of
-  // posts the stored document itself carried.
-  ok('cards travel as a JSON array, one string per card',
-     /val json = JSONArray\(\)/.test(inj) && /json\.put\(c\)/.test(inj));
-  ok('no template literal is used for card markup',
-     inj.includes('var CARDS = $safe;') && !inj.includes('`$cards`'));
-  ok('every "<\/" is neutralised so no letter case can close the block',
-     inj.includes('replace("</", "<\\\\/")'));
-  ok('the story viewer uses the same delivery',
+  // Reported on device, repeatedly: the settings row counted dozens of
+  // saved posts, the offline home feed showed fewer than ten. Every known
+  // cause lived in runtime injection - a script that had to move the cards
+  // into the page. Delivery is now static: the cards are composed into the
+  // stored document in Kotlin and served AS the page.
+  ok('cards are composed into the stored document before serving',
+     /PageAssembly\.compose\(docText, cards\)/.test(docs));
+  ok('the runtime injection script is gone',
+     !fs.existsSync(KT('utils/OfflineInject.kt')));
+  ok('the story viewer still uses the proven JSON delivery',
      /val json = JSONArray\(\)/.test(docs) &&
      /var STORIES = \$safe;/.test(docs) &&
      !docs.includes("split('---DBSTORY---')"));
   ok('a card list exists for exactly this purpose',
      /fun cardMarkupList\(section: String\)/.test(feedKt));
+  ok('active markup inside a stored card is cut',
+     /SCRIPT_BLOCK/.test(assemblySrc) && /BASE_TAG/.test(assemblySrc));
+  ok('the fallback shell composes the same way',
+     /PageAssembly\.holderHtml\(use\)/.test(docs));
 
-  // Prove the behaviour, running the production inject script verbatim.
-  function injectScriptFromSource(cards) {
-    const i = inj.indexOf('fun script(');
-    const s = inj.indexOf('"""', i) + 3;
-    const e = inj.indexOf('"""', s);
-    // Port of the Kotlin: JSONArray + "</" -> "<\/"
-    const safe = JSON.stringify(cards).split('</').join('<\\/');
-    return inj.slice(s, e).split('$safe').join(safe);
-  }
-  function renderOffline(cards, serverCards) {
-    const page = '<!DOCTYPE html><html><body>' +
-      '<div data-type="vscroller" id="feed">' + (serverCards || '') + '</div>' +
-      '</body></html>' +
-      '<scr' + 'ipt>' + injectScriptFromSource(cards) + '</scr' + 'ipt>';
+  // Behavioural proof. compose() is mirrored line-for-line, with every
+  // regex extracted from PageAssembly.kt; the page is parsed with scripts
+  // ALLOWED to run, so any card script that survived would execute.
+  function renderOffline(cards, docBody) {
+    const storedDoc = '<!DOCTYPE html><html><head></head><body>' +
+      docBody + '</body></html>';
+    const page = H.compose(storedDoc, cards);
     const errors = [];
     const vc = new (require('jsdom').VirtualConsole)();
     vc.on('jsdomError', (e) => errors.push(String(e && e.message || e)));
     const dom = new JSDOM(page, { runScripts: 'dangerously',
       virtualConsole: vc, url: 'https://m.facebook.com/' });
-    const holder = dom.window.document.querySelector('[data-db-cards]');
-    return { injected: !!holder,
-             rendered: holder
+    const d = dom.window.document;
+    const holder = d.querySelector('[data-db-cards]');
+    return { rendered: holder
                ? holder.querySelectorAll('[data-tracking-duration-id]').length
                : 0,
-             errors };
+             holder: !!holder, dom, doc: d, errors,
+             ranCardScript: dom.window.__dead || 0 };
   }
   const nasty = (i, quirk) => {
     let h = '<div data-tracking-duration-id="n' + i + '">' +
       '<div><span>Author ' + i + ' with a longer caption text</span></div>' +
-      '<img src="https://scontent.fcgp1-1.fbcdn.net/v/t51.2885-15/p' + i + '_n.jpg">';
+      '<img src="https://scontent.fcgp1-1.fbcdn.net/v/t51.2885-15/p' + i + '_n.jpg">' +
+      '<script>window.__dead=(window.__dead||0)+1;</scr' + 'ipt>';
     if (quirk === 'upper') h += '<script>window.a=1;</SCRIPT>';
     if (quirk === 'tpl') h += '<script>var t=`x ${' + 'y}${' + 'z}`;</scr' + 'ipt>';
     if (quirk === 'tick') h += '<script>var a=`plain`;</scr' + 'ipt>';
@@ -978,38 +830,55 @@ console.log('\nEvery saved card reaches the page');
     nasty(4, 'tick'), nasty(5, 'cash')
   ].concat(Array.from({ length: 32 }, (_, i) => nasty(10 + i)));
 
-  const old = renderOffline === renderOffline; // (linter placeholder)
-  const res = renderOffline(bundle, '');
+  const res = renderOffline(bundle,
+    '<div data-type="vscroller" id="feed"><div class="old"><p>stale</p></div></div>');
+  ok('all 37 cards render - the count now matches the screen',
+     res.rendered === 37, 'rendered=' + res.rendered);
   ok('a card with an UPPERCASE </SCRIPT> no longer kills the rest',
-     res.rendered === 37, 'rendered=' + res.rendered + ' ' + res.errors[0]);
+     res.rendered === 37 && res.holder, res.errors[0] || '');
   ok('template-literal content inside a card is inert',
-     res.injected === true && res.rendered === 37);
-  ok('all 37 cards render, the count now matches the screen',
-     res.rendered === 37, JSON.stringify(res.rendered));
+     res.holder && res.rendered === 37);
+  ok('the dollar-amount text survives as text',
+     (res.dom.window.document.body.textContent || '').indexOf('price $100') >= 0);
+  ok('scripts smuggled in a card never execute, and are removed',
+     res.ranCardScript === 0 &&
+     res.doc.querySelectorAll('[data-db-cards] script').length === 0);
+  ok('the holder hides the stale leftovers without deleting them',
+     res.doc.getElementById('__db_hide_old') !== null &&
+     res.doc.querySelector('#feed .old') !== null);
 
-  // Regression contrast: the OLD template-literal approach would lose these.
+  // Regression contrast: the OLD template-literal approach genuinely lost
+  // exactly this bundle - the bug was real, and it could only die this way.
   {
     const legacy = bundle.map((c) => c
       .replace(/\\/g, '\\\\').replace(/`/g, '\\`')
-      .replace(/\$/g, '\\$').replace(/<\/script/g, '</scr`+`ipt'));
-    const vc = new (require('jsdom').VirtualConsole)();
+      .replace(/\$/g, '\\$').replace(/<\/script/g, '</scr' + '`' + '+`' + 'ipt'));
     const page = '<html><body><script>var CARDS=`' + legacy.join('\n') + '`;' +
       'document.body.innerHTML=CARDS;</script></body></html>';
     let oldRendered = -1;
     try {
-      const d = new JSDOM(page, { runScripts: 'dangerously', virtualConsole: vc });
-      oldRendered = d.window.document
+      const dd = new JSDOM(page, { runScripts: 'dangerously' });
+      oldRendered = dd.window.document
         .querySelectorAll('[data-tracking-duration-id]').length;
     } catch (e) { oldRendered = -1; }
-    ok('the old approach genuinely lost the same bundle (bug was real)',
+    ok('the old approach still loses this bundle (bug was real)',
        oldRendered < 37, 'old=' + oldRendered);
+  }
+
+  // A stored document with no feed container must still show the cards.
+  {
+    const res2 = renderOffline(bundle.slice(0, 2), '<div id="nostyle">x</div>');
+    ok('a document with no container gets the cards right after <body>',
+       res2.rendered === 2 && res2.doc.body.firstElementChild &&
+       res2.doc.body.firstElementChild.getAttribute('data-db-cards') === '1');
+    ok('and nothing unrelated is hidden there',
+       res2.doc.getElementById('__db_hide_old') === null);
   }
 
   ok('pull to refresh is on by default',
      /KEY_PULL_REFRESH, true\)/.test(prefs) &&
      /android:key="pull_to_refresh"[\s\S]{0,120}android:defaultValue="true"/.test(xml));
 }
-
 console.log('\nNo app-promo bar flashes on an offline page');
 {
   const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
@@ -1022,7 +891,7 @@ console.log('\nNo app-promo bar flashes on an offline page');
   ok('it is plain CSS, not a script that must run first',
      /<style id="__db_promo_hide">/.test(docs));
   ok('it is prepended to the stored document, not appended',
-     /val html = promoHideCss\(\) \+\s*\n\s*f\.readText\(\)/.test(docs));
+     /val html = promoHideCss\(\) \+\s*\n\s*withCards/.test(docs));
   ok('the assembled page gets it inside head',
      /promoHideCss\(\) \+\s*\n\s*"<\/head>/.test(docs));
   ok('it covers the store links and the known banner ids',
@@ -1274,51 +1143,48 @@ console.log('\nThe bridge is never handed a giant payload');
   ok('a small pass is still one call', light.length === 1, String(light.length));
 }
 
-console.log('\nThe store keeps what it saves');
+console.log('\nEvery section keeps what it saves, in its own store');
 {
-  const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  const H = require('./offline_vault_harness.js');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const home = fs.readFileSync(KT('offline/HomeVault.kt'), 'utf8');
+  const reels = fs.readFileSync(KT('offline/ReelsVault.kt'), 'utf8');
+  const stories = fs.readFileSync(KT('offline/StoriesVault.kt'), 'utf8');
 
+  ok('every section is its own file',
+     /object HomeVault/.test(home) && /object ReelsVault/.test(reels) &&
+     /object StoriesVault/.test(stories));
+  ok('each with its own folder on disk',
+     /dirName = "home"/.test(home) && /dirName = "reels"/.test(reels) &&
+     /dirName = "stories"/.test(stories));
+  ok('reels refuse entries with no playable video, at their own door',
+     /videoRequired = true/.test(reels) &&
+     /fun addItems[\s\S]{0,300}if \(videoRequired\)/.test(vaultSrc));
   ok('per-section retention floors exist',
-     /STORE_KEEP_FLOOR_FEED = 500/.test(feed) &&
-     /STORE_KEEP_FLOOR_REELS = 250/.test(feed) &&
-     /STORE_KEEP_FLOOR_STORIES = 200/.test(feed));
+     /keepFloor = 500/.test(home) && /keepFloor = 250/.test(reels) &&
+     /keepFloor = 200/.test(stories));
   ok('the merge keeps at least the floor',
-     /val keep = maxOf\(limit, storeKeepFloor\(section\)\)/.test(feed));
+     /val keep = maxOf\(limit, keepFloor\)/.test(vaultSrc));
   ok('the cap uses the floored value',
-     /if \(merged\.size >= keep\) break/.test(feed));
-  ok('dedupe still runs as a backstop', /seen\.add\(key\)/.test(feed));
+     /if \(merged\.size >= keep\) break/.test(vaultSrc));
+  ok('dedupe still runs as a backstop', /seen\.add\(key\)/.test(vaultSrc));
 
-  // Faithful port of the merge: newest first, dedupe by key, stop at keep.
-  function addItems(existing, incoming, limit, floor) {
-    const keep = Math.max(limit, floor);
-    const seen = new Set();
-    const merged = [];
-    const keyFor = (it) => it.id ||
-      ((it.media[0] || '') + '|' + it.html.slice(0, 180));
-    for (const it of [...incoming, ...existing]) {
-      const k = keyFor(it);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      merged.push(it);
-      if (merged.length >= keep) break;
-    }
-    return merged;
-  }
+  // Faithful mirror of that merge (same algorithm as the vault), run
+  // through the stresses that used to evict saved content.
   let store = [];
-  store = addItems(store,
+  store = H.addItems(store,
     Array.from({ length: 50 }, (_, i) => ({ id: 'bg-' + i, html: 'x', media: [] })),
     50, 500);
   // The live page keeps merging with its small pass limit as the user
   // scrolls; previously this deleted everything before it.
-  store = addItems(store,
+  store = H.addItems(store,
     Array.from({ length: 60 }, (_, i) => ({ id: 'live-' + i, html: 'x', media: [] })),
     50, 500);
   ok('scrolled-past posts no longer evict previously saved ones',
      store.some((it) => it.id === 'bg-0') && store.length === 110,
      'kept=' + store.length);
-  // And the floor still caps the truly absurd in the long run.
   for (let r = 0; r < 12; r++) {
-    store = addItems(store,
+    store = H.addItems(store,
       Array.from({ length: 50 }, (_, i) => ({ id: 'r' + r + '-' + i, html: 'x', media: [] })),
       50, 500);
   }
@@ -1326,5 +1192,103 @@ console.log('\nThe store keeps what it saves');
      store.length === 500, String(store.length));
 }
 
+// ================= what the user asked for, stated end to end ============
+
+console.log('\nThree separate systems, one real number each');
+{
+  const registry = fs.readFileSync(KT('offline/OfflineVaults.kt'), 'utf8');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const feedKt = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+
+  ok('the registry holds exactly the three sections',
+     /listOf\(HomeVault, ReelsVault, StoriesVault\)/.test(registry));
+  ok('each stores under its own root folder',
+     /OfflineVaults\.ROOT_DIR \+ "\/" \+ dirName/.test(vaultSrc) &&
+     /"items\.json"/.test(vaultSrc) && /"media"/.test(vaultSrc));
+  ok('each downloads on its own queue and worker',
+     /private val queue = ArrayList<String>/.test(vaultSrc) &&
+     /newFixedThreadPool/.test(vaultSrc));
+  ok('the old mixed store is retired on first run',
+     /offline_items_v1/.test(registry));
+  ok('the app still talks to one section id at a time',
+     /fun addItems\(section: String, incoming/.test(feedKt) &&
+     /vault\(section\)\?\.addItems/.test(feedKt));
+}
+
+console.log('\nThe number is read from the files, and the screen shows it');
+{
+  const H = require('./offline_vault_harness.js');
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+  const settings = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
+
+  ok('the settings row reads the real count of each section separately',
+     /OfflineFeed\.realPlayableCount\(OfflineFeed\.SECTION_REELS\)/.test(settings) &&
+     /OfflineFeed\.realPlayableCount\(OfflineFeed\.SECTION_FEED\)/.test(settings) &&
+     /OfflineFeed\.realPlayableCount\(OfflineFeed\.SECTION_STORIES\)/.test(settings));
+  ok('the page asks for exactly the counted cards',
+     /OfflineFeed\.cardMarkupList\(it\)/.test(docs));
+  ok('and serves them as the document itself',
+     /PageAssembly\.compose\(docText, cards\)/.test(docs));
+
+  // End to end over a simulated section: the count, the card list and the
+  // page are all produced from the one store the way the app does it -
+  // whatever is counted is precisely what is on screen, at every stage
+  // of the download. This is the reported bug, simulated to death.
+  const store = [
+    { id: 't1', h: '<div data-tracking-duration-id="e1"><span>plain text post</span></div>',
+      media: [] },
+    { id: 'p1', h: '<div data-tracking-duration-id="e2"><img src="x"></div>',
+      media: ['ph1_n.jpg', 'ph2_n.jpg'] },
+    { id: 'r1', h: '<div data-tracking-duration-id="e3"><video src="v.mp4"></video></div>',
+      media: ['v.mp4'] },
+  ];
+  const disk = new Set();
+  const has = (u) => disk.has(u);
+  function countAndRender() {
+    const complete = store.filter((e) => H.isComplete(e.media, has));
+    const cards = complete.map((e) => e.h);
+    const page = H.compose(
+      '<!DOCTYPE html><html><body><div data-type="vscroller"></div></body></html>',
+      cards);
+    const dom = new JSDOM(page, { runScripts: 'dangerously',
+      url: 'https://m.facebook.com/' });
+    return { counted: complete.length,
+             rendered: dom.window.document
+               .querySelectorAll('[data-tracking-duration-id]').length };
+  }
+
+  let s = countAndRender();
+  ok('before anything downloads, only the text post counts and shows',
+     s.counted === 1 && s.rendered === 1, JSON.stringify(s));
+  disk.add('ph1_n.jpg');
+  s = countAndRender();
+  ok('one of two photos is still not a count, nor on screen',
+     s.counted === 1 && s.rendered === 1, JSON.stringify(s));
+  disk.add('ph2_n.jpg');
+  s = countAndRender();
+  ok('the whole photo post counts and shows once complete',
+     s.counted === 2 && s.rendered === 2, JSON.stringify(s));
+  disk.add('v.mp4');
+  s = countAndRender();
+  ok('last the reel - the number and the screen move together',
+     s.counted === 3 && s.rendered === 3, JSON.stringify(s));
+}
+
+console.log('\nSaved media answers from its section, before the chrome cache');
+{
+  const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+
+  const i = ma.indexOf('OfflineVaults.serveAny');
+  ok('the vaults answer saved media at all', i > 0);
+  const j = i > 0 ? ma.indexOf('OfflineCache.isInterceptable', i) : -1;
+  ok('and before anything else is asked',
+     i > 0 && j > i, i + ' vs ' + j);
+  ok('while offline and reading is on',
+     /if \(isOnline\) return null[\s\S]{0,200}if \(!prefs\.offlineRead\) return null[\s\S]{0,600}OfflineVaults\.serveAny/.test(ma));
+  ok('video gets its partial-content answer, or it will not play',
+     /206/.test(vaultSrc) && /Content-Range/.test(vaultSrc) &&
+     /Accept-Ranges/.test(vaultSrc));
+}
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

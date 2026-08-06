@@ -264,3 +264,33 @@ Online ad blocking, settings UI (7 pinned keys), story-viewer UI/overlay logic, 
 **Fix:** `report()` now chunks by serialized size (~1 MB per bridge call); each chunk is a complete items array, merged and downloaded exactly as one call would be; the completion flag rides the final chunk. The old halves-retry stays as a last resort. jsdom proof: 6 × 260 KB cards → 2 calls, each < 1.2 MB, all 6 ids preserved, completion flag only on the last chunk.
 
 > Session: 2026-08-06 | Tag: v5.2.3 | Tests all green locally (10 suites)
+
+---
+
+# Offline System Rebuilt From Scratch — Separate Vaults Per Section (Aug 7, 2026, v5.2.4)
+
+**Reported (device, verbatim):** "dhur evabe hobe na ... kichui thik nai counting vul shon posts ashe na. home feed er jonno alada file create koro reels save er jonno alada fire create koro story er jonno alada file create koro shob system alada hobe but sync thakbe ekhon jemon ache counting real ar alada files theke asbe new vabe create koro shob offline system but ui naver change."
+
+v5.2.3 proved its fixes in the harness, but the user still saw the wrong count and missing posts on device. The patient's problem was structural, so patching stopped and the subsystem was rebuilt as ordered.
+
+## The two structural defects behind every report
+
+1. **Count and bytes lived in two systems.** Items in `OfflineFeed`, media bytes in the LRU `OfflineCache` with a 500 KB video floor. Eviction trimmed counted items away; small-but-complete reels **never counted** (`hasMinSize(500_000)`); a count computed against a trimmed cache can lie both ways.
+2. **Delivery was a runtime script.** Saved cards were moved into a stored Facebook document by JS at page-run time. `</SCRIPT>` in any letter case was only ONE of the ways that chain died; any runtime failure left the user staring at the document's own handful of server posts while the store said dozens.
+
+## The rebuild (see offline-v2.md)
+
+- Three files, three systems: `offline/HomeVault.kt`, `offline/ReelsVault.kt`, `offline/StoriesVault.kt` — each with its own store file (`offline_vaults/<section>/items.json`), its own media folder, its own download queue + worker, its own count.
+- Shared engine `offline/SectionVault.kt`: media files are written `.part` and renamed in after the last byte — **existence == complete == playable == counted**. No size floors, no cache coupling (`OfflineCache` never consulted: isolation asserted in tests).
+- `offline/PageAssembly.kt`: cards are composed INTO the stored document **in Kotlin before serving** (first child of the real `data-type="vscroller"` container; its stale server children hidden by one scoped stylesheet; graceful fallbacks when a document lacks the container). Card-borne `<script>`/`<base>` cut at compose time. If every script on the device failed, the saved posts would still render — they ARE the document now.
+- `OfflineFeed` stays as the public facade (UI/bridges/pipeline say what they always said); `OfflineInject.kt` deleted.
+- Settings screen (7 pinned keys), capture rules, the Facebook shell layer, and the 4-phase sync order: **unchanged**.
+
+## Proof battery (local, 10 suites, 909 checks)
+
+- End-to-end simulation of the reported bug: store of 3 items, disk filling step by step → **count == rendered cards at every step** (text 1 → +photo 2 → +reel 3), using verbatim-extracted production predicates.
+- 37 nasty cards (uppercase `</SCRIPT>`, `${`, backticks, embedded `<script>`) statically composed and parsed with scripts enabled → **37/37 present, card scripts never execute**; regression contrast shows the old template-literal delivery still losing the same bundle.
+- No-container documents still land the cards right after `<body>`, hiding nothing unrelated.
+- Per-section isolation, retention floors, reels video-required filter, exact-phase batching, bridge chunking, pipeline order: re-proved against the new files.
+
+> Session: 2026-08-07 | Tag: v5.2.4 | Tests: 909 passed, 0 failed (10 suites)

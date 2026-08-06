@@ -214,14 +214,18 @@ console.log('\nSessionState');
 console.log('\nOfflineFeed');
 {
   const of = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  const ov = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
   ok('only stores facebook media',
-     of.includes('fbcdn.net') && of.includes('fbsbx.com'));
+     ov.includes('fbcdn.net') && ov.includes('fbsbx.com'));
   ok('only offers items whose media is on disk',
-     /media\.any \{ OfflineCache\.has\(it\) \}/.test(of));
+     /fun cardMarkupList\(section: String\)[\s\S]{0,120}vault\(section\)\?\.cards\(\)/
+       .test(of) &&
+     /fun cards\(\): List<String> = completeItems/.test(ov) &&
+     /hasAsset/.test(ov));
   // Drawing our own page is exactly what lost the real controls.
   ok('does not render a page of its own', !of.includes('fun renderPage'));
   ok('de-duplicates and caps the store',
-     of.includes('seen.add') && of.includes('limit'));
+     ov.includes('seen.add') && ov.includes('limit'));
   ok('refuses encoded responses', of.includes('Accept-Encoding') &&
      of.includes('identity'));
   ok('does not queue overlapping prefetch passes',
@@ -956,7 +960,7 @@ console.log('\nOnline requests are never delayed by the offline store');
      online >= 0 && check >= 0 && online < check,
      'isOnline at ' + online + ', isInterceptable at ' + check);
   ok('so no disk lookup happens on the resource thread while online',
-     /if \(isOnline\) return null[\s\S]{0,400}OfflineCache\.isInterceptable/.test(body));
+     /if \(isOnline\) return null[\s\S]{0,900}OfflineCache\.isInterceptable/.test(body));
 }
 
 // ------------------------------------------ downloading on a metered network
@@ -1011,7 +1015,7 @@ console.log('\nOffline saving respects the network choice');
   ok('choosing mobile data starts a pass immediately',
      /KEY_OFFLINE_WIFI_ONLY[\s\S]{0,400}BackgroundSyncManager\.start\(\)/.test(sa));
   ok('a missing context does not silently disable saving',
-     /val c = appContext \?: return true/.test(feed));
+     /val c = chromeContext \?: return true/.test(feed));
 }
 
 // ------------------------------------------- scrolling must stay the app's

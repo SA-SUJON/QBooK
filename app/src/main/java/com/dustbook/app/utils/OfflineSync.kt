@@ -240,7 +240,7 @@ object OfflineSync {
                         if (batch.isEmpty()) return
 
                         OfflineFeed.addItems(sec, batch, target)
-                        OfflineFeed.prefetch(batch, includeVideo)
+                        OfflineFeed.prefetch(sec, batch, includeVideo)
                     }
 
                     @JavascriptInterface
@@ -263,7 +263,8 @@ object OfflineSync {
                             // Give the download pool the final list before we
                             // tear the page down.
                             OfflineFeed.prefetch(
-                                OfflineFeed.loadItems(section), includeVideo
+                                section, OfflineFeed.loadItems(section),
+                                includeVideo
                             )
                             finish(count)
                         }

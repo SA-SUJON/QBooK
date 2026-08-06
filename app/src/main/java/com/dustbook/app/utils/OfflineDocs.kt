@@ -11,6 +11,7 @@ import java.net.URL
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import com.dustbook.app.offline.PageAssembly
 import org.json.JSONArray
 
 /**
@@ -243,16 +244,27 @@ object OfflineDocs {
                 else -> null
             }
 
+            val docText = f.readText()
+            // The saved cards are composed into the stored document here,
+            // in Kotlin, before serving. No runtime script stands between
+            // the user and their saved content any more: if every script
+            // on the page failed, the posts would still be on screen,
+            // because they are the document.
+            val withCards =
+                if (cards.isNotEmpty() && screen != "stories") {
+                    PageAssembly.compose(docText, cards)
+                } else docText
+
             val html = promoHideCss() +
-                f.readText() +
+                withCards +
                 unmuteStripScript() +
                 OfflineBanner.html() +
                 "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
-                (if (cards.isNotEmpty()) {
-                    "<script>" +
-                        (if (screen == "stories") storyViewer(cards, resumeId)
-                         else OfflineInject.script(cards, resumeId)) +
-                        "</script>"
+                (if (cards.isNotEmpty() && screen == "stories") {
+                    "<script>" + storyViewer(cards, resumeId) + "</script>"
+                } else "") +
+                (if (cards.isNotEmpty() && screen != "stories") {
+                    "<script>" + PageAssembly.resumeScript(resumeId) + "</script>"
                 } else "") +
                 (if (screen == "home") unmuteByDefaultScript() else "") +
                 if (screen == "reels" || screen == "watch" || screen == "stories") {
@@ -283,10 +295,11 @@ object OfflineDocs {
      */
     private fun storyViewer(cards: List<String>, resumeId: String?): String {
         if (cards.isEmpty()) return ""
-        // One JSON array, never a template literal - see OfflineInject for
-        // why that is the only safe way to carry stored markup inside a
-        // <script> block. The "---DBSTORY---" sentinel-split is gone with
-        // the literal it belonged to.
+        // One JSON array, never a template literal: a "</script" inside a
+        // stored card would otherwise end this host block early, and the
+        // "<\\/" spelling is the JSON-blessed way to carry it safely.
+        // Per-card strings additionally isolate one malformed card from
+        // the rest.
         val json = JSONArray()
         for (c in cards) json.put(c)
         val safe = json.toString().replace("</", "<\\/")
@@ -434,7 +447,7 @@ object OfflineDocs {
             "<style>body{margin:0;background:#18191a;color:#e4e6eb;" +
             "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
             "sans-serif}</style>" + promoHideCss() +
-            "</head><body><div>" + use.joinToString("\n") + "</div>" +
+            "</head><body>" + PageAssembly.holderHtml(use) +
             unmuteStripScript() +
             "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
             (if (screen == "reels" || screen == "watch" || screen == "stories") {

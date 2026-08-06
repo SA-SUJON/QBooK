@@ -2,9 +2,8 @@ package com.dustbook.app.utils
 
 import android.content.Context
 import android.net.Uri
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
+import com.dustbook.app.offline.OfflineVaults
+import com.dustbook.app.offline.SectionVault
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -12,21 +11,22 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Offline content, so the app behaves like the native Facebook app rather
- * than a browser tab.
+ * Public face of the offline library.
  *
- * [OfflineCache] keeps individual assets, but that alone is not enough: with
- * no connection the main-frame request fails, the WebView shows its error
- * page, and the cached images are never asked for.
+ * The storage itself now lives in three separate vaults - one file for
+ * the home feed, one for reels, one for stories
+ * ([com.dustbook.app.offline.HomeVault],
+ * [com.dustbook.app.offline.ReelsVault],
+ * [com.dustbook.app.offline.StoriesVault]) - each with its own store, its
+ * own media folder, its own download queue and its own real count. This
+ * object only routes the app's existing calls to the right vault, so
+ * screens, bridges and the pipeline keep saying what they always said.
  *
- * An earlier version tried to fix that by storing Facebook's rendered HTML.
- * That never worked - the feed is megabytes of markup, so nothing was ever
- * stored, and "View saved content" opened a blank page.
- *
- * What we store instead is a small structured list: for each post or reel, the
- * media URL, a caption and a permalink. The media is downloaded into
- * [OfflineCache]; the screen the user sees offline is rendered by us from that
- * list. Predictable size, and it works without any of Facebook's scripts.
+ * What stays here because it belongs to no section: the small fetcher
+ * that downloads the PAGE furniture (stylesheets, icon fonts, avatars)
+ * referenced by the stored Facebook documents. Those bytes are not user
+ * content and are not counted; they still go to [OfflineCache], exactly
+ * as before.
  */
 object OfflineFeed {
 
@@ -36,63 +36,11 @@ object OfflineFeed {
 
     private val SECTIONS = setOf(SECTION_FEED, SECTION_REELS, SECTION_STORIES)
 
-    private const val DIR = "offline_items_v1"
-    private const val MIN_VIDEO_BYTES = 500_000L
-
-    /**
-     * How many items a section keeps at minimum, whatever the pass target.
-     *
-     * The target says how much to *fetch this pass*; the store used to cap
-     * itself at the same number. The live page merges with max(reel target,
-     * 30) and the background pipeline's first step with 50, so every fifty
-     * posts the user scrolled past deleted fifty that were already
-     * downloaded and ready - saved posts kept vanishing from the offline
-     * library and "many posts are saved but never show up offline". The cap
-     * is now a generous per-section floor; a larger pass target still
-     * applies when it asks for more.
-     */
-    private const val STORE_KEEP_FLOOR_FEED = 500
-    private const val STORE_KEEP_FLOOR_REELS = 250
-    private const val STORE_KEEP_FLOOR_STORIES = 200
-
-    private val pool = Executors.newFixedThreadPool(3)
-    private val busy = AtomicBoolean(false)
-
-    /** Media waiting to be fetched, and what is already in the queue. */
-    private val queue = ArrayList<String>()
-    private val queued = HashSet<String>()
-
-    @Volatile private var root: File? = null
-    @Volatile private var appContext: Context? = null
-    @Volatile var enabled: Boolean = true
-
-    /**
-     * Whether new content may be *written*.
-     *
-     * [enabled] used to gate reading and writing together, so switching
-     * saving off also hid content already on disk. Reading is now always
-     * allowed; only collecting new content follows the user's switches.
-     */
-    @Volatile var writeEnabled: Boolean = true
-
-
-    /** Media stored by the last prefetch pass, shown in hidden settings. */
-    @Volatile var lastStored: Int = 0
-        private set
-
     /**
      * One saved story, as Facebook's own markup.
      *
-     * Earlier versions held separate fields - author, caption, counts - and
-     * rebuilt a card from them. A rebuilt card can only ever contain what
-     * somebody remembered to capture, which is why Like, Comment and Share
-     * were missing from saved posts. The real `outerHTML` is stored instead,
-     * so nothing can be left out: it is the original markup.
-     *
-     * @param id    a stable identity, so the same story is not stored twice.
-     * @param html  Facebook's own markup for the card.
-     * @param media every URL it references, which must be on disk for it to
-     *              render offline.
+     * Kept as the exchange type with the capture bridge - the vaults store
+     * the same three fields.
      */
     data class Item(
         val id: String,
@@ -100,22 +48,30 @@ object OfflineFeed {
         val media: List<String>
     )
 
-    fun init(context: Context) {
-        appContext = context.applicationContext
-        if (root != null) return
-        synchronized(this) {
-            if (root != null) return
-            val d = File(context.filesDir, DIR)
-            if (!d.exists()) d.mkdirs()
-            root = d
+    @Volatile var enabled: Boolean = true
+        set(value) {
+            field = value
+            for (v in OfflineVaults.sections) v.enabled = value
         }
+
+    /**
+     * Whether new content may be *written*. Reading is always allowed;
+     * only collecting new content follows the user's switches.
+     */
+    @Volatile var writeEnabled: Boolean = true
+        set(value) {
+            field = value
+            for (v in OfflineVaults.sections) v.writeEnabled = value
+        }
+
+    fun init(context: Context) {
+        chromeContext = context.applicationContext
+        OfflineVaults.init(context)
     }
 
-    private fun fileFor(section: String): File? {
-        val dir = root ?: return null
-        if (!SECTIONS.contains(section)) return null
-        return File(dir, "$section.json")
-    }
+    /** Which vault a section id belongs to. */
+    private fun vault(section: String): SectionVault? =
+        OfflineVaults.forSection(section)
 
     fun sectionForUrl(url: String?): String? {
         if (url.isNullOrBlank()) return null
@@ -135,398 +91,97 @@ object OfflineFeed {
         }
     }
 
-    // ------------------------------------------------------------------ store
+    // ------------------------------------------------------------- store
 
-    /**
-     * V4 Step 2: Merge newly captured items into the store.
-     * Improved deduplication using multiple keys to avoid storing the same
-     * already-consumed content.
-     */
+    /** Merge newly captured items into the section's own store. */
     fun addItems(section: String, incoming: List<Item>, limit: Int) {
-        if (!enabled || incoming.isEmpty()) return
-        val f = fileFor(section) ?: return
-        synchronized(this) {
-            val existing = loadItems(section)
-            val seen = HashSet<String>()
-
-            // For reels: only keep items that reference actual video.
-            // A card with only images is not a playable reel.
-            val filtered = if (section == SECTION_REELS) {
-                incoming.filter { it.media.any { u -> isVideoUrl(u) } }
-            } else incoming
-
-            // Fetch target vs retention: never keep less than the floor.
-            val keep = maxOf(limit, storeKeepFloor(section))
-            val merged = ArrayList<Item>(keep)
-
-            fun keyFor(it: Item): String {
-                if (it.id.isNotBlank()) return it.id
-                val mediaKey = it.media.firstOrNull() ?: ""
-                val textKey = it.html.take(180)
-                return "$mediaKey|$textKey"
-            }
-
-            for (it in filtered + existing) {
-                val key = keyFor(it)
-                if (!seen.add(key)) continue
-                merged.add(it)
-                if (merged.size >= keep) break
-            }
-
-            val arr = JSONArray()
-            for (it in merged) {
-                val m = JSONArray()
-                for (u in it.media) m.put(u)
-                arr.put(
-                    JSONObject()
-                        .put("id", it.id)
-                        .put("h", it.html)
-                        .put("m", m)
-                )
-            }
-            try {
-                val tmp = File(f.parentFile, f.name + ".part")
-                tmp.writeText(arr.toString())
-                if (tmp.renameTo(f)) {
-                    // The assembled offline page embeds these cards, so it is
-                    // now stale and must be rebuilt on the next request.
-                    OfflineDocs.invalidate()
-                } else {
-                    tmp.delete()
-                }
-            } catch (e: Exception) {
-                // out of space: the previous list stays usable
-            }
-        }
+        if (!SECTIONS.contains(section)) return
+        vault(section)?.addItems(
+            incoming.map { SectionVault.Entry(it.id, it.html, it.media) },
+            limit
+        )
     }
 
-    /**
-     * Identities of everything already stored for a section.
-     *
-     * Handed to the capture script so it can skip cards we already hold.
-     * Without it the same posts were captured, sent over the bridge and
-     * re-queued on every pass - the store de-duplicated them, but the work
-     * had already been done and no new content was reached.
-     */
+    /** Identities already stored, so capture skips what we hold. */
     fun knownIds(section: String): List<String> =
-        loadItems(section).map { it.id }.filter { it.isNotBlank() }
+        vault(section)?.knownIds() ?: emptyList()
 
-    /** The generous per-section retention described above. */
-    private fun storeKeepFloor(section: String): Int = when (section) {
-        SECTION_FEED -> STORE_KEEP_FLOOR_FEED
-        SECTION_REELS -> STORE_KEEP_FLOOR_REELS
-        else -> STORE_KEEP_FLOOR_STORIES
-    }
+    fun loadItems(section: String): List<Item> =
+        vault(section)?.load()?.map { Item(it.id, it.html, it.media) }
+            ?: emptyList()
 
-    fun loadItems(section: String): List<Item> {
-        val f = fileFor(section) ?: return emptyList()
-        if (!f.exists()) return emptyList()
-        return try {
-            val arr = JSONArray(f.readText())
-            (0 until arr.length()).mapNotNull { i ->
-                val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                val html = o.optString("h", "")
-                if (html.isBlank()) return@mapNotNull null
-                val m = o.optJSONArray("m")
-                val media = if (m == null) emptyList() else
-                    (0 until m.length()).mapNotNull { j -> m.optString(j, null) }
-                Item(
-                    id = o.optString("id", ""),
-                    html = html,
-                    media = media
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    fun totalStored(section: String): Int = vault(section)?.totalStored() ?: 0
 
-    /** Items whose media is actually on disk - the only ones worth showing. */
-    /**
-     * Items whose media is on disk. A card with no media at all - a text post -
-     * is always viewable, so it counts too.
-     */
-    /** 
-     * V4: Items that can actually be shown offline.
-     */
-    fun playableItems(section: String): List<Item> =
-        loadItems(section).filter { item ->
-            item.media.isEmpty() || item.media.any { OfflineCache.has(it) }
-        }
+    /** Cheap "is there anything here at all" test; never parses. */
+    fun storedCount(section: String): Int = vault(section)?.storedCountCheap() ?: 0
 
-    fun playableCount(section: String): Int = playableItems(section).size
+    // ----------------------------------------------------------- counting
 
     /**
-     * Items that are genuinely usable offline. This is the filter used when
-     * actually rendering stored content to the user.
-     *
-     * For reels: the video must be cached. A reel whose only cached asset is
-     * a 4 KB avatar is not playable and should not appear in the feed.
-     * For feed/stories: at least one non-avatar asset must be cached (or the
-     * item has no media at all, i.e. a text post).
+     * The real counts: complete items in each section's own files. The
+     * served page is built from the same lists, so the number the user
+     * reads and the content the user sees are the same thing.
      */
     fun realPlayableItems(section: String): List<Item> =
-        loadItems(section).filter { isFullyDownloaded(it) }
+        vault(section)?.completeItems()?.map { Item(it.id, it.html, it.media) }
+            ?: emptyList()
 
-    /**
-     * True when everything this item needs is already on disk.
-     *
-     * The old rule was `any {}`: one cached asset was enough. A post with five
-     * photos counted as saved when one had arrived, so the number climbed
-     * while the content behind it was still downloading and could fall again
-     * on the next pass. An item is either ready to read offline or it is not.
-     *
-     * Every media URL must therefore be present, with two qualifications that
-     * are about correctness rather than leniency:
-     *
-     *  - a video must also be a plausible size. A truncated or still-writing
-     *    file exists but does not play, and counting it is the same mistake in
-     *    a different place.
-     *  - an item carrying no media at all — a text post — is complete as soon
-     *    as its markup is stored, because there is nothing else to fetch.
-     */
-    fun isFullyDownloaded(item: Item): Boolean {
-        if (item.media.isEmpty()) return true
+    fun realPlayableCount(section: String): Int = vault(section)?.count() ?: 0
 
-        val videos = item.media.filter { isVideoUrl(it) }
-        val images = item.media.filter { !isVideoUrl(it) }
-
-        // A video item is ready when its video is really on disk. Requiring
-        // every URL was too strict and left reels permanently "incomplete":
-        // capture records every srcset variant of the poster image, and only
-        // the one the renderer actually chose is ever fetched, so the rest
-        // could never arrive.
-        if (videos.isNotEmpty()) {
-            return videos.any { OfflineCache.hasMinSize(it, MIN_VIDEO_BYTES) }
-        }
-
-        // Nothing-but-chrome posts are complete as stored.
-        //
-        // Capture records every <img> inside a card, and on a plain text post
-        // the only images are the author's avatar and any emoji in the body.
-        // Reading that as "this item has media and none of it arrived" hid
-        // the post - so a feed of ordinary text updates came back offline as
-        // a handful of items instead of the fifty that were saved. There is
-        // nothing to wait for on such a post: the words are in the stored
-        // markup already.
-        val photos = images.filter { !isAvatar(it) && !isChrome(it) }
-        if (photos.isEmpty()) return true
-
-        // A picture post is ready when ALL of its pictures are here.
-        //
-        // The rule this replaces - one cached variant of any photo - was the
-        // premature count: capture records every srcset variant of every
-        // photo, so a five-photo post counted (and was served) the moment
-        // its first image landed, while the other four were still in the
-        // queue. The settings number climbed early and the offline post
-        // gaped with blank frames. Group the variants by photo, then demand
-        // one cached variant per photo: that is what "the whole post is
-        // saved" means, and it keeps the srcset leniency - the alternates of
-        // one photo are alternates, not additional content.
-        val groups = photos.groupBy { photoKey(it) }
-        return groups.values.all { variants -> variants.any { OfflineCache.has(it) } }
-    }
-
-    /**
-     * Identity of the photo a URL serves, ignoring which sized variant it is.
-     *
-     * Facebook re-issues one photo at several sizes; the content id in the
-     * filename is constant while size markers move around:
-     * `p480x480/…_n.jpg` vs `…_n.jpg`, `img_1080x1080_n.jpg` vs `img_n.jpg`,
-     * `p_640.jpg` vs `p_960.jpg`. Two different photos always carry
-     * different content ids, so grouping by filename-with-size-markers-
-     * removed only ever merges true variants of one photo.
-     */
-    private fun photoKey(url: String): String {
-        val stem = url.substringBefore('?')
-            .substringAfterLast('/')
-            .lowercase(Locale.ROOT)
-        return stem
-            .replace(Regex("[._-][0-9]+x[0-9]+"), "")
-            .replace(Regex("_[0-9]+(?=\\.)"), "")
-    }
-
-    /**
-     * Interface furniture rather than post content: emoji sprites, static
-     * icons and spacers. These come from Facebook's static host, not the
-     * content CDN, and a post is perfectly readable without them.
-     */
-    private fun isChrome(url: String): Boolean {
-        val clean = url.substringBefore('?').lowercase(Locale.ROOT)
-        return clean.contains("/emoji.php/") ||
-            clean.contains("static.xx.fbcdn.net") ||
-            clean.contains("/rsrc.php/") ||
-            clean.endsWith(".svg")
-    }
-
-    /**
-     * Profile pictures and other chrome, which arrive first and are tiny.
-     *
-     * Counting an item because its avatar downloaded is the mistake this
-     * whole rule exists to avoid.
-     */
-    private fun isAvatar(url: String): Boolean {
-        val clean = url.substringBefore('?')
-        return clean.contains("/t39.30808-1/") ||
-            (clean.contains("profile") && clean.contains("_s."))
-    }
-
-    /**
-     * Strict count: only counts an item when its *primary* media is on disk.
-     *
-     * For reels this means the video must be cached; for feed and stories it
-     * means at least one non-avatar asset (photo or video) is cached. A text
-     * post with no media always counts.
-     *
-     * This is the real number shown to the user. The old count reported "50
-     * reels saved" when only 4 KB avatars were on disk while the 8 MB videos
-     * were still queued. A reel you cannot watch is not saved.
-     */
-    fun realPlayableCount(section: String): Int =
-        loadItems(section).count { isFullyDownloaded(it) }
-
-
-    /** V4 helper */
+    /** Alias kept for the diagnostics screens. */
     fun freshCount(section: String): Int = realPlayableCount(section)
 
-    /** V4: Total stored items (even if media not yet downloaded) */
-    /**
-     * Cheap "is there anything here at all" test.
-     *
-     * Deliberately does not parse. Callers on the WebView's resource thread
-     * only need to know whether a section holds content; reading and parsing
-     * the JSON there, four times per served page, is what made assembling an
-     * offline page slow enough to stall.
-     */
-    fun storedCount(section: String): Int {
-        val f = fileFor(section) ?: return 0
-        return try {
-            if (f.exists() && f.length() > 2L) 1 else 0
-        } catch (e: Exception) {
-            0
-        }
-    }
+    fun playableItems(section: String): List<Item> = realPlayableItems(section)
 
-    fun totalStored(section: String): Int = loadItems(section).size
-
-    fun hasAnything(): Boolean =
-        realPlayableCount(SECTION_REELS) > 0 || realPlayableCount(SECTION_FEED) > 0 ||
-            realPlayableCount(SECTION_STORIES) > 0
-
-    // --------------------------------------------------------------- download
+    fun playableCount(section: String): Int = realPlayableCount(section)
 
     /**
-     * Download the media these items need. Returns immediately; work happens
-     * on a small pool. A second call while a pass is running is dropped, so a
-     * scrolling user cannot pile up threads.
+     * The saved cards as separate strings - exactly the items the count
+     * reports, so number and screen can never disagree.
      */
-    fun prefetch(items: List<Item>, includeVideo: Boolean) {
-        prefetchUrls(items.flatMap { it.media }.distinct(), includeVideo)
+    fun cardMarkupList(section: String): List<String> =
+        vault(section)?.cards() ?: emptyList()
+
+    fun hasAnything(): Boolean = OfflineVaults.hasAnything()
+
+    fun sizeBytes(): Long = OfflineVaults.sizeBytes()
+
+    fun clear() {
+        OfflineVaults.clearAll()
     }
 
-    /**
-     * Download a list of media URLs into [OfflineCache].
-     *
-     * Returns immediately; the work happens on a small pool. A second call
-     * while a pass is running is dropped rather than queued, so a scrolling
-     * user cannot pile up hundreds of connections.
-     */
-    fun prefetchUrls(urls: List<String>, includeVideo: Boolean) {
-        if (!enabled || urls.isEmpty()) return
-        if (!downloadAllowed()) return
+    // --------------------------------------------------- section downloads
 
-        // Queue, never drop.
-        //
-        // This used to refuse a second call while a pass was running, so
-        // everything after the first batch was silently thrown away - which is
-        // why only a handful of reels were ever downloaded no matter how long
-        // the app was left open. The work is queued now and a single worker
-        // drains it.
-        synchronized(queue) {
-            for (u in urls) {
-                if (!includeVideo && isVideoUrl(u)) continue
-                if (queued.add(u)) queue.add(u)
-            }
-        }
-        drain()
+    /** Queue a section's card media into that section's own vault. */
+    fun prefetch(section: String, items: List<Item>, includeVideo: Boolean) {
+        vault(section)?.enqueue(
+            items.map { SectionVault.Entry(it.id, it.html, it.media) },
+            includeVideo
+        )
     }
 
-    /**
-     * Whether the current connection may be used for saving.
-     *
-     * Defaults to allowing it when the context is not yet known, so a missing
-     * init() cannot silently disable downloading altogether.
-     */
-    private fun downloadAllowed(): Boolean {
-        val c = appContext ?: return true
-        return NetworkPolicy.canDownload(c, Prefs(c))
-    }
-
-    /** One worker drains the queue; further calls just add to it. */
-    private fun drain() {
-        if (!busy.compareAndSet(false, true)) return
-        pool.execute {
-            var stored = 0
-            try {
-                while (enabled) {
-                    // Re-checked every item, not once at the start: a user can
-                    // walk out of Wi-Fi range mid-pass, and a queue of reels
-                    // would otherwise keep pulling video over mobile data.
-                    if (!downloadAllowed()) break
-                    val u = synchronized(queue) {
-                        if (queue.isEmpty()) null else queue.removeAt(0)
-                    } ?: break
-                    if (OfflineCache.has(u)) continue
-                    if (fetchInto(u)) {
-                        stored++
-                        downloaded++
-                    }
-                }
-            } catch (e: Exception) {
-                // Network died mid-pass: whatever was stored is still valid.
-            } finally {
-                lastStored = stored
-                // An item only becomes complete when its last file lands, and
-                // that happens here, not when its metadata was written. The
-                // assembled page was built before those bytes existed, so it
-                // kept serving the smaller set: the count said six reels and
-                // three were on screen, and pull-to-refresh redisplayed the
-                // same stale page. Rebuild it now that more is genuinely
-                // playable.
-                if (stored > 0) OfflineDocs.invalidate()
-                busy.set(false)
-                // Anything added while we were finishing must not be stranded.
-                val more = synchronized(queue) { queue.isNotEmpty() }
-                if (more && enabled) drain()
-            }
-        }
-    }
+    /** Media stored by the last pass across the sections plus chrome. */
+    val lastStored: Int
+        get() = chromeStored + OfflineVaults.sections.sumOf { it.lastStored }
 
     /** Files fetched since the app started, for the settings screen. */
-    @Volatile var downloaded: Int = 0
-        private set
+    val downloaded: Int
+        get() = chromeDownloaded + OfflineVaults.downloadedTotal()
 
-    fun pending(): Int = synchronized(queue) { queue.size }
+    fun pending(): Int = chromePending() + OfflineVaults.pendingTotal()
 
-    private fun isVideoUrl(url: String): Boolean {
-        val clean = url.substringBefore('?').lowercase(Locale.ROOT)
-        return clean.endsWith(".mp4") || clean.endsWith(".webm") ||
-            clean.contains("/v/t2/")
-    }
-
-    fun isPrefetching(): Boolean = busy.get()
+    fun isPrefetching(): Boolean =
+        chromeBusy.get() || OfflineVaults.anyPrefetching()
 
     /**
-     * Block until the current download pass finishes, or the timeout expires.
-     *
-     * Used only to sequence the two asset sweeps: the icon font can only be
-     * discovered by reading a stylesheet, and a stylesheet can only be read
-     * once it has finished downloading. Never called from the UI thread.
+     * Block until every section's media and the chrome queue are on disk,
+     * or the timeout expires. The pipeline holds each phase on this, so a
+     * phase's count is real the moment the next phase begins.
      */
     fun awaitPrefetch(timeoutMs: Long) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (!busy.get() && pending() == 0) return
+            if (!isPrefetching() && pending() == 0) return
             try {
                 Thread.sleep(250)
             } catch (e: InterruptedException) {
@@ -536,6 +191,78 @@ object OfflineFeed {
         }
     }
 
+    // ---------------------------------------------- page chrome downloads
+
+    private val chromePool = Executors.newFixedThreadPool(2)
+    private val chromeBusy = AtomicBoolean(false)
+    private val chromeQueue = ArrayList<String>()
+    private val chromeQueued = HashSet<String>()
+    @Volatile private var chromeStored: Int = 0
+    @Volatile private var chromeDownloaded: Int = 0
+
+    /**
+     * Download the media a stored PAGE references - stylesheets, icon
+     * fonts, avatars - into [OfflineCache]. These bytes are furniture for
+     * the stored Facebook documents, not user content, and are not part
+     * of any count; the mechanism is unchanged from before.
+     */
+    fun prefetchUrls(urls: List<String>, includeVideo: Boolean) {
+        if (!enabled || urls.isEmpty()) return
+        if (!downloadAllowed()) return
+
+        // Queue, never drop; one worker drains it.
+        synchronized(chromeQueue) {
+            for (u in urls) {
+                if (!includeVideo && isVideoUrl(u)) continue
+                if (chromeQueued.add(u)) chromeQueue.add(u)
+            }
+        }
+        drainChrome()
+    }
+
+    private fun downloadAllowed(): Boolean {
+        val c = chromeContext ?: return true
+        return NetworkPolicy.canDownload(c, Prefs(c))
+    }
+
+    @Volatile private var chromeContext: Context? = null
+
+    private fun drainChrome() {
+        if (!chromeBusy.compareAndSet(false, true)) return
+        chromePool.execute {
+            var stored = 0
+            try {
+                while (enabled) {
+                    if (!downloadAllowed()) break
+                    val u = synchronized(chromeQueue) {
+                        if (chromeQueue.isEmpty()) null else chromeQueue.removeAt(0)
+                    } ?: break
+                    if (OfflineCache.has(u)) continue
+                    if (fetchInto(u)) {
+                        stored++
+                        chromeDownloaded++
+                    }
+                }
+            } catch (e: Exception) {
+                // Network died mid-pass: whatever was stored is still valid.
+            } finally {
+                chromeStored = stored
+                busyFinished(stored)
+                chromeBusy.set(false)
+                val more = synchronized(chromeQueue) { chromeQueue.isNotEmpty() }
+                if (more && enabled) drainChrome()
+            }
+        }
+    }
+
+    private fun busyFinished(stored: Int) {
+        if (stored > 0) OfflineDocs.invalidate()
+    }
+
+    private fun chromePending(): Int = synchronized(chromeQueue) { chromeQueue.size }
+
+    private fun isVideoUrl(url: String): Boolean = SectionVault.isVideoUrl(url)
+
     private fun looksLikeMedia(url: String): Boolean {
         if (!url.startsWith("https://")) return false
         val h = UrlHelper.hostOf(url) ?: return false
@@ -544,12 +271,9 @@ object OfflineFeed {
     }
 
     /**
-     * Fetch one asset into [OfflineCache].
-     *
-     * Encoding matters: an earlier build forwarded Accept-Encoding, then
-     * replayed gzip bytes without Content-Encoding, and the WebView read
-     * compressed data as text - a blank screen. We ask for identity and refuse
-     * anything that still arrives encoded.
+     * Fetch one page asset into [OfflineCache]. Asks for identity encoding
+     * and refuses anything still encoded, so the WebView never reads
+     * compressed bytes as if they were the file.
      */
     private fun fetchInto(url: String): Boolean {
         if (!looksLikeMedia(url)) {
@@ -579,45 +303,5 @@ object OfflineFeed {
         } finally {
             try { conn?.disconnect() } catch (e: Exception) {}
         }
-    }
-
-    // ----------------------------------------------------------------- render
-
-    /**
-     * The offline screen, built from what we actually hold. Rendered by us,
-     * because none of Facebook's own code can run without a connection.
-     *
-     * Reels are shown as a full-height vertical pager, the way the real app
-     * shows them; feed posts as a simple card list.
-     */
-    /**
-     * The saved stories, as the markup Facebook served.
-     *
-     * Nothing is laid out or reconstructed here. Every earlier version built a
-     * card out of captured fields, and every one of them was missing something
-     * - Like, Comment and Share most obviously - because a rebuilt card only
-     * contains what was thought of in advance. This returns the original nodes,
-     * so the offline card is the online card.
-     */
-    /**
-     * The saved cards as separate strings. [OfflineInject] and the story
-     * viewer embed them inside a page's <script>, where they travel as a
-     * JSON array - one string per card, so a malformed card can never take
-     * the others down with it. What is shown is exactly what is counted:
-     * both come from realPlayableItems.
-     */
-    fun cardMarkupList(section: String): List<String> =
-        realPlayableItems(section).map { it.html }
-
-    fun sizeBytes(): Long {
-        val dir = root ?: return 0
-        return try { dir.listFiles()?.sumOf { it.length() } ?: 0 } catch (e: Exception) { 0 }
-    }
-
-    fun clear() {
-        // The assembled page embeds these cards, so it must not survive them.
-        OfflineDocs.invalidate()
-        val dir = root ?: return
-        try { dir.listFiles()?.forEach { it.delete() } } catch (e: Exception) {}
     }
 }
