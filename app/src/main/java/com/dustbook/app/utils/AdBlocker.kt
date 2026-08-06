@@ -654,12 +654,14 @@ object AdBlocker {
                   for (var i = 0; i < vs.length; i++) {
                     vs[i].pause();
                     vs[i].removeAttribute('src');
-                    // No .load() here - it sends Chromium's media pipeline
-                    // through resource selection, emptied, abort, then error
-                    // recovery with no source, all on the main thread. That
-                    // is a 1-2s freeze that looked like a black screen.
-                    // pause() + removeAttribute already stop the buffer and
-                    // release the resource; load() added nothing but a hang.
+                    // No reload call here - a reload after clearing src
+                    // sends Chromium's media pipeline through resource
+                    // selection, emptied, abort, then error recovery with
+                    // no source, all on the main thread. That is a 1-2s
+                    // freeze that looked like a black screen. pause() and
+                    // clearing the source already stop the buffer and
+                    // release the resource; forcing a reload added nothing
+                    // but the hang.
                   }
                 } catch (e) {}
               }
