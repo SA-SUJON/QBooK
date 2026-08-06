@@ -1,4 +1,4 @@
-! Dustbook filter set - Facebook cosmetic rules
+! Dustbook filter set - Facebook cosmetic rules 
 ! Sourced from uBlock Origin, AdGuard Base, AdGuard Social, AdGuard Annoyances
 [plain]
 #contentCol > div > div > div[class="_5hn6"][style]
