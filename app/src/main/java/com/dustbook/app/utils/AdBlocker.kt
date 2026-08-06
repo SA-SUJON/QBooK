@@ -677,15 +677,22 @@ object AdBlocker {
                   var el = labels[i];
                   if (!isCtaLabel(el.textContent)) continue;
 
-                  var card = el, depth = 0;
+                  var card = el, depth = 0, lastBeforeScreen = null;
                   while (card && depth < 16) {
                     if (card.getAttribute && card.getAttribute(CTA_TAG)) break;
                     var role = card.getAttribute ? card.getAttribute('role') : null;
                     if (role === 'article' || (card.querySelector &&
                         card.querySelector('video'))) break;
+                    // A card with no video at all - a photo-only or
+                    // text-only promo - never hits either stop condition
+                    // and would otherwise climb straight to the screen
+                    // root and be skipped by the check below. Remember the
+                    // last node before that root as a fallback boundary.
+                    if (card.parentElement === screen) lastBeforeScreen = card;
                     card = card.parentElement;
                     depth++;
                   }
+                  if (card === screen && lastBeforeScreen) card = lastBeforeScreen;
                   if (!card || card === screen) continue;
                   if (card.getAttribute(CTA_TAG)) continue;
 
@@ -703,7 +710,8 @@ object AdBlocker {
                 }
               }
 
-
+              // ---- sponsored posts: the /ads/about/ probe ----------------------
+              function killSponsored() {
                 var links = document.querySelectorAll(
                   'a[href*="/ads/about"],a[href^="/ads/about/"],' +
                   'a[attributionsrc^="/privacy_sandbox/"]'
