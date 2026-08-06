@@ -1734,7 +1734,7 @@ class MainActivity : AppCompatActivity() {
                 // instead of leaving it to chance.
                 binding.contentRoot.postDelayed({
                     settleRelayout(binding.webView)
-                }, 120)
+                }, 220)
                 // Reels/Stories are vertical (9:16) video. Forcing landscape here
                 // shrinks/letterboxes that content instead of filling the screen.
                 // Let the system rotate freely based on the device sensor instead
