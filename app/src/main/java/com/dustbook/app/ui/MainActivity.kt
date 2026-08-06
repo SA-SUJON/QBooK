@@ -1327,6 +1327,18 @@ class MainActivity : AppCompatActivity() {
                 binding.swipeRefresh.isRefreshing = false
                 mainFrameRetries = 0
                 refreshInsetsAfterLoad()
+                // On a fast connection the page can finish rendering
+                // quickly enough to race the native side's own layout pass
+                // - the content settles before Android has settled around
+                // it, so the first read it makes of its own height is
+                // taken mid-transition. A slower connection naturally
+                // staggers the two enough that this never surfaces, which
+                // is why it was Wi-Fi-only and went away under a VPN or on
+                // mobile data - both add exactly the latency a fast Wi-Fi
+                // load has none of. settleRelayout already exists for this
+                // shape of race on the fullscreen-exit path; it belongs
+                // here too, not only there.
+                settleRelayout(view)
                 if (prefs.saveSession && UrlHelper.isInternal(url)) prefs.lastUrl = url
                 injectAll(view)
                 view?.postDelayed({ warmOfflineCache(url) }, 2500)
