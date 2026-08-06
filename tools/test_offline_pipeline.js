@@ -559,6 +559,13 @@ console.log('\nCounting waits for the whole item');
     return c.includes('/emoji.php/') || c.includes('static.xx.fbcdn.net') ||
            c.includes('/rsrc.php/') || c.endsWith('.svg');
   };
+  // Strict per-photo port: every distinct photo needs one cached variant.
+  // Mirrors OfflineFeed.photoKey(): filename without query, size markers
+  // removed (img_1080x1080_x.jpg -> img_x.jpg, p_640.jpg -> p.jpg).
+  const photoKey = (u) => {
+    const stem = u.split('?')[0].split('/').pop().toLowerCase();
+    return stem.replace(/[._-][0-9]+x[0-9]+/g, '').replace(/_[0-9]+(?=\.)/, '');
+  };
   const shown = (media, cache) => {
     if (media.length === 0) return true;
     const has = (u) => cache[u] !== undefined;
@@ -566,10 +573,14 @@ console.log('\nCounting waits for the whole item');
     const videos = media.filter(isVideoUrl);
     const images = media.filter((u) => !isVideoUrl(u));
     if (videos.length) return videos.some(hasMin);
-    if (images.some((u) => has(u) && !isAvatar(u))) return true;
-    if (images.every(has)) return true;
-    if (images.every((u) => isAvatar(u) || isChrome(u))) return true;
-    return false;
+    const photos = images.filter((u) => !isAvatar(u) && !isChrome(u));
+    if (photos.length === 0) return true;
+    const groups = {};
+    for (const p of photos) {
+      const k = photoKey(p);
+      (groups[k] = groups[k] || []).push(p);
+    }
+    return Object.values(groups).every((vs) => vs.some(has));
   };
 
   const AV = 'https://scontent.xx.fbcdn.net/v/t39.30808-1/1_s.jpg';
@@ -590,12 +601,42 @@ console.log('\nCounting waits for the whole item');
   ok('and shown once the video is really there',
      shown([AV, VID], { [AV]: 4000, [VID]: 9000000 }) === true);
 
+  // The reported bug: the settings count and the offline display used to
+  // jump the moment the FIRST photo of a multi-photo post landed.
+  const P1 = 'https://scontent.xx.fbcdn.net/v/t51.2885-15/4111001_n.jpg';
+  const P2 = 'https://scontent.xx.fbcdn.net/v/t51.2885-15/4222002_n.jpg';
+  const P3 = 'https://scontent.xx.fbcdn.net/v/t51.2885-15/4333003_n.jpg';
+  ok('a three-photo post does NOT count when only its first photo has landed',
+     shown([P1, P2, P3], { [P1]: 90000 }) === false,
+     'the old rule counted the post here - the premature count');
+  ok('nor when two of three are on disk',
+     shown([P1, P2, P3], { [P1]: 90000, [P2]: 90000 }) === false);
+  ok('it counts once every photo has a variant stored',
+     shown([P1, P2, P3], { [P1]: 90000, [P2]: 90000, [P3]: 90000 }) === true);
+  ok('srcset variants of one photo still collapse to a single photo',
+     photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/p480x480/4111001_n.jpg') ===
+     photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/4111001_n.jpg?stp=dst-jpg'));
+  ok('dimension-suffixed variants collapse too',
+     photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/img_1080x1080_n.jpg') ===
+     photoKey('https://scontent.xx.fbcdn.net/v/t51.2885-15/img_n.jpg'));
+  ok('two different photos never merge into one group',
+     photoKey(P1) !== photoKey(P2));
+
   const feedSrc = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
   ok('the chrome test exists in the source',
      /private fun isChrome\(url: String\): Boolean/.test(feedSrc));
-  ok('and is only reached after the real-content tests',
-     feedSrc.indexOf('images.any { OfflineCache.has(it) && !isAvatar(it) }') <
-     feedSrc.indexOf('images.all { isAvatar(it) || isChrome(it) }'));
+  ok('content photos are separated from avatar and chrome first',
+     /val photos = images\.filter \{ !isAvatar\(it\) && !isChrome\(it\) \}/
+       .test(feedSrc));
+  ok('and the nothing-to-wait-for return sits after that split',
+     feedSrc.indexOf('val photos = images.filter') <
+     feedSrc.indexOf('if (photos.isEmpty()) return true'));
+  ok('every distinct photo must have a variant on disk',
+     /groups\.values\.all \{ variants -> variants\.any \{ OfflineCache\.has\(it\) \} \}/
+       .test(feedSrc));
+  ok('srcset variants are grouped by photo identity',
+     /photos\.groupBy \{ photoKey\(it\) \}/.test(feedSrc) &&
+     /private fun photoKey\(url: String\): String/.test(feedSrc));
 }
 
 // ------------------------------------------- tapping Stories offline works
@@ -702,17 +743,28 @@ console.log('\nCompleteness allows for srcset alternates');
      !/item\.media\.all \{ u ->/.test(feed));
   ok('an avatar alone still does not count',
      /private fun isAvatar/.test(feed) &&
-     /images\.any \{ OfflineCache\.has\(it\) && !isAvatar\(it\) \}/.test(feed));
+     /val photos = images\.filter \{ !isAvatar\(it\) && !isChrome\(it\) \}/.test(feed));
 
+  // Expectation moved from "any photo" to "every photo, one variant each":
+  // that is the whole point of the premature-count fix.
   const MIN = 500000; const disk = {};
   const isVideo = (u) => /\/o1\/v\/|\.mp4|video/.test(u);
   const isAvatar = (u) => { const c = u.split('?')[0];
     return c.includes('/t39.30808-1/') || (c.includes('profile') && c.includes('_s.')); };
+  const isChrome2 = (u) => { const c = u.split('?')[0].toLowerCase();
+    return c.includes('/emoji.php/') || c.includes('static.xx.fbcdn.net') ||
+           c.includes('/rsrc.php/') || c.endsWith('.svg'); };
+  const pKey = (u) => { const s = u.split('?')[0].split('/').pop().toLowerCase();
+    return s.replace(/[._-][0-9]+x[0-9]+/g, '').replace(/_[0-9]+(?=\.)/, ''); };
   const has = (u) => disk[u] !== undefined;
   const full = (m) => { if (!m.length) return true;
     const v = m.filter(isVideo), i = m.filter((u) => !isVideo(u));
     if (v.length) return v.some((u) => has(u) && disk[u] >= MIN);
-    return i.some((u) => has(u) && !isAvatar(u)) || i.every(has); };
+    const photos = i.filter((u) => !isAvatar(u) && !isChrome2(u));
+    if (!photos.length) return true;
+    const g = {};
+    for (const p of photos) { const k = pKey(p); (g[k] = g[k] || []).push(p); }
+    return Object.values(g).every((vs) => vs.some(has)); };
   const set = (o) => { for (const k of Object.keys(disk)) delete disk[k]; Object.assign(disk, o); };
 
   set({ 'p_640.jpg': 50000 });
@@ -726,6 +778,12 @@ console.log('\nCompleteness allows for srcset alternates');
      full(['av/t39.30808-1/a.jpg', '/o1/v/v.mp4']) === false);
   set({ '/o1/v/v.mp4': 1000 });
   ok('nor on a truncated video', full(['/o1/v/v.mp4']) === false);
+  set({ 'a111_n.jpg': 90000 });
+  ok('an album no longer counts on its first photo',
+     full(['a111_n.jpg', 'a222_n.jpg', 'a333_n.jpg']) === false);
+  set({ 'a111_n.jpg': 90000, 'a222_n.jpg': 90000, 'a333_n.jpg': 90000 });
+  ok('it counts when the whole album is on disk',
+     full(['a111_n.jpg', 'a222_n.jpg', 'a333_n.jpg']) === true);
 }
 
 console.log('\nA reel keeps a playable video URL offline');
@@ -812,6 +870,231 @@ console.log('\nNo app-promo bar flashes on an offline page');
      /play\.google\.com\/store/.test(docs) &&
      /mobile_app_install_banner/.test(docs) &&
      /display:none !important/.test(docs));
+}
+
+// ================= offline capture: ads, big posts, small posts ============
+// Reported: ads appear among offline reels, and posts that were saved never
+// show up offline (text-only posts, photo albums). Each behavioural check
+// below reproduced the bug on the previous code before its fix was written.
+
+/** Extract the capture script the same way test_offline_ui.js does. */
+function captureScript(cap) {
+  const i = cap.indexOf('fun script(');
+  const s = cap.indexOf('"""', i) + 3;
+  const e = cap.indexOf('"""', s);
+  const max = (cap.match(/MAX_CARD_CHARS = ([\d_]+)/) || [0, '120000'])[1]
+    .replace(/_/g, '');
+  return cap.slice(s, e)
+    .replace('$reelTarget', '50')
+    .replace('$MAX_CARD_CHARS', max)
+    .replace('${knownIds.asJsSet()}', '')
+    .replace(/\$\{if \(syncMode\)[^}]*\}/, 'false');
+}
+
+function runCapture(cap, url, inner) {
+  const dom = new JSDOM(inner, {
+    runScripts: 'outside-only', pretendToBeVisual: true, url });
+  const calls = [];
+  dom.window.FBPro = {
+    onOfflineItems: (sec, json) => calls.push({ sec, items: JSON.parse(json) }),
+    onOfflinePage: () => {}
+  };
+  dom.window.eval(captureScript(cap));
+  Object.defineProperty(dom.window.document, 'visibilityState',
+    { value: 'hidden', configurable: true });
+  dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+  return calls.length ? calls[0].items : [];
+}
+
+console.log('\nAds never enter the offline store');
+{
+  const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+  const ab = fs.readFileSync(KT('utils/AdBlocker.kt'), 'utf8');
+
+  // The capture must carry the barriers itself: the sync WebView and the
+  // live page both run it, and its timing against the ad blocker's
+  // MutationObserver is not guaranteed.
+  ok('cards condemned by the ad blocker are skipped',
+     /hasAttribute\('data-fbpro-hidden'\)/.test(cap));
+  ok('the CTA scan is scoped to the reels section',
+     /if \(sec !== 'reels'\) return false;/.test(cap));
+  ok('an ad card is rejected before any capture work',
+     cap.indexOf('if (isAdCard(c, sec)) continue;') <
+     cap.indexOf('var cid = idOf(c);') &&
+     cap.indexOf('if (isAdCard(c, sec)) continue;') >
+     cap.indexOf('function collectFeed'));
+
+  // Parity with the online killer: same words, same rule, so offline
+  // filtering can never drift from what the user already sees online.
+  const wordsOf = (src) => {
+    const i = src.indexOf('var CTA_WORDS = [');
+    return src.slice(i, src.indexOf('];', i)).replace(/\s+/g, '');
+  };
+  ok('the CTA words match the online killer exactly',
+     wordsOf(cap).length > 0 && wordsOf(cap) === wordsOf(ab));
+
+  const organic =
+    '<div data-tracking-duration-id="r1">' +
+      '<div><span>Organic creator daily vlog</span></div>' +
+      '<video src="https://video.fcgp1-1.fbcdn.net/o1/v/organic.mp4"></video>' +
+      '<div role="button" aria-label="Like">Like</div></div>';
+  const ctaAd =
+    '<div data-tracking-duration-id="r2">' +
+      '<div><span>Sponsored Shop Page big sale today</span></div>' +
+      '<video src="https://video.fcgp1-1.fbcdn.net/o1/v/ad.mp4"></video>' +
+      '<span role="button">Shop Now</span></div>';
+  const markedAd =
+    '<div data-tracking-duration-id="r3" data-fbpro-hidden="1" ' +
+      'style="visibility:hidden">' +
+      '<div><span>Another promoted page offer here</span></div>' +
+      '<video src="https://video.fcgp1-1.fbcdn.net/o1/v/ad2.mp4"></video></div>';
+
+  const reels = runCapture(cap, 'https://m.facebook.com/reel/',
+    '<body><div data-is-reels="true"><div data-type="vscroller">' +
+    organic + ctaAd + markedAd + '</div></div></body>');
+
+  ok('an organic reel is saved',
+     reels.some((it) => /organic\.mp4/.test(it.h)),
+     JSON.stringify(reels.length));
+  ok('a reel carrying a CTA button is NOT saved',
+     !reels.some((it) => /ad\.mp4/.test(it.h)));
+  ok('a reel the ad blocker already hid is NOT saved',
+     !reels.some((it) => /ad2\.mp4/.test(it.h)));
+  ok('the CTA scan accepts the exact Bangla label too',
+     runCapture(cap, 'https://m.facebook.com/reel/',
+       '<body><div data-type="vscroller">' +
+       '<div data-tracking-duration-id="b1"><div><span>Promoted Bangla page sale</span></div>' +
+       '<video src="https://video.fcgp1-1.fbcdn.net/o1/v/ban.mp4"></video>' +
+       '<span role="button">অর্ডার করুন</span></div>' +
+       '</div></body>').length === 0);
+
+  // Scoping proof: the identical words inside a FEED post must survive,
+  // because organic feed content may legitimately contain them.
+  const feedPost =
+    '<div data-tracking-duration-id="f1">' +
+      '<div><span>Community event next friday everyone welcome to join us</span></div>' +
+      '<img src="https://scontent.fcgp1-1.fbcdn.net/event.jpg">' +
+      '<span role="button">Sign up</span></div>';
+  const feed = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' + feedPost + '</div></body>');
+  ok('a feed post with a "Sign up" control is still saved',
+     feed.some((it) => /event\.jpg/.test(JSON.stringify(it.m))));
+  const feedMarked =
+    '<div data-tracking-duration-id="f2" data-fbpro-hidden="1">' +
+      '<div><span>Sponsored unit hidden online already today</span></div>' +
+      '<img src="https://scontent.fcgp1-1.fbcdn.net/spon.jpg"></div>';
+  const feed2 = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' + feedMarked + '</div></body>');
+  ok('a feed card the ad blocker condemned is NOT saved', feed2.length === 0);
+}
+
+console.log('\nNo post is too big or too small to be saved');
+{
+  const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+
+  ok('the size ceiling was raised for album posts',
+     /MAX_CARD_CHARS = 400_000/.test(cap));
+
+  // ~40 photos with signed URLs and srcset variants cross the old 120 KB
+  // line: measured 116 KB at 40 images. The post used to vanish silently.
+  const bigUrl = (n) => 'https://scontent.fcgp1-1.fbcdn.net/v/t51.29350-15/' +
+    'p480x480/446546' + n + '_1862990483999280_7417418750692064384_n.jpg' +
+    '?_nc_cat=105&ccb=1-9&_nc_sid=' + 'x'.repeat(180) +
+    '&_nc_ohc=' + 'y'.repeat(120) + '&_nc_oc=' + 'z'.repeat(120);
+  let album = '<div data-tracking-duration-id="alb1"><div><span>album</span></div>';
+  for (let i = 0; i < 42; i++) {
+    album += '<div><a href="/photo/?fbid=' + i + '"><img src="' + bigUrl(i) +
+      '" srcset="' + bigUrl(i) + ' 480w,' + bigUrl(i + 100) + ' 720w,' +
+      bigUrl(i + 200) + ' 960w,' + bigUrl(i + 300) + ' 1280w"></a></div>';
+  }
+  album += '<div role="button" aria-label="Like">Like</div></div>';
+  ok('the reference album is genuinely over the old ceiling',
+     Buffer.byteLength(album) > 120000,
+     String(Buffer.byteLength(album)));
+  const big = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' + album + '</div></body>');
+  ok('a 42-photo album post is saved', big.length === 1,
+     String(big.length));
+  ok('and all 42 photos are listed for download',
+     big.length === 1 && big[0].m.length >= 42, String(big.length && big[0].m.length));
+
+  // A short text post whose avatar has not loaded used to read as
+  // "no media and nothing to read" and was dropped.
+  const tiny = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' +
+    '<div data-tracking-duration-id="t1"><div><span>Valo achi</span></div></div>' +
+    '</div></body>');
+  ok('a short text post is saved', tiny.length === 1, String(tiny.length));
+  ok('it keeps a stable identity', tiny.length === 1 && !!tiny[0].id);
+
+  // A feed video whose URL is still a blob used to be thrown away whole,
+  // which is why videos were missing from saved posts.
+  const blobVid = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' +
+    '<div data-tracking-duration-id="v1"><div><span>x</span></div>' +
+    '<video src="blob:https://m.facebook.com/aa"></video></div>' +
+    '</div></body>');
+  ok('a video post is saved even while its URL is a blob: pending',
+     blobVid.length === 1, String(blobVid.length));
+
+  // The spacer guard must survive the relaxed floor.
+  const spacer = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' +
+    '<div data-tracking-duration-id="sp1"><span>\u2022</span></div>' +
+    '</div></body>');
+  ok('an empty spacer is still not a post', spacer.length === 0);
+}
+
+console.log('\nThe store keeps what it saves');
+{
+  const feed = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+
+  ok('per-section retention floors exist',
+     /STORE_KEEP_FLOOR_FEED = 500/.test(feed) &&
+     /STORE_KEEP_FLOOR_REELS = 250/.test(feed) &&
+     /STORE_KEEP_FLOOR_STORIES = 200/.test(feed));
+  ok('the merge keeps at least the floor',
+     /val keep = maxOf\(limit, storeKeepFloor\(section\)\)/.test(feed));
+  ok('the cap uses the floored value',
+     /if \(merged\.size >= keep\) break/.test(feed));
+  ok('dedupe still runs as a backstop', /seen\.add\(key\)/.test(feed));
+
+  // Faithful port of the merge: newest first, dedupe by key, stop at keep.
+  function addItems(existing, incoming, limit, floor) {
+    const keep = Math.max(limit, floor);
+    const seen = new Set();
+    const merged = [];
+    const keyFor = (it) => it.id ||
+      ((it.media[0] || '') + '|' + it.html.slice(0, 180));
+    for (const it of [...incoming, ...existing]) {
+      const k = keyFor(it);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      merged.push(it);
+      if (merged.length >= keep) break;
+    }
+    return merged;
+  }
+  let store = [];
+  store = addItems(store,
+    Array.from({ length: 50 }, (_, i) => ({ id: 'bg-' + i, html: 'x', media: [] })),
+    50, 500);
+  // The live page keeps merging with its small pass limit as the user
+  // scrolls; previously this deleted everything before it.
+  store = addItems(store,
+    Array.from({ length: 60 }, (_, i) => ({ id: 'live-' + i, html: 'x', media: [] })),
+    50, 500);
+  ok('scrolled-past posts no longer evict previously saved ones',
+     store.some((it) => it.id === 'bg-0') && store.length === 110,
+     'kept=' + store.length);
+  // And the floor still caps the truly absurd in the long run.
+  for (let r = 0; r < 12; r++) {
+    store = addItems(store,
+      Array.from({ length: 50 }, (_, i) => ({ id: 'r' + r + '-' + i, html: 'x', media: [] })),
+      50, 500);
+  }
+  ok('long-run growth is still bounded by the floor',
+     store.length === 500, String(store.length));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

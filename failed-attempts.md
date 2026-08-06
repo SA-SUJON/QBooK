@@ -185,3 +185,44 @@ Real unfollowed page-এর organic reel-এও Follow button থাকে। Fo
 ---
 
 > Generated: 2026-08-05 | Repo: build-rabbi/Dustbook | Branch: main | Tag: v5.2.1
+
+---
+
+# Offline Capture & Store — Solved (Aug 6, 2026, v5.2.2)
+
+**Reported:**
+1. Offline এ অনেক saved posts আসে না — text-only posts, albums with many images, videos missing from offline home feed.
+2. Offline reels এ ads ও save হয়ে যাচ্ছে — must be filtered by CTA buttons.
+3. Hidden settings-এর count full post save হওয়ার আগেই update হয়ে যায় — reels ও same rule হতে হবে.
+
+Every fix below was first reproduced against the old code with a jsdom harness running the **production** capture/store logic (the same methodology as `tools/test_offline_*`), then the fix was verified by the same harness turning green. All suites: 870 passed, 0 failed.
+
+## Root causes found (with proof)
+
+| # | Root cause | Proof |
+|---|---|---|
+| R1 | **Store evicted older posts.** Live merges used `limit = max(reelTarget, 30)`, background step 1 used 50 — the store capped itself at the pass target, so every 50 scrolled posts deleted the 50 already downloaded. | Port simulation: store kept 50, first post gone |
+| R2 | **`MAX_CARD_CHARS = 120_000` silently dropped big posts.** A photo album carries ~3 KB of markup per image (signed URL + srcset variants); ≈40+ images crosses 120 KB. | jsdom: 42-image card = 122 KB → old: dropped, new: saved |
+| R3 | **`text.length < 12` floor dropped short text posts** whose avatars had not lazy-loaded yet (no media + short text = "not a post"). | jsdom: "Valo achi" post → old: dropped |
+| R4 | **Blob-video posts dropped entirely** — media list empty while `src` is a pending `blob:`, short text → discarded. | jsdom: blob `<video>` card → old: dropped |
+| R5 | **Premature completeness/count.** `images.any { has && !isAvatar }` → a five-photo post counted AND was served offline the moment its FIRST photo landed (4 blank frames). This is both "posts appear without images" and "count updates early". | Port: 3-photo post counted with 1 photo on disk |
+| R6 | **Capture had no ad filter at all.** The blocker hides reel ads with `visibility:hidden` + marks them `data-fbpro-hidden`, but a hidden card's text and media remain fully readable, so every ad was copied into the offline library (video download included). | jsdom: CTA ad + marked ad both captured |
+
+## Fixes
+
+1. **`OfflineCapture.kt`**
+   - `MAX_CARD_CHARS`: 120 KB → **400 KB** (a whole-page container is megabytes, so the guard still refuses containers).
+   - New `isAdCard()`: skips cards condemned by the blocker (`data-fbpro-hidden`) in any section, **plus a CTA-text scan in the reels section only** — the exact word list (incl. Bangla) and the ≤24-char exact-match rule from the online killer in `AdBlocker.kt` (parity asserted by test). Scoped to reels so organic feed posts with e.g. an event "Sign up" control are never dropped.
+   - Content floor relaxed: `text < 12` → `text < 6`, and a `<video>` element itself counts as content (blob URLs resolve later).
+2. **`OfflineFeed.kt`**
+   - Retention floor per section (`feed=500, reels=250, stories=200`): `keep = maxOf(passTarget, floor)` — the pass target now only controls *fetching*, never *forgetting*. Still bounded long-run.
+   - `isFullyDownloaded()`: **per-photo completeness** — distinct photos are grouped by `photoKey()` (filename minus size markers; srcset variants of one photo collapse, different photos never merge) and every photo must have ≥1 cached variant. The settings count and the offline display share this rule, so both now wait for the whole post. Avatars, emoji sprites and other chrome are still not waited for, and reel videos still require the full-size file on disk.
+3. Version 5.2.1 → **5.2.2 (112)**.
+
+## Explicitly NOT touched (so no regressions)
+
+- `AdBlocker.kt` and the whole online blocking path (18/18 ad tests, 306/306 native tests still pass).
+- Settings screen structure — still exactly the 7 pinned keys; the count fix lives in the counting rule, not the UI.
+- Story capture path, offline serve/inject pipeline, navigation, update flow.
+
+> Session: 2026-08-06 | Tag: v5.2.2 | Tests: 870 passed, 0 failed (10 suites)

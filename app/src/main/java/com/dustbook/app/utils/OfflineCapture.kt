@@ -33,8 +33,16 @@ object OfflineCapture {
         }
     }
 
-    /** A card larger than this is a container, not a story. */
-    private const val MAX_CARD_CHARS = 120_000
+    /**
+     * A card larger than this is a container, not a story.
+     *
+     * 120 KB was too small to tell them apart. A photo-album post carries a
+     * signed URL plus srcset variants per image - roughly 3 KB of markup per
+     * photo - so an album of about forty photos crosses 120 KB and was
+     * dropped without a trace: "onek gula images thakle ashe na". A whole
+     * page container is megabytes, which 400 KB still refuses.
+     */
+    private const val MAX_CARD_CHARS = 400_000
 
     /**
      * @param reelTarget how many items to keep per section.
@@ -303,12 +311,65 @@ object OfflineCapture {
             return false;
           }
 
+          // ---- Ads never enter the offline store ----------------------------
+          //
+          // The capture only reads the DOM, and the ad blocker in the same
+          // page only marks it: every ad it condemns carries
+          // data-fbpro-hidden. visibility:hidden keeps a marked card's text
+          // and media fully readable here, so without this check every
+          // hidden ad was copied into the offline library - video download
+          // included.
+          //
+          // Reels need a second line of defence. Facebook stripped every ad
+          // marker off promoted reels (Aug 2026), so the only remaining
+          // signal is the call-to-action button an organic reel never has.
+          // This word list and the matching rule mirror the online killer
+          // in AdBlocker exactly, including its scoping: the match applies
+          // in the reels section only, because an organic feed post is
+          // allowed to carry a "Sign up" link for an event and the online
+          // killer makes that same choice.
+          var CTA_WORDS = [
+            'order now', 'shop now', 'learn more', 'sign up', 'download',
+            'send message', 'get quote', 'contact us', 'book now',
+            'apply now', 'subscribe', 'watch more', 'install now',
+            'play game', 'use app', 'get offer', 'listen now',
+            'অর্ডার করুন', 'অর্ডার করতে', 'শপ নাও', 'আরও জানুন',
+            'সাইন আপ', 'ডাউনলোড', 'মেসেজ পাঠান', 'যোগাযোগ করুন'
+          ];
+
+          function isCtaLabel(tx) {
+            if (!tx) return false;
+            var t = tx.trim().toLowerCase();
+            if (t.length > 24) return false;
+            for (var i = 0; i < CTA_WORDS.length; i++) {
+              if (t === CTA_WORDS[i]) return true;
+            }
+            return false;
+          }
+
+          function isAdCard(c, sec) {
+            // Already condemned by the ad blocker running in this page.
+            if (c.hasAttribute && c.hasAttribute('data-fbpro-hidden')) return true;
+            if (sec !== 'reels') return false;
+            var els = c.querySelectorAll(
+              'a[role="button"],div[role="button"],button,span');
+            for (var i = 0; i < els.length; i++) {
+              if (isCtaLabel(els[i].textContent)) return true;
+            }
+            return false;
+          }
+
           function collectFeed() {
             var out = [];
+            var sec = section();
             var list = cards();
             for (var i = 0; i < list.length; i++) {
               var c = list[i];
               if (isChrome(c)) continue;
+
+              // Ads are not content. Checked before any identity or media
+              // work, so they never reach the store or the download queue.
+              if (isAdCard(c, sec)) continue;
 
               // Already stored: skip it entirely rather than capturing it
               // again. This is what makes each pass reach new content.
@@ -318,8 +379,14 @@ object OfflineCapture {
               var media = mediaIn(c);
               var text = textIn(c).replace(/\s+/g, ' ').trim();
               // A story has either media or something to read. Anything with
-              // neither is a spacer or a divider.
-              if (!media.length && text.length < 12) continue;
+              // neither is a spacer or a divider. A <video> element counts
+              // as content even while its URL is an unreadable blob: -
+              // Facebook lazy-loads both images and video, so the tags
+              // register before their URLs resolve. Short text posts are
+              // kept for the same reason: the 12-char floor was measured
+              // against fully loaded cards, and discarded real posts whose
+              // avatar had simply not painted yet.
+              if (!media.length && text.length < 6 && !c.querySelector('video')) continue;
 
               var html = markupOf(c);
               if (!html) continue;

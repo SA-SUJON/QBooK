@@ -39,6 +39,22 @@ object OfflineFeed {
     private const val DIR = "offline_items_v1"
     private const val MIN_VIDEO_BYTES = 500_000L
 
+    /**
+     * How many items a section keeps at minimum, whatever the pass target.
+     *
+     * The target says how much to *fetch this pass*; the store used to cap
+     * itself at the same number. The live page merges with max(reel target,
+     * 30) and the background pipeline's first step with 50, so every fifty
+     * posts the user scrolled past deleted fifty that were already
+     * downloaded and ready - saved posts kept vanishing from the offline
+     * library and "many posts are saved but never show up offline". The cap
+     * is now a generous per-section floor; a larger pass target still
+     * applies when it asks for more.
+     */
+    private const val STORE_KEEP_FLOOR_FEED = 500
+    private const val STORE_KEEP_FLOOR_REELS = 250
+    private const val STORE_KEEP_FLOOR_STORIES = 200
+
     private val pool = Executors.newFixedThreadPool(3)
     private val busy = AtomicBoolean(false)
 
@@ -139,7 +155,9 @@ object OfflineFeed {
                 incoming.filter { it.media.any { u -> isVideoUrl(u) } }
             } else incoming
 
-            val merged = ArrayList<Item>(limit)
+            // Fetch target vs retention: never keep less than the floor.
+            val keep = maxOf(limit, storeKeepFloor(section))
+            val merged = ArrayList<Item>(keep)
 
             fun keyFor(it: Item): String {
                 if (it.id.isNotBlank()) return it.id
@@ -152,7 +170,7 @@ object OfflineFeed {
                 val key = keyFor(it)
                 if (!seen.add(key)) continue
                 merged.add(it)
-                if (merged.size >= limit) break
+                if (merged.size >= keep) break
             }
 
             val arr = JSONArray()
@@ -192,6 +210,13 @@ object OfflineFeed {
      */
     fun knownIds(section: String): List<String> =
         loadItems(section).map { it.id }.filter { it.isNotBlank() }
+
+    /** The generous per-section retention described above. */
+    private fun storeKeepFloor(section: String): Int = when (section) {
+        SECTION_FEED -> STORE_KEEP_FLOOR_FEED
+        SECTION_REELS -> STORE_KEEP_FLOOR_REELS
+        else -> STORE_KEEP_FLOOR_STORIES
+    }
 
     fun loadItems(section: String): List<Item> {
         val f = fileFor(section) ?: return emptyList()
@@ -275,26 +300,50 @@ object OfflineFeed {
             return videos.any { OfflineCache.hasMinSize(it, MIN_VIDEO_BYTES) }
         }
 
-        // A picture post is ready when its pictures are here. Same reasoning:
-        // the alternates are alternates, not additional content, so one cached
-        // image per item is what "the photo is saved" actually means. This is
-        // still far stricter than the old rule, which counted an item whose
-        // only cached file was a 4 KB avatar.
-        if (images.any { OfflineCache.has(it) && !isAvatar(it) }) return true
-        if (images.all { OfflineCache.has(it) }) return true
-
-        // Nothing here is content.
+        // Nothing-but-chrome posts are complete as stored.
         //
         // Capture records every <img> inside a card, and on a plain text post
         // the only images are the author's avatar and any emoji in the body.
-        // The rule above then read that as "this item has media and none of it
-        // arrived" and hid the post - so a feed of ordinary text updates came
-        // back offline as a handful of items instead of the fifty that were
-        // saved. There is nothing to wait for on such a post: the words are in
-        // the stored markup already.
-        if (images.all { isAvatar(it) || isChrome(it) }) return true
+        // Reading that as "this item has media and none of it arrived" hid
+        // the post - so a feed of ordinary text updates came back offline as
+        // a handful of items instead of the fifty that were saved. There is
+        // nothing to wait for on such a post: the words are in the stored
+        // markup already.
+        val photos = images.filter { !isAvatar(it) && !isChrome(it) }
+        if (photos.isEmpty()) return true
 
-        return false
+        // A picture post is ready when ALL of its pictures are here.
+        //
+        // The rule this replaces - one cached variant of any photo - was the
+        // premature count: capture records every srcset variant of every
+        // photo, so a five-photo post counted (and was served) the moment
+        // its first image landed, while the other four were still in the
+        // queue. The settings number climbed early and the offline post
+        // gaped with blank frames. Group the variants by photo, then demand
+        // one cached variant per photo: that is what "the whole post is
+        // saved" means, and it keeps the srcset leniency - the alternates of
+        // one photo are alternates, not additional content.
+        val groups = photos.groupBy { photoKey(it) }
+        return groups.values.all { variants -> variants.any { OfflineCache.has(it) } }
+    }
+
+    /**
+     * Identity of the photo a URL serves, ignoring which sized variant it is.
+     *
+     * Facebook re-issues one photo at several sizes; the content id in the
+     * filename is constant while size markers move around:
+     * `p480x480/…_n.jpg` vs `…_n.jpg`, `img_1080x1080_n.jpg` vs `img_n.jpg`,
+     * `p_640.jpg` vs `p_960.jpg`. Two different photos always carry
+     * different content ids, so grouping by filename-with-size-markers-
+     * removed only ever merges true variants of one photo.
+     */
+    private fun photoKey(url: String): String {
+        val stem = url.substringBefore('?')
+            .substringAfterLast('/')
+            .lowercase(Locale.ROOT)
+        return stem
+            .replace(Regex("[._-][0-9]+x[0-9]+"), "")
+            .replace(Regex("_[0-9]+(?=\\.)"), "")
     }
 
     /**
