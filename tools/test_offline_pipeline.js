@@ -504,7 +504,7 @@ console.log('\nCounting waits for the whole item');
      /fun realPlayableCount\(section: String\): Int =\s*\n\s*loadItems\(section\)\.count \{ isFullyDownloaded/.test(feed));
   ok('what is displayed uses the same rule as what is counted',
      /fun realPlayableItems[\s\S]{0,160}isFullyDownloaded/.test(feed) &&
-     /fun cardsHtml[\s\S]{0,120}realPlayableItems/.test(feed));
+     /fun cardMarkupList[\s\S]{0,160}realPlayableItems/.test(feed));
 
   // Exercise the rule itself rather than trusting its shape.
   const MIN = 500000;
@@ -659,25 +659,91 @@ console.log('\nStories can be opened offline');
 }
 
 // ------------------------------------------------ the five-step pipeline
-console.log('\nThe pipeline runs in the order it documents');
+console.log('\nThe pipeline runs in the documented order');
 {
   const sync = fs.readFileSync(KT('utils/OfflineSync.kt'), 'utf8');
   const bsm = fs.readFileSync(KT('utils/BackgroundSyncManager.kt'), 'utf8');
 
   // targetFor used to raise every request to the V4 constants, so step 1
-  // chased 500 posts instead of 50 and never handed over to reels.
+  // chased 500 posts instead of what was asked and never handed over.
   ok('a requested target is not silently raised',
      /private fun targetFor\(section: String, target: Int\): Int = target/.test(sync));
   ok('the V4 ceilings no longer override callers',
      !/coerceAtLeast\(OfflineManager\.V4_FEED_TARGET\)/.test(sync) &&
      !/coerceAtLeast\(OfflineManager\.V4_REEL_TARGET\)/.test(sync));
-  ok('step 1 asks for 50 posts', /val target = 50/.test(bsm));
-  ok('and hands over to reels', /step1NewPosts[\s\S]{0,600}step2Reels\(context, p\)/.test(bsm));
-  ok('reels use the user\'s chosen count',
-     /step2Reels[\s\S]{0,200}p\.offlineReelTarget/.test(bsm));
-  ok('then stories, then more posts',
-     /step3WaitForVideo[\s\S]{0,600}step4Stories\(context, p\)/.test(bsm) &&
-     /step4Stories[\s\S]{0,600}step5MorePosts\(context, p\)/.test(bsm));
+  ok('the capture script receives the target un-inflated',
+     /OfflineCapture\.script\(\s*target,/.test(sync) &&
+     !/coerceAtLeast\(150\)/.test(sync));
+
+  // The user-visible order, exactly as specified:
+  //   1. first 10 posts (then posts stop)
+  //   2. the chosen number of reels
+  //   3. the backlog from 10 up to 300 posts
+  //   4. then all stories
+  const defs = ['fun step1FirstPosts', 'fun step2Reels',
+                'fun step3MorePosts', 'fun step4Stories'];
+  for (let i = 1; i < defs.length; i++) {
+    ok(defs[i - 1].slice(4) + ' runs before ' + defs[i].slice(4),
+       bsm.indexOf(defs[i - 1]) !== -1 &&
+       bsm.indexOf(defs[i - 1]) < bsm.indexOf(defs[i]),
+       String(bsm.indexOf(defs[i - 1])) + ' vs ' + String(bsm.indexOf(defs[i])));
+  }
+  ok('each phase hands over to the next',
+     /fun step1FirstPosts[\s\S]{0,600}step2Reels\(context, p\)/.test(bsm) &&
+     /fun step2Reels[\s\S]{0,600}step3MorePosts\(context, p\)/.test(bsm) &&
+     /fun step3MorePosts[\s\S]{0,600}step4Stories\(context, p\)/.test(bsm));
+  ok('step 1 saves exactly the first 10 posts',
+     /fun step1FirstPosts[\s\S]{0,400}SECTION_FEED, 10,[\s\S]{0,200}exactTotal = 10/.test(bsm));
+  ok('reels use the user\'s chosen count, exactly',
+     /fun step2Reels[\s\S]{0,240}p\.offlineReelTarget[\s\S]{0,240}exactTotal = target/.test(bsm));
+  ok('step 3 fills the feed up to 300 in total',
+     /fun step3MorePosts[\s\S]{0,400}SECTION_FEED, 300,[\s\S]{0,200}exactTotal = 300/.test(bsm));
+  ok('stories come last and save everything',
+     /fun step4Stories[\s\S]{0,300}SECTION_STORIES, 200/.test(bsm));
+
+  // A phase only ends when its downloads are drained: the count the user
+  // reads is what actually plays, never markup still waiting on media.
+  ok('every phase waits for its downloads before moving on',
+     /fun awaitThen\(next: \(\) -> Unit\)/.test(bsm) &&
+     /OfflineFeed\.awaitPrefetch\(300_000\)/.test(bsm));
+  const awaits = (bsm.match(/awaitThen \{/g) || []).length;
+  ok('the wait follows every phase', awaits >= 4, String(awaits));
+}
+
+console.log('\nAn exact phase total stops fetching where it was asked');
+{
+  const sync = fs.readFileSync(KT('utils/OfflineSync.kt'), 'utf8');
+
+  ok('calls can pass an exact total',
+     /fun run[\s\S]{0,500}exactTotal: Int\? = null/.test(sync) &&
+     /fun runAll[\s\S]{0,500}exactTotal: Int\? = null/.test(sync));
+  ok('the batch is capped by what the store still needs',
+     /val remaining = exactTotal -[\s\S]{0,80}OfflineFeed\.totalStored\(sec\)/.test(sync) &&
+     /newItems\.take\(remaining\)/.test(sync));
+  ok('a reached total stops the phase before any download is queued',
+     /if \(remaining <= 0\) return/.test(sync));
+  ok('only the kept batch is queued for download',
+     /OfflineFeed\.prefetch\(batch, includeVideo\)/.test(sync));
+  ok('and only the kept batch reaches the store',
+     /OfflineFeed\.addItems\(sec, batch, target\)/.test(sync));
+
+  // Faithful port of the batching, run through the phase boundaries.
+  function phase(existing, reported, exactTotal) {
+    const known = new Set(existing.map((x) => x.id));
+    const fresh = reported.filter((it) => !known.has(it.id));
+    const remaining = exactTotal - existing.length;
+    if (remaining <= 0) return [];
+    return fresh.slice(0, remaining);
+  }
+  const mk = (p, n) => Array.from({ length: n }, (_, i) => ({ id: p + i }));
+  ok('phase 1 takes ten and stops',
+     phase([], mk('a', 25), 10).length === 10);
+  ok('phase 1 stops completely once ten are held',
+     phase(mk('a', 10), mk('b', 20), 10).length === 0);
+  ok('phase 3 fills only the gap to 300',
+     phase(mk('a', 10), mk('b', 500), 300).length === 290);
+  ok('reels phase respects the chosen amount',
+     phase([], mk('r', 90), 50).length === 50);
 }
 
 console.log('\nSaved images survive to the offline page');
@@ -786,6 +852,49 @@ console.log('\nCompleteness allows for srcset alternates');
      full(['a111_n.jpg', 'a222_n.jpg', 'a333_n.jpg']) === true);
 }
 
+console.log('\nOffline home-feed videos default to sound on');
+{
+  const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+
+  // Requirement: offline the home-feed player must not stay muted — the
+  // muted flag in the stored markup was meant for Facebook's own JS, which
+  // never runs offline, so it would otherwise be permanent.
+  ok('an unmute-by-default script exists',
+     /private fun unmuteByDefaultScript\(\): String/.test(docs));
+  ok('it is only on the home screen',
+     /\(if \(screen == "home"\) unmuteByDefaultScript\(\) else ""\)/.test(docs));
+  ok('reels, watch and stories do not get it',
+     !/screen == "reels"[\s\S]{0,120}unmuteByDefaultScript/.test(docs));
+
+  const sv = docs.slice(docs.indexOf('private fun unmuteByDefaultScript'));
+  const svEnd = sv.indexOf('private fun offlineFallbackPage');
+  const body = sv.slice(0, svEnd > 0 ? svEnd : undefined);
+  ok('the muted attribute and property are both lifted',
+     /v\.muted = false/.test(body) && /removeAttribute\('muted'\)/.test(body));
+  ok('it applies once per video, before playback, not on a running clip',
+     /__dbSound/.test(body));
+  ok('it also covers videos injected after load',
+     /MutationObserver/.test(body));
+
+  // Behavioural proof on a muted stored player.
+  {
+    const raw = (s2, marker) => {
+      const i = s2.indexOf(marker);
+      const st = s2.indexOf('"""', i) + 3;
+      return s2.slice(st, s2.indexOf('"""', st));
+    };
+    const scr = raw(docs, 'private fun unmuteByDefaultScript')
+      .replace(/<script[^>]*>/, '').replace(/<\/script>\s*$/, '');
+    const dom = new JSDOM(
+      '<body><video id="v" muted preload="metadata"></video></body>',
+      { runScripts: 'outside-only', url: 'https://m.facebook.com/' });
+    dom.window.eval(scr);
+    const v = dom.window.document.getElementById('v');
+    ok('a stored muted video is audible by default offline',
+       v.muted === false, 'muted=' + v.muted);
+  }
+}
+
 console.log('\nA reel keeps a playable video URL offline');
 {
   const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
@@ -804,47 +913,97 @@ console.log('\nEvery saved card reaches the page');
 {
   const inj = fs.readFileSync(KT('utils/OfflineInject.kt'), 'utf8');
   const docs = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+  const feedKt = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
   const prefs = fs.readFileSync(KT('utils/Prefs.kt'), 'utf8');
   const xml = fs.readFileSync(
     path.join(ROOT, 'app/src/main/res/xml/settings_browsing.xml'), 'utf8');
 
-  // Cards are embedded in a JS template literal inside a <script>. The HTML
-  // parser ends that script at the first "</script>" it sees, even inside a
-  // string — and Facebook's stored markup contains inline scripts. One such
-  // card truncated the block and lost every card after it.
-  ok('the closing-script sequence is broken up',
-     /\.replace\("<\/script", "<\/scr` \+ `ipt"\)/.test(inj));
-  ok('the story viewer does the same',
-     /\.replace\("<\/script", "<\/scr` \+ `ipt"\)/.test(docs));
-  ok('backtick and dollar are still escaped first',
-     /\.replace\("`", "\\\\`"\)/.test(inj));
+  // Reported on device: settings counted dozens of saved posts, the offline
+  // home feed showed fewer than ten. The cards travelled inside one giant
+  // template literal; a single card containing "</script" in a letter case
+  // the lowercase-only breakup missed closed the host block, everything
+  // after it died at parse time, and the page fell back to the handful of
+  // posts the stored document itself carried.
+  ok('cards travel as a JSON array, one string per card',
+     /val json = JSONArray\(\)/.test(inj) && /json\.put\(c\)/.test(inj));
+  ok('no template literal is used for card markup',
+     inj.includes('var CARDS = $safe;') && !inj.includes('`$cards`'));
+  ok('every "<\/" is neutralised so no letter case can close the block',
+     inj.includes('replace("</", "<\\\\/")'));
+  ok('the story viewer uses the same delivery',
+     /val json = JSONArray\(\)/.test(docs) &&
+     /var STORIES = \$safe;/.test(docs) &&
+     !docs.includes("split('---DBSTORY---')"));
+  ok('a card list exists for exactly this purpose',
+     /fun cardMarkupList\(section: String\)/.test(feedKt));
 
-  // Prove the behaviour, not the shape.
-  const esc = (str, fix) => {
-    let e = str.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
-    return fix ? e.replace(/<\/script/g, '</scr` + `ipt') : e;
-  };
-  let cards = '';
-  for (let i = 0; i < 20; i++) {
-    cards += i === 5
-      ? '<div class="card">Post ' + i + '<script>var a=1;</script></div>'
-      : '<div class="card">Post ' + i + '</div>';
+  // Prove the behaviour, running the production inject script verbatim.
+  function injectScriptFromSource(cards) {
+    const i = inj.indexOf('fun script(');
+    const s = inj.indexOf('"""', i) + 3;
+    const e = inj.indexOf('"""', s);
+    // Port of the Kotlin: JSONArray + "</" -> "<\/"
+    const safe = JSON.stringify(cards).split('</').join('<\\/');
+    return inj.slice(s, e).split('$safe').join(safe);
   }
-  const render = (fix) => {
-    const page = '<html><body><div id="box"></div><script>' +
-      'var CARDS = `' + esc(cards, fix) + '`;' +
-      "document.getElementById('box').innerHTML = CARDS;" +
-      '</script></body></html>';
-    try {
-      // The unfixed case deliberately produces a SyntaxError; jsdom prints it
-      // to the console, which would look like a suite failure. Swallow it.
-      const vc = new (require('jsdom').VirtualConsole)();
-      const d = new JSDOM(page, { runScripts: 'dangerously', virtualConsole: vc });
-      return d.window.document.querySelectorAll('#box .card').length;
-    } catch (e) { return -1; }
+  function renderOffline(cards, serverCards) {
+    const page = '<!DOCTYPE html><html><body>' +
+      '<div data-type="vscroller" id="feed">' + (serverCards || '') + '</div>' +
+      '</body></html>' +
+      '<scr' + 'ipt>' + injectScriptFromSource(cards) + '</scr' + 'ipt>';
+    const errors = [];
+    const vc = new (require('jsdom').VirtualConsole)();
+    vc.on('jsdomError', (e) => errors.push(String(e && e.message || e)));
+    const dom = new JSDOM(page, { runScripts: 'dangerously',
+      virtualConsole: vc, url: 'https://m.facebook.com/' });
+    const holder = dom.window.document.querySelector('[data-db-cards]');
+    return { injected: !!holder,
+             rendered: holder
+               ? holder.querySelectorAll('[data-tracking-duration-id]').length
+               : 0,
+             errors };
+  }
+  const nasty = (i, quirk) => {
+    let h = '<div data-tracking-duration-id="n' + i + '">' +
+      '<div><span>Author ' + i + ' with a longer caption text</span></div>' +
+      '<img src="https://scontent.fcgp1-1.fbcdn.net/v/t51.2885-15/p' + i + '_n.jpg">';
+    if (quirk === 'upper') h += '<script>window.a=1;</SCRIPT>';
+    if (quirk === 'tpl') h += '<script>var t=`x ${' + 'y}${' + 'z}`;</scr' + 'ipt>';
+    if (quirk === 'tick') h += '<script>var a=`plain`;</scr' + 'ipt>';
+    if (quirk === 'cash') h += '<span>price $100 ${' + '500} today</span>';
+    return h + '<div role="button" aria-label="Like">Like</div></div>';
   };
-  ok('without the fix an inline script loses the cards', render(false) === 0);
-  ok('with it every card renders', render(true) === 20);
+  const bundle = [
+    nasty(1, 'upper'), nasty(2, 'tpl'), nasty(3),
+    nasty(4, 'tick'), nasty(5, 'cash')
+  ].concat(Array.from({ length: 32 }, (_, i) => nasty(10 + i)));
+
+  const old = renderOffline === renderOffline; // (linter placeholder)
+  const res = renderOffline(bundle, '');
+  ok('a card with an UPPERCASE </SCRIPT> no longer kills the rest',
+     res.rendered === 37, 'rendered=' + res.rendered + ' ' + res.errors[0]);
+  ok('template-literal content inside a card is inert',
+     res.injected === true && res.rendered === 37);
+  ok('all 37 cards render, the count now matches the screen',
+     res.rendered === 37, JSON.stringify(res.rendered));
+
+  // Regression contrast: the OLD template-literal approach would lose these.
+  {
+    const legacy = bundle.map((c) => c
+      .replace(/\\/g, '\\\\').replace(/`/g, '\\`')
+      .replace(/\$/g, '\\$').replace(/<\/script/g, '</scr`+`ipt'));
+    const vc = new (require('jsdom').VirtualConsole)();
+    const page = '<html><body><script>var CARDS=`' + legacy.join('\n') + '`;' +
+      'document.body.innerHTML=CARDS;</script></body></html>';
+    let oldRendered = -1;
+    try {
+      const d = new JSDOM(page, { runScripts: 'dangerously', virtualConsole: vc });
+      oldRendered = d.window.document
+        .querySelectorAll('[data-tracking-duration-id]').length;
+    } catch (e) { oldRendered = -1; }
+    ok('the old approach genuinely lost the same bundle (bug was real)',
+       oldRendered < 37, 'old=' + oldRendered);
+  }
 
   ok('pull to refresh is on by default',
      /KEY_PULL_REFRESH, true\)/.test(prefs) &&
@@ -1043,6 +1202,76 @@ console.log('\nNo post is too big or too small to be saved');
     '<div data-tracking-duration-id="sp1"><span>\u2022</span></div>' +
     '</div></body>');
   ok('an empty spacer is still not a post', spacer.length === 0);
+}
+
+console.log('\nThe bridge is never handed a giant payload');
+{
+  const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+
+  // Reported on device: the app crashed while scrolling. The scroll
+  // listener fires report(), which used to hand one multi-megabyte JSON
+  // string to the WebView Java bridge - fatal on low-memory devices.
+  ok('reporting is chunked by serialized size',
+     /curLen \+ piece\.length > 1000000/.test(cap) &&
+     /chunks\.push\(cur\)/.test(cap));
+  ok('every chunk is still a complete items array',
+     /bridge\.onOfflineItems\(\s*s, '\[' \+ chunks\[j\]\.join\(','\) \+ '\]'/.test(cap.replace(/\n +/g, ' ')) ||
+     /'\[' \+ chunks\[j\]\.join\(','\) \+ '\]'/.test(cap));
+
+  // Run the real capture against a feed of huge cards and prove that
+  // several calls each stay small while losing nothing.
+  function runCaptureAll(inner) {
+    const dom = new JSDOM(inner, { runScripts: 'outside-only',
+      pretendToBeVisual: true, url: 'https://m.facebook.com/' });
+    const calls = [];
+    dom.window.FBPro = { onOfflineItems: (sec, json, done) => {
+      calls.push({ json, done }); }, onOfflinePage: () => {} };
+    dom.window.eval(captureScript(cap));
+    Object.defineProperty(dom.window.document, 'visibilityState',
+      { value: 'hidden', configurable: true });
+    dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+    return calls;
+  }
+  const fat = 'x'.repeat(260 * 1024);
+  let html = '<body><div data-type="vscroller">';
+  for (let i = 0; i < 6; i++) {
+    html += '<div data-tracking-duration-id="fat' + i + '">' +
+      '<img src="https://scontent.fcgp1-1.fbcdn.net/f' + i + '.jpg">' +
+      '<span>' + fat.slice(0, 200) + ' caption number ' + i + '</span>' +
+      '<input type="hidden" value="' + i + '">' + fat + '</div>';
+  }
+  // the inputs make isChrome drop them? no: input => chrome. Use plain divs
+  html = '<body><div data-type="vscroller">';
+  for (let i = 0; i < 6; i++) {
+    html += '<div data-tracking-duration-id="fat' + i + '">' +
+      '<img src="https://scontent.fcgp1-1.fbcdn.net/f' + i + '.jpg">' +
+      '<span>' + fat + ' caption number ' + i + ' appended text</span>' +
+      '</div>';
+  }
+  html += '</div></body>';
+  const calls = runCaptureAll(html);
+  ok('a heavy feed pass splits into several bridge calls',
+     calls.length >= 2, String(calls.length));
+  ok('no single call exceeds the safe budget',
+     calls.every((c) => c.json.length < 1200000),
+     calls.map((c) => c.json.length).join(','));
+  const mergedIds = [];
+  for (const c of calls) {
+    for (const it of JSON.parse(c.json)) mergedIds.push(it.id);
+  }
+  ok('nothing is lost across the chunks',
+     mergedIds.length === 6 && new Set(mergedIds).size === 6,
+     String(mergedIds.length));
+  ok('the completion flag rides the final chunk only',
+     calls.length >= 2 && calls.slice(0, -1).every((c) => c.done === false) &&
+     calls[calls.length - 1].done === true);
+
+  // A light pass stays a single call.
+  const light = runCaptureAll('<body><div data-type="vscroller">' +
+    '<div data-tracking-duration-id="l1">' +
+    '<img src="https://scontent.fcgp1-1.fbcdn.net/l1.jpg">' +
+    '<span>a perfectly ordinary post caption</span></div></div></body>');
+  ok('a small pass is still one call', light.length === 1, String(light.length));
 }
 
 console.log('\nThe store keeps what it saves');

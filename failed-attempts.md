@@ -226,3 +226,41 @@ Every fix below was first reproduced against the old code with a jsdom harness r
 - Story capture path, offline serve/inject pipeline, navigation, update flow.
 
 > Session: 2026-08-06 | Tag: v5.2.2 | Tests: 870 passed, 0 failed (10 suites)
+
+---
+
+# Offline Display & Download Phases — Solved (Aug 6, 2026, v5.2.3)
+
+**Reported (device):** settings বলে 37 posts saved, offline এ মাত্র 7-8 টা post দেখা যায়। Offline home feed videos mute থাকা উচিত নয়। Download ক্রম হবে: 10 posts → user-selected reels → posts to 300 → সব stories; প্রতিটি phase full download + playable হলেই count, আগে নয়। এছাড়া app crash report.
+
+## Root cause of "37 counted, ~8 shown" (proof-driven)
+
+প্রথমে ভুল hypothesis port করা ছিল (`${}` template-literal death) — সেটা production-code সঠিক port করলে **rule out** হয়: `$`, backtick, `$100`, `${var}` সব production escaping-এ survive করে। Actual proven killer:
+
+- **Case-variant `</SCRIPT>` / `</ScrIpt>`** inside ANY stored card: the HTML parser closing a `<script>` block is case-insensitive, but the escape in OfflineInject/storyViewer was a **lowercase-only** `.replace("</script", ...)`. One card (e.g. a code snippet shared in a post) → the host script block ends there → **every card after it lost at parse time** → the page falls back to the ~8 server-rendered posts inside the stored document. Reproduced in jsdom against the verbatim production escaping: the whole bundle dies with `SyntaxError: Unexpected end of input`.
+
+## Fixes
+
+1. **JSON-array delivery (OfflineInject + storyViewer).** Cards no longer travel as one giant template literal. They go as a JSON array (one string per card) with every `</` neutralised to `<\/` — no interpolation exists (`${`, backticks inert), no closing sequence exists in ANY letter case, and one malformed card is isolated from the rest. The whole output is produced by `org.json.JSONArray` + `replace("</", "<\\/")`. New behavioural tests run the production script verbatim with nasty payloads (uppercase `</SCRIPT>`, inline template literals, `$100`, backticks) → 37/37 render, and a regression-contrast test shows the old approach losing the same bundle.
+2. **`cardMarkupList(section)`** on OfflineFeed replaces the joined `cardsHtml` for display (count/display still share `realPlayableItems`).
+3. **Offline home-feed videos default to sound on** (`unmuteByDefaultScript`, home screen only): `v.muted=false`, `defaultMuted=false`, `muted` attribute removed, once per video at rest before playback — never on a running clip (autoplay-mute safety documented). Reels/stories untouched.
+4. **Download pipeline (BackgroundSyncManager) re-ordered to the exact spec:**
+   - Step 1: first **10 posts** (`exactTotal=10`) → wait for downloads
+   - Step 2: **reels = user's chosen amount** (exact) → wait
+   - Step 3: feed continues **from 10 up to 300 total** (`exactTotal=300`) → wait
+   - Step 4: **stories - all** (watched + unwatched) → wait
+   - Every phase ends only after `awaitPrefetch(300_000)` drains its queue, and the feed count reads from disk - so the number the user sees is always what actually plays offline.
+5. **`OfflineSync`:** new `exactTotal` parameter bounds the *batch* (and therefore the download queue), never the store: retention stays the store's floor problem. The capture script is handed the target **un-inflated** (the `coerceAtLeast(150)` override made a "first 10 posts" phase fill the store before moving on).
+6. Version 5.2.2 → **5.2.3 (113)**.
+
+## What was deliberately NOT touched
+
+Online ad blocking, settings UI (7 pinned keys), story-viewer UI/overlay logic, resume/scroll logic, OfflineManager's proactive path (gets floor behaviour, no exact totals).
+
+## Crash (reported: while scrolling) — fixed
+
+**Mechanism:** `report()` fires from the scroll listener and handed ONE JSON string of up to several megabytes (up to `TARGET+20` cards, now up to 400 KB each) to the WebView Java bridge in a single call. Multi-megabyte Java-bridge payloads are a documented way to kill the app process on low-memory devices — and the trigger being *scrolling* matches the listener exactly.
+
+**Fix:** `report()` now chunks by serialized size (~1 MB per bridge call); each chunk is a complete items array, merged and downloaded exactly as one call would be; the completion flag rides the final chunk. The old halves-retry stays as a last resort. jsdom proof: 6 × 260 KB cards → 2 calls, each < 1.2 MB, all 6 ids preserved, completion flag only on the last chunk.
+
+> Session: 2026-08-06 | Tag: v5.2.3 | Tests all green locally (10 suites)

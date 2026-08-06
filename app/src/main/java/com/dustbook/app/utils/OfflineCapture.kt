@@ -445,11 +445,35 @@ object OfflineCapture {
             if (!s) return 0;
             var items = collect();
             if (!items.length) return 0;
+            // Send in chunks of roughly a megabyte, never one giant pass.
+            //
+            // The bridge carries the payload as a Java string, and a
+            // multi-megabyte pass through the WebView Java bridge can kill
+            // the whole app on low-memory devices - it fires from the
+            // scroll listener, which is why the app died *while scrolling*.
+            // Chunking the same items hurts nothing: every call is merged
+            // and downloaded exactly as one would be.
+            var chunks = [], cur = [], curLen = 2;
+            for (var i = 0; i < items.length; i++) {
+              var piece = JSON.stringify(items[i]);
+              if (cur.length && curLen + piece.length > 1000000) {
+                chunks.push(cur);
+                cur = [];
+                curLen = 2;
+              }
+              cur.push(piece);
+              curLen += piece.length + 1;
+            }
+            if (cur.length) chunks.push(cur);
             try {
-              bridge.onOfflineItems(s, JSON.stringify(items), !!done);
+              for (var j = 0; j < chunks.length; j++) {
+                bridge.onOfflineItems(
+                  s, '[' + chunks[j].join(',') + ']',
+                  j === chunks.length - 1 ? !!done : false);
+              }
             } catch (e) {
-              // A payload too large for the bridge: send it in halves rather
-              // than losing the pass entirely.
+              // A payload still too large for the bridge: send it in halves
+              // rather than losing the pass entirely.
               try {
                 var half = Math.ceil(items.length / 2);
                 bridge.onOfflineItems(s, JSON.stringify(items.slice(0, half)), false);

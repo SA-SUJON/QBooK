@@ -599,11 +599,15 @@ object OfflineFeed {
      * contains what was thought of in advance. This returns the original nodes,
      * so the offline card is the online card.
      */
-    fun cardsHtml(section: String): String {
-        val items = realPlayableItems(section)
-        if (items.isEmpty()) return ""
-        return items.joinToString("\n") { it.html }
-    }
+    /**
+     * The saved cards as separate strings. [OfflineInject] and the story
+     * viewer embed them inside a page's <script>, where they travel as a
+     * JSON array - one string per card, so a malformed card can never take
+     * the others down with it. What is shown is exactly what is counted:
+     * both come from realPlayableItems.
+     */
+    fun cardMarkupList(section: String): List<String> =
+        realPlayableItems(section).map { it.html }
 
     fun sizeBytes(): Long {
         val dir = root ?: return 0

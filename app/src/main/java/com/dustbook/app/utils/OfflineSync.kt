@@ -59,6 +59,12 @@ object OfflineSync {
      * there when the user opens the app with no signal, so the app fetches
      * them itself rather than making the user scroll through fifty reels
      * first.
+     *
+     * @param exactTotal when set, the phase stops *fetching* the moment the
+     *                   store holds that many - counting what was already
+     *                   there - and only what is actually kept is queued for
+     *                   download. Used by the numbered pipeline, which has
+     *                   phases like "first 10 posts" that must stop exactly.
      */
     fun runAll(
         context: Context,
@@ -66,6 +72,7 @@ object OfflineSync {
         target: Int,
         includeVideo: Boolean,
         force: Boolean = false,
+        exactTotal: Int? = null,
         onDone: (Int) -> Unit = {}
     ) {
         if (sections.isEmpty() || target <= 0) return
@@ -91,14 +98,16 @@ object OfflineSync {
                     rounds++
                     main.postDelayed({
                         runAll(context, sections, target, includeVideo,
-                               force = true, onDone = onDone)
+                               force = true, exactTotal = exactTotal,
+                               onDone = onDone)
                     }, ROUND_GAP_MS)
                 } else {
                     rounds = 0
                 }
                 return
             }
-            run(context, sections[i], target, includeVideo, force = true) { n ->
+            run(context, sections[i], target, includeVideo, force = true,
+                exactTotal = exactTotal) { n ->
                 step(i + 1, total + n)
             }
         }
@@ -126,9 +135,11 @@ object OfflineSync {
     }
 
     /**
-     * @param section  which screen to fill, from [OfflineFeed].
-     * @param target   how many items to aim for.
-     * @param onDone   called on the main thread with the count captured.
+     * @param section    which screen to fill, from [OfflineFeed].
+     * @param target     how many items to aim for.
+     * @param exactTotal when set, fetching stops once the store holds this
+     *                   many in total (see [runAll]).
+     * @param onDone     called on the main thread with the count captured.
      */
     @SuppressLint("SetJavaScriptEnabled")
     fun run(
@@ -137,6 +148,7 @@ object OfflineSync {
         target: Int,
         includeVideo: Boolean,
         force: Boolean = false,
+        exactTotal: Int? = null,
         onDone: (Int) -> Unit = {}
     ) {
         if (target <= 0) return
@@ -214,8 +226,21 @@ object OfflineSync {
                         }
                         if (newItems.isEmpty()) return
 
-                        OfflineFeed.addItems(sec, newItems, target)
-                        OfflineFeed.prefetch(newItems, includeVideo)
+                        // An exact phase total bounds this batch, not the
+                        // store: retention is the store's own floor problem.
+                        // Only what will actually be kept is queued for
+                        // download, so a "first 10 posts" phase downloads ten
+                        // posts and stops - nothing queued beyond it.
+                        val batch = if (exactTotal != null) {
+                            val remaining = exactTotal -
+                                OfflineFeed.totalStored(sec)
+                            if (remaining <= 0) return
+                            newItems.take(remaining)
+                        } else newItems
+                        if (batch.isEmpty()) return
+
+                        OfflineFeed.addItems(sec, batch, target)
+                        OfflineFeed.prefetch(batch, includeVideo)
                     }
 
                     @JavascriptInterface
@@ -259,10 +284,14 @@ object OfflineSync {
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         view?.evaluateJavascript(MFacebookAds.script(), null)
-                        // V4 Step 2: Use higher target + syncMode to fetch fresher content
+                        // The caller's target, un-inflated: it used to be
+                        // raised to 150 "for freshness", which is exactly
+                        // the kind of silent override that made a "first 10
+                        // posts" phase fill the whole store before moving
+                        // on. A caller wanting more simply asks for more.
                         view?.evaluateJavascript(
                             OfflineCapture.script(
-                                target.coerceAtLeast(150),
+                                target,
                                 syncMode = true,
                                 // Skip what is already held, so each pass
                                 // reaches content the user has not seen.

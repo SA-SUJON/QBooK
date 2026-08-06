@@ -103,8 +103,7 @@ console.log('\nA tab with nothing stored');
 console.log('\nInjected content cannot duplicate');
 {
   const inject = raw(KT('utils/OfflineInject.kt'), 'fun script(')
-    .replace('`$cards`', '`<div class="dbcard">post</div>`')
-    .replace('${if (isReels) "true" else "false"}', 'false');
+    .replace('$safe', JSON.stringify(['<div class="dbcard">post</div>']));
 
   const dom = new JSDOM(
     '<body><div data-type="vscroller">' +
@@ -269,7 +268,7 @@ console.log('\nNothing is reconstructed');
   ok('no field-by-field model remains',
      !/val author: String/.test(feed) && !/val likes: String/.test(feed));
   ok('cards are returned as saved',
-     /joinToString\("\\n"\) \{ it\.html \}/.test(feed));
+     /cardMarkupList\(section: String\)[\s\S]{0,120}map \{ it\.html \}/.test(feed));
   ok('no card is drawn by us', !/dbcard|dbhead|dbactions/.test(feed));
   ok('the self-made offline screen is gone', !/fun renderPage/.test(feed));
 
@@ -406,7 +405,7 @@ console.log('\nOffline never falls through to the browser');
   // A page of our own around the cards is exactly what made offline look
   // different from online, so there is deliberately nothing to fall back to.
   ok('no page is invented when only cards are held',
-     /shellFor/.test(docs) && /OfflineFeed\.cardsHtml/.test(docs));
+     /shellFor/.test(docs) && /OfflineFeed\.cardMarkupList/.test(docs));
 
   // A restored session can land on a permalink or a profile, and nothing is
   // stored for those.

@@ -1,5 +1,7 @@
 package com.dustbook.app.utils
 
+import org.json.JSONArray
+
 /**
  * Puts the content we hold into the stored Facebook page.
  *
@@ -27,35 +29,41 @@ package com.dustbook.app.utils
 object OfflineInject {
 
     /**
-     * @param cardsHtml Facebook's own markup for the saved stories, exactly
-     *                  as it was served.
-     * @param resumeId  when non-null and starts with "SCROLL:", it is a pixel
-     *                  offset to restore on the feed scroller; otherwise it
-     *                  is a reel/story id to scroll to.
+     * @param cards    Facebook's own markup for the saved stories, one string
+     *                 per card, exactly as it was served.
+     * @param resumeId when non-null and starts with "SCROLL:", it is a pixel
+     *                 offset to restore on the feed scroller; otherwise it
+     *                 is a reel/story id to scroll to.
      */
-    fun script(cardsHtml: String, resumeId: String? = null): String {
-        // The HTML parser ends a <script> at the first "</script>" it sees,
-        // wherever that appears — including inside a JS string. Facebook's
-        // stored markup contains inline scripts, so one such card truncated
-        // the whole block and every card after it was dropped on the floor as
-        // raw text. That is why fifty saved posts showed as a handful.
+    fun script(cards: List<String>, resumeId: String? = null): String {
+        if (cards.isEmpty()) return ""
+        // The cards travel as one JSON array, never as a template literal.
         //
-        // Breaking the sequence is the standard remedy: the parser no longer
-        // recognises it, and the JS string still evaluates to the original
-        // text because "<" + "/script>" is just concatenation at runtime.
-        val cards = cardsHtml
-            .replace("\\", "\\\\")
-            .replace("`", "\\`")
-            .replace("\$", "\\\$")
-            .replace("</script", "</scr` + `ipt")
+        // A template literal dies from a single bad card: "${" in an inline
+        // script is read as an interpolation, and any "</script" - in ANY
+        // letter case, because the HTML parser is case-insensitive while our
+        // old lowercase-only breakup was not - ends the host block and drops
+        // every card after it. One code snippet shared in a post was enough
+        // to blank the entire offline library: the settings count, computed
+        // from the store, kept climbing while the page showed only the
+        // handful of posts the stored document itself carried.
+        //
+        // JSON has no interpolation and no backtick, so no card content can
+        // be mistaken for code; and replacing "</" with the JSON-blessed
+        // spelling "<\/" means the host script contains no closing sequence
+        // at all, in any case. Per-card strings additionally isolate one
+        // malformed card from the rest.
+        val json = JSONArray()
+        for (c in cards) json.put(c)
+        val safe = json.toString().replace("</", "<\\/")
 
         val main = """
         (function(){
           if (window.__dbOfflineInject) return;
           window.__dbOfflineInject = true;
 
-          var CARDS = `$cards`;
-          if (!CARDS) return;
+          var CARDS = $safe;
+          if (!CARDS || !CARDS.length) return;
 
           function feedContainer() {
             var sc = document.querySelector('[data-type="vscroller"]');
@@ -85,7 +93,7 @@ object OfflineInject {
 
             var holder = document.createElement('div');
             holder.setAttribute('data-db-cards', '1');
-            holder.innerHTML = CARDS;
+            holder.innerHTML = CARDS.join('\n');
             box.appendChild(holder);
 
             doResume(box);

@@ -9,14 +9,20 @@ import android.os.Looper
  *
  * Lifecycle:
  *   App opens online → start()
- *     Step 1: Save 50 random unwatched feed posts
- *     Step 2: Save user-configured reel count (only new, not watched)
- *     Step 3: Wait for reel videos to finish downloading
- *     Step 4: Save ALL stories (watched + unwatched)
- *     Step 5: Save 300 more posts
+ *     Step 1: Save the first 10 feed posts - a quick starter set the user
+ *             can open offline almost immediately, then posts STOP for now
+ *     Step 2: Save the user's chosen number of reels, video included
+ *     Step 3: Continue the feed backlog from those 10 up to 300 posts
+ *     Step 4: Once posts are complete, save the stories of the user's
+ *             followed friends (watched + unwatched)
  *   User browses online → seen content tracked via bridge + store
  *   App goes offline → saved content displays
  *   App comes back online → clearAll() → start() fresh
+ *
+ * A phase only ends when its media queue is empty: the settings count reads
+ * from disk, so after a phase's downloads are drained the number shown is
+ * exactly the number that plays offline - never a markup count while the
+ * photos are still in flight.
  *
  * Everything runs silently on background threads. No user action needed.
  */
@@ -30,6 +36,8 @@ object BackgroundSyncManager {
 
     private var ctx: Context? = null
     private var prefs: Prefs? = null
+
+    private val main = Handler(Looper.getMainLooper())
 
     fun init(context: Context, p: Prefs) {
         ctx = context.applicationContext
@@ -51,7 +59,7 @@ object BackgroundSyncManager {
         if (!NetworkPolicy.canDownload(c, p)) return
 
         isRunning = true
-        step1NewPosts(c, p)
+        step1FirstPosts(c, p)
     }
 
     /** Called when connectivity returns after being offline. */
@@ -71,40 +79,43 @@ object BackgroundSyncManager {
         }
     }
 
+    /** A phase is over only when everything it queued is on disk. */
+    private fun awaitThen(next: () -> Unit) {
+        AppExecutors.background.execute {
+            // Wait up to 5 minutes for the downloads of this phase to finish.
+            OfflineFeed.awaitPrefetch(300_000)
+            main.post { next() }
+        }
+    }
+
     // -------------------------------------------------------- steps
 
-    private fun step1NewPosts(context: Context, p: Prefs) {
-        currentStep = "posts-50"
-        val target = 50
-        val existingIds = OfflineFeed.knownIds(OfflineFeed.SECTION_FEED).toSet()
-
-        OfflineSync.run(context, OfflineFeed.SECTION_FEED, target,
-            includeVideo = true, force = true) { count ->
-            // Even if sync returned fewer, whatever it found is stored.
-            // Move to step 2.
-            step2Reels(context, p)
+    private fun step1FirstPosts(context: Context, p: Prefs) {
+        currentStep = "posts-10"
+        // Exactly ten: a fast, immediately usable starter set. The phase
+        // total is exact so fetching stops here and reels can start.
+        OfflineSync.run(context, OfflineFeed.SECTION_FEED, 10,
+            includeVideo = true, force = true, exactTotal = 10) {
+            awaitThen { step2Reels(context, p) }
         }
     }
 
     private fun step2Reels(context: Context, p: Prefs) {
         currentStep = "reels"
         val target = p.offlineReelTarget.coerceAtLeast(30)
-        val existingIds = OfflineFeed.knownIds(OfflineFeed.SECTION_REELS).toSet()
-
         OfflineSync.run(context, OfflineFeed.SECTION_REELS, target,
-            includeVideo = true, force = true) { count ->
-            // Wait for the video download queue to drain before proceeding.
-            step3WaitForVideo(context, p)
+            includeVideo = true, force = true, exactTotal = target) {
+            awaitThen { step3MorePosts(context, p) }
         }
     }
 
-    private fun step3WaitForVideo(context: Context, p: Prefs) {
-        currentStep = "wait-video"
-        AppExecutors.background.execute {
-            // Wait up to 5 minutes for downloads to finish.
-            OfflineFeed.awaitPrefetch(300_000)
-            // Now stories.
-            android.os.Handler(android.os.Looper.getMainLooper()).post { step4Stories(context, p) }
+    private fun step3MorePosts(context: Context, p: Prefs) {
+        currentStep = "posts-300"
+        // Continue FROM the 10 already saved up to 300 total: the phase
+        // total counts what the store already holds, so this fills the gap.
+        OfflineSync.run(context, OfflineFeed.SECTION_FEED, 300,
+            includeVideo = true, force = true, exactTotal = 300) {
+            awaitThen { step4Stories(context, p) }
         }
     }
 
@@ -112,17 +123,11 @@ object BackgroundSyncManager {
         currentStep = "stories"
         // Stories: save ALL, not just unwatched.
         OfflineSync.run(context, OfflineFeed.SECTION_STORIES, 200,
-            includeVideo = true, force = true) { count ->
-            step5MorePosts(context, p)
-        }
-    }
-
-    private fun step5MorePosts(context: Context, p: Prefs) {
-        currentStep = "posts-300"
-        OfflineSync.run(context, OfflineFeed.SECTION_FEED, 300,
-            includeVideo = true, force = true) { count ->
-            currentStep = "done"
-            isRunning = false
+            includeVideo = true, force = true) {
+            awaitThen {
+                currentStep = "done"
+                isRunning = false
+            }
         }
     }
 }

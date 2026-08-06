@@ -11,6 +11,7 @@ import java.net.URL
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONArray
 
 /**
  * Keeps the real Facebook pages, so being offline looks like being online.
@@ -231,7 +232,7 @@ object OfflineDocs {
                 "home" -> OfflineFeed.SECTION_FEED
                 else -> null
             }
-            val cards = section?.let { OfflineFeed.cardsHtml(it) } ?: ""
+            val cards = section?.let { OfflineFeed.cardMarkupList(it) } ?: emptyList()
 
             // Resume position, so the user picks up where they left off
             // instead of scrolling from the top every time.
@@ -247,12 +248,13 @@ object OfflineDocs {
                 unmuteStripScript() +
                 OfflineBanner.html() +
                 "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
-                (if (cards.isNotBlank()) {
+                (if (cards.isNotEmpty()) {
                     "<script>" +
-                        (if (screen == "stories") storyViewer(cards.replace("\n", "\n---DBSTORY---\n"), resumeId)
+                        (if (screen == "stories") storyViewer(cards, resumeId)
                          else OfflineInject.script(cards, resumeId)) +
                         "</script>"
                 } else "") +
+                (if (screen == "home") unmuteByDefaultScript() else "") +
                 if (screen == "reels" || screen == "watch" || screen == "stories") {
                     "<script>" + VideoHelper.getOfflineVideoAssistScript() + "</script>"
                 } else ""
@@ -279,14 +281,15 @@ object OfflineDocs {
      * right-half tap = next. An overlay hides the page chrome so the
      * story fills the viewport.
      */
-    private fun storyViewer(cardsHtml: String, resumeId: String?): String {
-        // Same hazard as OfflineInject: a stored card containing "</script>"
-        // ends the block early and loses every story after it.
-        val stories = cardsHtml
-            .replace("\\", "\\\\")
-            .replace("`", "\\`")
-            .replace("$", "\\$")
-            .replace("</script", "</scr` + `ipt")
+    private fun storyViewer(cards: List<String>, resumeId: String?): String {
+        if (cards.isEmpty()) return ""
+        // One JSON array, never a template literal - see OfflineInject for
+        // why that is the only safe way to carry stored markup inside a
+        // <script> block. The "---DBSTORY---" sentinel-split is gone with
+        // the literal it belonged to.
+        val json = JSONArray()
+        for (c in cards) json.put(c)
+        val safe = json.toString().replace("</", "<\\/")
         val resumeJs = if (resumeId != null) {
             "\nvar START=0;var all=STORIES;for(var i=0;i<all.length;i++){" +
             "if(all[i].indexOf('" + resumeId + "')>=0){START=i;break;}}\n"
@@ -296,8 +299,8 @@ object OfflineDocs {
           if(window.__dbStoryViewer)return;
           window.__dbStoryViewer=true;
 
-          var STORIES = (`$stories`).split('---DBSTORY---').filter(function(s){return s.trim().length>0;});
-          if(!STORIES.length)return;
+          var STORIES = $safe;
+          if(!STORIES || !STORIES.length)return;
           $resumeJs
           var idx=START;
 
@@ -417,12 +420,12 @@ object OfflineDocs {
             "stories" -> OfflineFeed.SECTION_STORIES
             else -> OfflineFeed.SECTION_FEED
         }
-        val cards = OfflineFeed.cardsHtml(section)
-        val use = if (cards.isNotBlank()) cards else
+        val cardList = OfflineFeed.cardMarkupList(section)
+        val use = if (cardList.isNotEmpty()) cardList else
             listOf(OfflineFeed.SECTION_REELS, OfflineFeed.SECTION_FEED,
                    OfflineFeed.SECTION_STORIES)
             .firstNotNullOfOrNull { s ->
-                OfflineFeed.cardsHtml(s).takeIf { it.isNotBlank() }
+                OfflineFeed.cardMarkupList(s).takeIf { it.isNotEmpty() }
             } ?: return offlineFallbackPage()
 
         val html = "<!DOCTYPE html><html lang=\"en\"><head>" +
@@ -431,15 +434,16 @@ object OfflineDocs {
             "<style>body{margin:0;background:#18191a;color:#e4e6eb;" +
             "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
             "sans-serif}</style>" + promoHideCss() +
-            "</head><body><div>" + use + "</div>" +
+            "</head><body><div>" + use.joinToString("\n") + "</div>" +
             unmuteStripScript() +
             "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
             (if (screen == "reels" || screen == "watch" || screen == "stories") {
                 "<script>" + VideoHelper.getOfflineVideoAssistScript() +
                     "</script>"
             } else "") +
+            (if (screen == "home") unmuteByDefaultScript() else "") +
             (if (screen == "stories") {
-                "<script>" + storyViewer(use.replace("\n", "\n---DBSTORY---\n"), null) + "</script>"
+                "<script>" + storyViewer(use, null) + "</script>"
             } else "") +
             "</body></html>"
 
@@ -784,6 +788,60 @@ object OfflineDocs {
         .smartbanner,.smart-banner,.get-app-banner
         {display:none !important;}
         </style>
+    """.trimIndent()
+
+    /**
+     * Offline home-feed videos default to sound on.
+     *
+     * Facebook ships its feed players muted because its own JS decides when
+     * sound may start; offline that JS never runs, so the muted state stored
+     * in the markup would otherwise be permanent. Scoped to the home screen
+     * only - reels and stories keep their players exactly as captured - and
+     * applied to each video once, before the user presses play. A running
+     * clip is never un-muted underneath the user: a video that was only
+     * allowed to start while muted gets stopped again the moment sound comes
+     * on, which is why this must happen at rest, at load time.
+     */
+    private fun unmuteByDefaultScript(): String = """
+        <script id="__db_unmute_default">
+        (function(){
+          if (window.__dbUnmuteDefault) return;
+          window.__dbUnmuteDefault = true;
+
+          function open(v) {
+            try {
+              v.defaultMuted = false;
+              v.muted = false;
+              v.removeAttribute('muted');
+              if (v.volume === 0) v.volume = 1;
+            } catch (e) {}
+          }
+          function sweep() {
+            var vs = document.querySelectorAll('video');
+            for (var i = 0; i < vs.length; i++) {
+              if (vs[i].__dbSound) continue;
+              vs[i].__dbSound = true;
+              open(vs[i]);
+            }
+          }
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', sweep);
+          } else {
+            sweep();
+          }
+          // Injected cards arrive after this script; catch their videos too.
+          try {
+            new MutationObserver(function(muts) {
+              for (var i = 0; i < muts.length; i++) {
+                if (muts[i].addedNodes && muts[i].addedNodes.length) {
+                  sweep();
+                  return;
+                }
+              }
+            }).observe(document.documentElement, {childList:true, subtree:true});
+          } catch (e) {}
+        })();
+        </script>
     """.trimIndent()
 
     /** Basic page served when there is literally nothing saved. */
