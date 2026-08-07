@@ -267,12 +267,17 @@ open class SectionVault(
     /**
      * Stored markup that is not content, decided from the markup alone.
      *
-     * Two kinds, both proven against real captured stores:
+     * Three kinds, all proven against real captured stores:
      *
      *  - a card the m.facebook.com ad remover had already condemned when
      *    the capture read it: the mark (`data-db-ad`) is part of the saved
      *    outerHTML, so such a card stays recognisable forever. It is an
      *    ad by definition and never belongs in the library.
+     *  - the stories tray: the capture's chrome filter covers the com-
+     *    poser and the tab row but never the tray, so a whole tray was
+     *    saved as a card; offline it rendered once as this card and once
+     *    as the moved chrome - the user's "double story" screenshot. Two
+     *    or more distinct story links and no post permalink: only a tray.
      *  - Facebook's pinned tab row, saved when the background scroll
      *    caught it mid-scroller with badge counters showing. Six-plus
      *    characters of badge text and no container-level label let it
@@ -282,10 +287,32 @@ open class SectionVault(
      *    tab-labelled buttons and no link a story could have. Feed-only,
      *    because only the home scroller ever contains that row.
      */
+    /** The stories tray's own signature: story links, nothing else. */
+    internal val JUNK_TRAY_LINK = Regex(
+        "href=[\"']([^\"']*/stories/[^\"']*)",
+        RegexOption.IGNORE_CASE
+    )
+
     private fun isJunk(html: String): Boolean {
         if (html.contains(JUNK_AD_TAG, ignoreCase = true)) return true
         if (section != SECTION_FEED_ID) return false
         if (JUNK_STORY_LINK.containsMatchIn(html)) return false
+        // The stories tray. The capture's chrome filter covers the
+        // composer and the tab row but never the tray, so a whole tray
+        // walked into the store as a card - and once the compose layer
+        // also moved the scroller's tray out, offline home showed it
+        // TWICE ("story er ta double asche", round-10 screenshot). Two
+        // or more DISTINCT story links - with the post-permalink guard
+        // above already passed - is only ever that tray. Existing saves
+        // heal at the door of every read, the same way old tab rows did.
+        var stories = 0
+        val seenStories = HashSet<String>()
+        val st = JUNK_TRAY_LINK.findAll(html).iterator()
+        while (st.hasNext()) {
+            if (seenStories.add(st.next().groupValues[1]) && ++stories >= 2) {
+                return true
+            }
+        }
         var labels = 0
         val it = JUNK_TAB_LABEL.findAll(html).iterator()
         while (it.hasNext()) {

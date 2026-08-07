@@ -286,8 +286,24 @@ console.log('\nNothing is reconstructed');
   ok('the self-made offline screen is gone', !/fun renderPage/.test(feed));
 
   const assembly = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
-  ok('injected markup is not restyled',
-     !/scroll-snap-type/.test(assembly));
+  {
+    // Same rule as the pipeline pins: the only declarations aimed INSIDE
+    // the cards holder are gesture-only (dead snap pager clean-up); the
+    // single snap-type lift sits on html,body; siblings and chrome are
+    // never touch-targets for styling. Nothing about how a card looks
+    // may come from us.
+    const allowed = new Set(['scroll-snap-align', 'touch-action']);
+    const cardRules = [...assembly.matchAll(/#__db_cards\s+[^{]*\{([^}]*)\}/g)]
+      .map(m => m[1]);
+    ok('injected markup is not restyled',
+       cardRules.length > 0 &&
+       cardRules.every(body => body.replace(/["+\s]/g, '').split(';')
+         .filter(Boolean)
+         .every(d => allowed.has(d.split(':')[0]))) &&
+       (assembly.match(/scroll-snap-type/g) || []).length === 1 &&
+       /html,body\{[^}]*scroll-snap-type:none!important/.test(assembly) &&
+       !/db_chrome\b[^{]*\{[^}]*scroll-snap-align/.test(assembly));
+  }
 }
 
 console.log('\nThe settings screen is the six things asked for');

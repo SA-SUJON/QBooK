@@ -589,3 +589,86 @@ verbatim production mirror BEFORE writing the fix.
   - mirror/test divergence means suspect the extractor first.
 
 > Session: 2026-08-07 | Tag: v5.2.9 | Tests: 1074 passed, 0 failed (10 suites)
+
+# Round 10 - v5.2.10: stories tray doubled offline, reels refused to scroll, and the two guards that had to learn precision
+
+User report, verbatim: "home feed a dekho story er ta double asche" and
+"reels a scrolling hoina ar reels er screenshot ta dekho". Both on the
+offline screens; v5.2.9 had just made the home screen pixel-exact, so a
+double tray and a stuck reel pager were both regressions' children, not
+layout breakage.
+
+## 1. The stories tray could become a saved card - so it appeared twice
+
+Two independent paths led to the same twin:
+
+- Capture side: OfflineCapture.isChrome recognised the composer and the
+  tab row as chrome - its own comment even admitted the tray "is a child
+  of the same container" - but the tray check itself was never written.
+  A tray seen away from the tab row became a regular feed card.
+- Vault side: SectionVault.isJunk knew ad tags and tab rows, nothing
+  knew the tray. Once such a card was stored, compose would move the
+  scroller's live tray into chrome AND serve the saved tray card: one
+  screen, two identical Create story / Your Story rows. Exactly the
+  screenshot.
+
+Fix, both sides: capture isChrome treats a unit with 2+ DISTINCT
+/stories/ hrefs (and no post link) as chrome; the vault's isJunk heals
+any tray card already stored (JUNK_TRAY_LINK, distinct-link guard,
+story_fbid and post URLs exempt). Contrast-proven: verbatim v5.2.9
+isJunk returns false on the tray html, the new one returns true - and
+still false on single-link, story_fbid and same-link-twice controls.
+
+Compose gained a third shield: chromeSeen dedupes moved chrome units by
+chromeKey (first-4 sorted hrefs, else first 120 chars of text), so a
+RECYCLED twin of the tray inside Facebook's virtual list is moved once
+and every later copy stays hidden with its scroller.
+
+## 2. Reels "scrolling hoina" was a dead pager's snap and gesture capture
+
+Once compose hides Facebook's snap pager (vscroller vscroller-snap) the
+document body becomes the scroller. Two poisons from the site CSS stay
+armed: a mandatory scroll-snap on the document with no snap areas left
+(drag, release, snap back to the start - the next reel glimpsed and
+gone) and touch-action capture on saved reel surfaces meant for the
+pager. jsdom computes both properties, so the fix is asserted through
+the real cascade on hostile CSS: html,body get scroll-snap-type:none
+and touch-action:manipulation (!important), and card descendants get
+scroll-snap-align:none + touch-action:manipulation.
+
+## 3. Where we almost over-reached - the chrome row is a live widget
+
+The first version of the gesture rule also blanked snap-align under
+#__db_chrome. That would silently kill the stories tray's own horizontal
+item snapping - a real behaviour change to a live widget, the exact
+class of un-asked-for change the user keeps (rightly) rejecting.
+Rescoped to #__db_cards descendants only before release: chrome keeps
+Facebook's own gestures untouched.
+
+In the same spirit the old test guards "injected cards are not restyled
+by us" were blunt instruments (!scroll-snap-type anywhere in the file);
+they now pin the real invariant instead: every rule aimed inside the
+cards holder may declare ONLY {scroll-snap-align, touch-action}, the one
+snap-type lift sits on html,body, and no chrome rule carries snap-align.
+
+## 3b. Fullscreen on wifi, fine on mobile data - investigated, NOT fixed
+
+Audited MainActivity's fullscreen block (beginFullscreenTransition /
+endFullscreenTransition / fullscreenSettle), the WebChromeClient
+override, VideoHelper and every network-gated path: nothing in the app
+behaves differently on wifi vs mobile data, online vs offline. The
+reported intermittency (wifi only, sometimes, online too) points at the
+site's own player, which we do not control. No code change was made:
+a guess-fix here would be exactly a fake fix, and we promised none.
+
+## Proof battery
+
+- jsdom contrast proof (scratch): 14/14 - tray junked/healed, twin
+  stays hidden, body scroll-snap computes none, body and reel surface
+  compute touch-action manipulation, hidden pager stays hidden.
+- 10/10 suites green (1074 assertions; pipeline 402, ui 79).
+- kotlinc over the tree: identical diagnostic classes to the v5.2.9
+  baseline.
+- Variant sweep: twin-tray document keeps exactly one visible tray.
+
+> Session: 2026-08-07 | Tag: v5.2.10 | Tests: 1074 passed, 0 failed (10 suites)

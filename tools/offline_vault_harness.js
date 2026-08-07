@@ -189,6 +189,22 @@ function ownHeight(slice) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/** Mirror of PageAssembly.chromeKey(), regexes extracted verbatim. */
+const HREF = kotlinRegex(assembly, 'HREF');
+const TAG_STRIP = kotlinRegex(assembly, 'TAG_STRIP');
+const SPACE = kotlinRegex(assembly, 'SPACE');
+function chromeKey(slice) {
+  const hrefs = [];
+  HREF.lastIndex = 0;
+  let h;
+  while ((h = HREF.exec(slice)) !== null && hrefs.length < 4) hrefs.push(h[1]);
+  hrefs.sort();
+  if (hrefs.length) return 'L:' + hrefs.join('|');
+  TAG_STRIP.lastIndex = 0; SPACE.lastIndex = 0;
+  const text = slice.replace(TAG_STRIP, ' ').replace(SPACE, ' ').trim();
+  return 'T:' + text.slice(0, 120);
+}
+
 /** Mirror of PageAssembly.withMargin(). */
 function withMargin(unit, gapPx) {
   const tag = exec0(RX.FIRST_TAG, unit);
@@ -250,6 +266,7 @@ function compose(doc, cards) {
 
       const children = topLevelChildren(base, vsOpenEndB);
       const moved = [], tabs = [];
+      const chromeSeen = new Set();
       let bytes = 0;
       let cursor = vsOpenEndB;
       let inner = '';
@@ -260,6 +277,10 @@ function compose(doc, cards) {
         const slice = base.slice(c.start, c.end);
         const kind = classify(slice);
         if (kind === STOP) break;
+        // A recycled twin of an already-moved chrome unit stays hidden.
+        if ((kind === MOVE || kind === MOVE_TAB) &&
+            chromeSeen.has(chromeKey(slice))) continue;
+        if (kind === MOVE || kind === MOVE_TAB) chromeSeen.add(chromeKey(slice));
         if (kind === MOVE || kind === MOVE_TAB) {
           inner += base.slice(cursor, c.start);
           cursor = c.end;
@@ -373,6 +394,7 @@ const JUNK = {
   FEED_ID: kotlinConst(vault, 'SECTION_FEED_ID'),
   STORY_LINK: kotlinRegex(vault, 'JUNK_STORY_LINK'),
   TAB_LABEL: kotlinRegex(vault, 'JUNK_TAB_LABEL'),
+  TRAY_LINK: kotlinRegex(vault, 'JUNK_TRAY_LINK'),
 };
 
 /** Mirror of SectionVault.isJunk(), branch for branch. */
@@ -381,6 +403,17 @@ function isJunk(section, html) {
   if (section !== JUNK.FEED_ID) return false;
   JUNK.STORY_LINK.lastIndex = 0;
   if (JUNK.STORY_LINK.test(html)) return false;
+  // The stories tray: two or more DISTINCT story links and, per the
+  // guard above, no post permalink. A saved tray heals at read.
+  let stories = 0, m2;
+  const seenStories = new Set();
+  JUNK.TRAY_LINK.lastIndex = 0;
+  while ((m2 = JUNK.TRAY_LINK.exec(html)) !== null) {
+    if (!seenStories.has(m2[1])) {
+      seenStories.add(m2[1]);
+      if (++stories >= 2) return true;
+    }
+  }
   JUNK.TAB_LABEL.lastIndex = 0;
   let labels = 0, m;
   while ((m = JUNK.TAB_LABEL.exec(html)) !== null) {
@@ -450,7 +483,7 @@ module.exports = {
   RX, HIDE_OLD, HIDE_SCREEN_ROOT, RESET_SCREEN_ROOT, RESET_GENERAL,
   sanitize, holderHtml, compose, composeLegacy,
   classify, stripVirtualMargin, stolenOffset, topLevelChildren,
-  ownMargin, ownHeight, withMargin,
+  ownMargin, ownHeight, withMargin, chromeKey,
   photoKey, isVideoUrl, isAvatar, isChrome, isComplete, addItems,
   JUNK, isJunk,
   sources: { assembly, vault, docs, docsFeed },

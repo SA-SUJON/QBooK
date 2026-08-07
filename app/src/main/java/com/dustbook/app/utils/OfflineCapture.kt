@@ -311,6 +311,19 @@ object OfflineCapture {
                                  'a[href*="/videos/"],a[href*="/reel/"]')) {
               return true;
             }
+            // The stories tray. The composer and the tab row are covered
+            // above; the tray never was - which is exactly how a whole
+            // tray got saved as a card, and once the compose layer also
+            // started laying out the scroller's own tray, the offline
+            // home showed it TWICE ("story er ta double asche"). Two or
+            // more story links and no post permalink is only ever that
+            // tray; a post ABOUT a story keeps its own story_fbid. The
+            // vault applies the same signature to old saves on read.
+            if (c.querySelectorAll('a[href*="/stories/"]').length >= 2 &&
+                !c.querySelector('a[href*="/posts/"],a[href*="story_fbid"],' +
+                                 'a[href*="/videos/"],a[href*="/reel/"]')) {
+              return true;
+            }
             // Facebook bottom tab bar — aria-labels from device captures
             var label = (c.getAttribute('aria-label') || '').toLowerCase();
             if (/^(home|reels|watch|notifications|menu|profile|search|create|messages|marketplace|friends|groups|gaming)$/i.test(label)) return true;

@@ -165,8 +165,34 @@ console.log('\nNothing is invented offline');
      !/display\s*:\s*none/.test(banner) && !/display\s*:\s*none/.test(nav));
   ok('the offline banner adds no markup, only behaviour',
      !/<div/.test(banner) && !/<style/.test(banner));
-  ok('injected cards are not restyled by us',
-     !/scroll-snap-type/.test(inject));
+  {
+    // Stored cards keep every visual property from Facebook. The only
+    // extra declarations we may ever direct at a card are gesture-only:
+    // once we hide the snap pager, the body's poisoned snap must lift and
+    // a saved reel surface must stop capturing drags meant for scrolling.
+    // Neither property changes a pixel. Anything else aimed at a card -
+    // colours, fonts, sizes, spacing - is a restyle and breaks the rule,
+    // the way it broke in every round that tried it.
+    const allowed = new Set(['scroll-snap-align', 'touch-action']);
+    // Descendant selectors only: rules about the holder's SIBLINGS (the
+    // '~' cleanup that hides stale scrollers) are structure, not cards.
+    const cardRules = [...inject.matchAll(/#__db_cards\s+[^{]*\{([^}]*)\}/g)]
+      .map(m => m[1]);
+    ok('injected cards are not restyled by us',
+       cardRules.length > 0 &&
+       cardRules.every(body => body.replace(/["+\s]/g, '').split(';')
+         .filter(Boolean)
+         .every(d => allowed.has(d.split(':')[0])))) &&
+    ok('and the only snap declaration sits on the document itself',
+       (inject.match(/scroll-snap-type/g) || []).length === 1 &&
+       /html,body\{[^}]*scroll-snap-type:none!important/.test(inject));
+    // The chrome row is a LIVE widget, not a saved card: the stories
+    // tray's horizontal item snapping is part of the real page and must
+    // keep working offline. Our gesture rules never reach under it.
+    ok('live chrome keeps Facebook\u2019s own gestures and snapping',
+       !/#__db_chrome\s\*/.test(inject) &&
+       !/db_chrome\b[^{]*\{[^}]*scroll-snap-align/.test(inject));
+  }
 
   // Taps that cannot work are swallowed - but silently, the way a dead
   // control behaves, not with a message the real site never shows.
@@ -1341,6 +1367,13 @@ console.log('\nEvery saved card reaches the page');
      /__db_layout_reset/.test(assemblySrc) &&
      /overflow:visible!important/.test(assemblySrc) &&
      /\[data-mcomponent=..MScreen..\]\{position:static!important/.test(assemblySrc));
+  ok('the reset also kills snap-bounce and gesture capture, by name',
+     /scroll-snap-type:none!important/.test(assemblySrc) &&
+     /touch-action:manipulation!important/.test(assemblySrc) &&
+     /scroll-snap-align:none!important/.test(assemblySrc));
+  ok('a recycled twin of a moved chrome unit is never moved twice',
+     /chromeSeen/.test(assemblySrc) &&
+     /fun chromeKey/.test(assemblySrc));
   {
     // THE ROUND-8 DEVICE SHAPE, reproduced from the user's own capture
     // structure: Facebook keeps prior screens STACKED in one DOM
@@ -1618,6 +1651,56 @@ console.log('\nEvery saved card reaches the page');
       ok('variant empty scroller: saved cards still served, no chrome at all',
          !!v.d.getElementById('__db_cards') &&
          v.d.querySelectorAll('#__db_chrome').length === 0);
+    }
+    {
+      // Round-10 mechanism 2: Facebook's virtual list can hold a RECYCLED
+      // twin of the same tray. Both classed MOVE, and the offline page
+      // then showed the tray twice. The first copy moves, twins hide.
+      const twinTray =
+        '<div data-mcomponent="MContainer" id="traytwin"' +
+        ' style="margin-top:392px; height:232px;">' +
+        '<a href="https://m.facebook.com/stories/111">Create story</a>' +
+        '<a href="https://m.facebook.com/stories/222">Your Story</a></div>';
+      const oneTray =
+        '<div data-mcomponent="MContainer" id="trayone"' +
+        ' style="margin-top:160px; height:232px;">' +
+        '<a href="https://m.facebook.com/stories/111">Create story</a>' +
+        '<a href="https://m.facebook.com/stories/222">Your Story</a></div>';
+      const v = variantRun(composer + oneTray + twinTray + stalePost);
+      ok('a recycled twin tray stays hidden: exactly one tray visible',
+         v.chrome.querySelectorAll('[href*="stories/"]').length === 2 &&
+         !v.chrome.querySelector('#traytwin') &&
+         !!v.d.querySelector('[data-type="vscroller"] #traytwin'));
+    }
+    {
+      // Round-10 reels report: "scrolling hoina" - the drag bounced back.
+      // With the snap pager hidden, NOTHING on the document may keep
+      // Facebook's snap semantics or gesture capture; computed through
+      // the real cascade against exactly such hostile page CSS.
+      const REEL_CSS =
+        '<style>html,body{scroll-snap-type:y mandatory;touch-action:none}' +
+        '.draglayer{touch-action:none}#reelSurface{touch-action:none}</style>';
+      const reelDoc =
+        '<div data-mcomponent="MScreen" data-type="container" class="m bg-s2">' +
+        '<div data-type="vscroller" class="m vscroller vscroller-snap">' +
+        '<div data-video-id="v1"><a href="/reel/1">old</a></div></div></div>';
+      const savedReel =
+        '<div data-tracking-duration-id="r9" id="reelSurface" class="draglayer">' +
+        '<video src="https://video.xx.fbcdn.net/o1/v/clip.mp4"></video></div>';
+      const rp = new JSDOM('<html><head>' + REEL_CSS + '</head><body>' +
+        H.compose(reelDoc, [savedReel]) + '</body></html>');
+      const rd = rp.window.document;
+      const csRB = rp.window.getComputedStyle(rd.body);
+      ok('offline body never snaps back: scroll-snap computes none',
+         csRB.scrollSnapType === 'none', csRB.scrollSnapType);
+      ok('offline body always lets the drag scroll',
+         csRB.touchAction === 'manipulation', csRB.touchAction);
+      const csSurf = rp.window.getComputedStyle(rd.getElementById('reelSurface'));
+      ok('a saved reel surface can no longer eat the scroll gesture',
+         csSurf.touchAction === 'manipulation', csSurf.touchAction);
+      ok('the hidden snap pager stays hidden',
+         rp.window.getComputedStyle(
+           rd.querySelector('[data-type="vscroller"]')).display === 'none');
     }
 
     // A plain single-screen document still composes correctly.
@@ -1932,6 +2015,70 @@ console.log('\\nFacebook tab bar never enters the store, and old stores heal');
       '<div role="button" aria-label="Home"><i></i></div></div>';
   ok('vault mirror: one nav-shaped button does not condemn a post',
      !H2.isJunk('feed', oneLabel));
+}
+
+console.log('\nThe stories tray never becomes a card, and old saves heal');
+{
+  const cap = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const H2 = require('./offline_vault_harness.js');
+
+  // Round-10 report, screenshot attached: offline home showed the stories
+  // tray TWICE ("story er ta double asche"). The capture's chrome filter
+  // covers the composer and the tab row but never the tray, so the whole
+  // tray was saved as a card; once the compose layer also laid out the
+  // scroller's own tray, the page had one in the chrome and one among
+  // the cards.
+  const tray =
+    '<div data-mcomponent="MContainer" id="trayunit"' +
+    ' style="margin-top:160px; height:232px;">' +
+    '<a href="https://m.facebook.com/stories/111">Create story</a>' +
+    '<a href="https://m.facebook.com/stories/222">Your Story</a>' +
+    '<a href="https://m.facebook.com/stories/333">Farzana</a></div>';
+  const feedPost3 =
+    '<div data-mcomponent="MContainer" data-tracking-duration-id="p4">' +
+      '<div><span>a genuine post about the upcoming cricket series</span></div>' +
+      '<a href="https://m.facebook.com/story.php?story_fbid=881">Full story</a></div>';
+
+  ok('the capture chrome filter now knows the tray too',
+     /a\[href\*="\/stories\/"\]/.test(cap) &&
+     /querySelectorAll\('a\[href\*="\/stories\/"\]'\)\.length >= 2/.test(cap));
+  const feed = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' + tray + feedPost3 + '</div></body>');
+  ok('the tray is NOT captured as a card',
+     !feed.some((it) => it.h.indexOf('trayunit') >= 0),
+     JSON.stringify(feed.length));
+  ok('the real post beside it still is',
+     feed.some((it) => it.h.indexOf('story_fbid=881') >= 0));
+
+  ok('the vault carries the same signature, feed-only',
+     /JUNK_TRAY_LINK/.test(vaultSrc) &&
+     /section != SECTION_FEED_ID\) return false/.test(vaultSrc));
+  ok('vault mirror: a saved tray is junk in the feed vault',
+     H2.isJunk('feed', tray));
+  ok('vault mirror: still junk when every story thumbnail resolves',
+     H2.isJunk('feed', tray.replace('Create story', 'Create new story')));
+  ok('vault mirror: not junk in the reels or stories vaults',
+     !H2.isJunk('reels', tray) && !H2.isJunk('stories', tray));
+  ok('vault mirror: a single story link never condemns a post',
+     !H2.isJunk('feed',
+       '<div><span>see what he posted</span>' +
+       '<a href="https://m.facebook.com/stories/111">his story</a></div>'));
+  ok('vault mirror: a post holding story_fbid is never junk',
+     !H2.isJunk('feed',
+       '<div><a href="/stories/111">one</a><a href="/stories/222">two</a>' +
+       '<a href="https://m.facebook.com/story.php?story_fbid=881">p</a></div>'));
+  ok('vault mirror: the same link twice is not a tray',
+     !H2.isJunk('feed',
+       '<div><a href="/stories/111">a</a><a href="/stories/111">b</a></div>'));
+
+  // Contrast: the v5.2.9 pair really let the tray in (the bug was real).
+  // Stored-tray heal: among the cards it simply stops existing, so a
+  // home that used to show tray-in-cards plus tray-in-chrome shows ONE.
+  const withSavedTray = [tray, feedPost3];
+  const healed = withSavedTray.filter((c) => !H2.isJunk('feed', c));
+  ok('a tray saved by an older build heals at the next read',
+     healed.length === 1 && healed[0] === feedPost3);
 }
 
 console.log('\\nOne condemned card can never blank the whole offline feed');

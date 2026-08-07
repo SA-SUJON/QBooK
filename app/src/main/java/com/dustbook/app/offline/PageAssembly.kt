@@ -141,16 +141,27 @@ object PageAssembly {
      * stylesheet says about these elements; failing open would mean a page
      * that shows only its first screenful of saved posts.
      *
-     * The last rule is for moved chrome: a moved unit rejoins normal flow
-     * COMPLETELY. The floating tab row can carry the same fixed-container
-     * class the header pins itself with; dropped between saved cards it
-     * would float above the logo bar offline, which is its own kind of
-     * misplaced chrome.
+     * The last rules keep the document itself scrollable. A moved unit
+     * rejoins normal flow COMPLETELY: the floating tab row can carry the
+     * same fixed-container class the header pins itself with, and dropped
+     * between saved cards it would float above the logo bar offline. And
+     * once Facebook's snap pager is hidden, the body's own scroller must
+     * NOT inherit anything scroll-shaped from the site stylesheet: a
+     * mandatory scroll-snap without snap areas snaps back to the start
+     * on every drag - the reels screen felt exactly like "scrolling
+     * hoina", the next reel visible for a moment and gone. Touch itself
+     * must also always reach the scroller: a card surface that captured
+     * gestures for the dead pager eats the drag before it scrolls.
+     * The gesture rules stop at CARDS: the chrome row (tab bar, composer,
+     * stories tray) is a live widget, and blanking snap-align under it
+     * would take the tray's own horizontal snap away. Both properties
+     * are gesture-only - they never change how anything looks.
      */
     private const val RESET_SCREEN_ROOT =
         "<style id=\"__db_layout_reset\">" +
             "html,body{height:auto!important;min-height:0!important;" +
-            "overflow:visible!important}" +
+            "overflow:visible!important;scroll-snap-type:none!important;" +
+            "touch-action:manipulation!important}" +
             "[data-mcomponent=\"MScreen\"]{position:static!important;" +
             "top:auto!important;right:auto!important;bottom:auto!important;" +
             "left:auto!important;width:auto!important;height:auto!important;" +
@@ -158,7 +169,9 @@ object PageAssembly {
             "overflow:visible!important;transform:none!important}" +
             "#__db_chrome>*{position:static!important;top:auto!important;" +
             "right:auto!important;bottom:auto!important;left:auto!important;" +
-            "z-index:auto!important;transform:none!important}</style>"
+            "z-index:auto!important;transform:none!important}" +
+            "#__db_cards *{scroll-snap-align:none!important;" +
+            "touch-action:manipulation!important}</style>"
 
     /**
      * The tame half of the reset, for the fallback branches: letting the
@@ -398,6 +411,19 @@ object PageAssembly {
         return null
     }
 
+    /** Duplicate-spotter for recycled chrome: link set, else a text key. */
+    private val HREF = Regex("href=[\"']([^\"'#]+)", RegexOption.IGNORE_CASE)
+    private val TAG_STRIP = Regex("<[^>]+>", RegexOption.IGNORE_CASE)
+    private val SPACE = Regex("\\s+", RegexOption.IGNORE_CASE)
+
+    private fun chromeKey(slice: String): String {
+        val hrefs = HREF.findAll(slice).map { it.groupValues[1] }
+            .take(4).sorted().joinToString("|")
+        if (hrefs.isNotEmpty()) return "L:" + hrefs
+        val text = slice.replace(TAG_STRIP, " ").replace(SPACE, " ").trim()
+        return "T:" + text.take(120)
+    }
+
     /** The last screen opening tag before [pos] - the screen [pos] sits in. */
     private fun lastScreenTagBefore(doc: String, pos: Int): MatchResult? {
         var last: MatchResult? = null
@@ -462,12 +488,19 @@ object PageAssembly {
                 // scroller.
                 var cursor = vsOpenEndB
                 var inner = ""
+                val chromeSeen = HashSet<String>()
                 for (c in children) {
                     if (moved.size + tabs.size >= MAX_CHROME_UNITS ||
                         bytes >= MAX_CHROME_BYTES) break
                     val slice = base.substring(c.start, c.end)
                     val kind = classify(slice)
                     if (kind == STOP) break
+                    // Facebook's virtual list can hold a recycled copy of
+                    // the same chrome unit; two identical trays moved out
+                    // are exactly the user's "story er ta double asche".
+                    // The first copy moves, later twins stay hidden here.
+                    if ((kind == MOVE || kind == MOVE_TAB) &&
+                        !chromeSeen.add(chromeKey(slice))) continue
                     if (kind == MOVE || kind == MOVE_TAB) {
                         inner += base.substring(cursor, c.start)
                         cursor = c.end
