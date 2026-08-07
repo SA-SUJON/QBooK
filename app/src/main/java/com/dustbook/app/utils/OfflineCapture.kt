@@ -367,6 +367,19 @@ object OfflineCapture {
             if (low.indexOf('create room') >= 0) return true;
             if (/^(\s*home\s*|\s*reels\s*|\s*notifications\s*|\s*menu\s*|\s*profile\s*)\s*$/.test(low)) return true;
             if (/^(see more|see all|view more|show more|load more)$/i.test(low)) return true;
+            // Facebook's shortcuts/bookmarks menu (Finances, Marketplace,
+            // Groups, Memories, Saved, ...) - a grid of app-drawer tiles,
+            // each with its own small icon, so it passes the composer,
+            // tray, tab-row and empty-div checks above and gets saved as
+            // if it were a post ("Finances" + Tether wallet icon between
+            // real cards, round-14 screenshot). No permalink a real post
+            // would carry, and its own heading is one of the fixed set of
+            // shortcut menu labels Facebook uses for this row.
+            if (!c.querySelector('a[href*="/posts/"],a[href*="story_fbid"],' +
+                                 'a[href*="/videos/"],a[href*="/reel/"]') &&
+                /^(finances|marketplace|groups|memories|saved|pages|events|friends|feeds)$/i.test(low)) {
+              return true;
+            }
             // Empty div with no text and no media = spacer/divider/chrome
             var imgs = c.querySelectorAll ? c.querySelectorAll('img') : [];
             var vids = c.querySelectorAll ? c.querySelectorAll('video') : [];
