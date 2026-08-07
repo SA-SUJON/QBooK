@@ -162,6 +162,9 @@ object PageAssembly {
             "html,body{height:auto!important;min-height:0!important;" +
             "overflow:visible!important;scroll-snap-type:none!important;" +
             "touch-action:manipulation!important}" +
+            "#screen-root{position:static!important;height:auto!important;" +
+            "min-height:0!important;max-height:none!important;" +
+            "overflow:visible!important}" +
             "[data-mcomponent=\"MScreen\"]{position:static!important;" +
             "top:auto!important;right:auto!important;bottom:auto!important;" +
             "left:auto!important;width:auto!important;height:auto!important;" +
@@ -227,6 +230,9 @@ object PageAssembly {
         "<style id=\"__db_layout_reset\">" +
             "html,body{height:auto!important;min-height:0!important;" +
             "overflow:visible!important;touch-action:manipulation!important}" +
+            "#screen-root{position:static!important;height:auto!important;" +
+            "min-height:0!important;max-height:none!important;" +
+            "overflow:visible!important}" +
             "#__db_cards *{touch-action:manipulation!important}</style>"
 
     /** Screen root / feed container in m.facebook.com markup, by earliest match. */
