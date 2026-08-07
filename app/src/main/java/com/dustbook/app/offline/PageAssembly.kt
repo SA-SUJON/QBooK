@@ -226,7 +226,10 @@ object PageAssembly {
     private const val RESET_GENERAL =
         "<style id=\"__db_layout_reset\">" +
             "html,body{height:auto!important;min-height:0!important;" +
-            "overflow:visible!important}</style>"
+            "overflow:visible!important;scroll-snap-type:none!important;" +
+            "touch-action:manipulation!important}" +
+            "#__db_cards *{scroll-snap-align:none!important;" +
+            "touch-action:manipulation!important}</style>"
 
     /** Screen root / feed container in m.facebook.com markup, by earliest match. */
     private val CONTAINER = Regex(
@@ -637,16 +640,22 @@ object PageAssembly {
             }
 
             // Bare scroller: the historical sibling rule, plus the general
-            // reset - the only safe assumption without a screen root.
-            return doc.substring(0, at) + RESET_GENERAL + HIDE_OLD + holder +
+            // reset - the only safe assumption without a screen root. Snap
+            // must still be wired here: a reels document that falls into
+            // this branch (no joined screen root) previously never got
+            // reelsSnapCss at all, leaving whatever scroll-snap the stored
+            // stylesheet carried untouched - the "scroll kora jai na" bug.
+            return doc.substring(0, at) + RESET_GENERAL + HIDE_OLD +
+                (if (snap) reelsSnapCss(0) else "") + holder +
                 doc.substring(at)
         }
         BODY.find(doc)?.let { m ->
             val at = m.range.last + 1
-            return doc.substring(0, at) + RESET_GENERAL + holder +
+            return doc.substring(0, at) + RESET_GENERAL +
+                (if (snap) reelsSnapCss(0) else "") + holder +
                 doc.substring(at)
         }
-        return doc + RESET_GENERAL + holder
+        return doc + RESET_GENERAL + (if (snap) reelsSnapCss(0) else "") + holder
     }
 
     /**
