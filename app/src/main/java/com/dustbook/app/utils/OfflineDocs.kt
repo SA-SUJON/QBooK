@@ -278,8 +278,7 @@ object OfflineDocs {
                 (if (screen == "home") unmuteByDefaultScript() else "") +
                 (if (screen == "reels" || screen == "watch" || screen == "stories") {
                     "<script>" + VideoHelper.getOfflineVideoAssistScript() + "</script>"
-                } else "") +
-                (if (screen == "reels") "<script>" + reelsScrollDebugScript() + "</script>" else "")
+                } else "")
 
             // Encode once, serve many times.
             val b = html.toByteArray()
@@ -805,65 +804,6 @@ object OfflineDocs {
      * body it applies to, so the bar never gets a frame to paint in, and no
      * script has to run first.
      */
-    /**
-     * TEMPORARY DIAGNOSTIC - reels-not-scrolling investigation. Shows the
-     * actual computed overflow/height/scrollHeight values on screen so
-     * the cause can be seen on the real device. Remove once the root
-     * cause is found and fixed for real.
-     */
-    private fun reelsScrollDebugScript(): String = """
-        (function(){
-          function report() {
-            try {
-              var html = document.documentElement, body = document.body;
-              var cards = document.getElementById('__db_cards');
-              var cs = cards ? getComputedStyle(cards) : null;
-              var chs = getComputedStyle(html), cbs = getComputedStyle(body);
-              var chain = '';
-              var p = cards ? cards.parentElement : null;
-              var depth = 0;
-              while (p && depth < 12) {
-                var pcs = getComputedStyle(p);
-                chain += (p.tagName + '#' + (p.id||'') + '.' +
-                  (p.getAttribute('data-mcomponent')||'') +
-                  ' of=' + pcs.overflow + ' oy=' + pcs.overflowY +
-                  ' pos=' + pcs.position +
-                  ' h=' + p.clientHeight + ' sh=' + p.scrollHeight) + '\n';
-                p = p.parentElement;
-                depth++;
-              }
-              var box = document.createElement('div');
-              box.style.cssText = 'position:fixed;top:0;left:0;right:0;' +
-                'max-height:60vh;overflow:auto;' +
-                'z-index:999999;background:rgba(0,0,0,.9);color:#0f0;' +
-                'font:9px monospace;padding:6px;white-space:pre-wrap;' +
-                'pointer-events:auto';
-              box.textContent =
-                'html.of=' + chs.overflow + ' h=' + html.clientHeight +
-                ' sh=' + html.scrollHeight + '\n' +
-                'body.of=' + cbs.overflow + ' h=' + body.clientHeight +
-                ' sh=' + body.scrollHeight + '\n' +
-                'cards h=' + (cards ? cards.offsetHeight : 'null') +
-                ' children=' + (cards ? cards.children.length : 0) + '\n' +
-                'win.innerH=' + window.innerHeight +
-                ' scrollingEl.sh=' + (document.scrollingElement ?
-                  document.scrollingElement.scrollHeight : 'null') + '\n' +
-                '--- parent chain ---\n' + chain;
-              var old = document.getElementById('__db_scroll_debug');
-              if (old) old.remove();
-              box.id = '__db_scroll_debug';
-              document.body.appendChild(box);
-            } catch (e) {
-              console.error('scroll debug failed', e);
-            }
-          }
-          if (document.readyState === 'complete') report();
-          else window.addEventListener('load', report);
-          setTimeout(report, 1500);
-          setTimeout(report, 3500);
-        })();
-    """.trimIndent()
-
     private fun promoHideCss(): String = """
         <style id="__db_promo_hide">
         #header-notices,div[id^="header-notice"],
