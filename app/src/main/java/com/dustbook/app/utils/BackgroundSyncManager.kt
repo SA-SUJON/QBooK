@@ -82,34 +82,50 @@ object BackgroundSyncManager {
     /**
      * A phase is over only when everything IT queued is on disk.
      *
-     * This used to give up after five fixed minutes and start the next
-     * phase anyway. Each vault drains its own queue, so thirty reels of
-     * video kept downloading long after that timer fired while the posts
-     * phase had already begun to fill - which is exactly how posts and
-     * reels came to climb together on the settings counter. The order is
-     * the whole point of the pipeline, so a phase now waits on ITS OWN
-     * section by progress: the wait ends the moment that section's queue
-     * stands empty, keeps standing while files keep arriving, and only a
-     * genuinely dead queue (nothing new for three minutes straight, e.g.
-     * the connection died) lets the pipeline move on rather than hang.
+     * History of getting this wrong, in order:
+     *
+     *  1. a fixed five-minute wall clock (posts and reels climbed
+     *     together on the counter the moment reels outlasted it);
+     *  2. a three-minute "no new COMPLETED file" watchdog. That measured
+     *     files, not progress: one 30 MB reel on a 77 KB/s connection
+     *     takes six-plus minutes to finish, so the watchdog fired in the
+     *     middle of a healthy download and the posts phase began filling
+     *     while the videos were still arriving - the exact overlap the
+     *     user reported twice, with the settings screenshot to match.
+     *
+     * What "stalled" means now: no completed file, no byte of the
+     * transfer in flight, and no movement in the queue, for three
+     * consecutive minutes. A slow-but-alive download moves its byte
+     * gauge every minute, so it can sit well past three minutes itself
+     * without ever looking dead; a truly dead connection produces a read
+     * timeout inside a minute and the queue then visibly shrinks - so
+     * three silent minutes only ever happen when nothing at all is
+     * happening, and the pipeline moving on there is correct, never a
+     * frozen screen.
      */
     private fun awaitThen(section: String, next: () -> Unit) {
         AppExecutors.background.execute {
             val vault = com.dustbook.app.offline.OfflineVaults.forSection(section)
             var lastDone = -1
-            var stalledMinutes = 0
+            var lastBytes = -1L
+            var lastPending = -1
+            var silentMinutes = 0
             while (true) {
                 vault?.awaitIdle(60_000)
                 val pending = vault?.pending() ?: 0
                 val busy = vault?.isPrefetching() ?: false
                 if (pending == 0 && !busy) break
                 val done = vault?.downloaded ?: 0
-                if (done == lastDone) {
-                    stalledMinutes++
-                    if (stalledMinutes >= 3) break   // dead network: do not hang forever
-                } else {
-                    stalledMinutes = 0
+                val bytes = vault?.gaugeBytes() ?: 0L
+                if (done != lastDone || bytes != lastBytes ||
+                    pending != lastPending) {
+                    silentMinutes = 0
                     lastDone = done
+                    lastBytes = bytes
+                    lastPending = pending
+                } else {
+                    silentMinutes++
+                    if (silentMinutes >= 3) break
                 }
             }
             main.post { next() }

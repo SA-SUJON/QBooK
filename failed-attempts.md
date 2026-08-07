@@ -344,3 +344,59 @@ Every link below was reproduced in jsdom against the verbatim production scripts
 - `kotlinc` over the tree: identical fallout before/after — zero new compile errors introduced.
 
 > Session: 2026-08-07 | Tag: v5.2.5 | Tests: 940 passed, 0 failed (10 suites)
+
+---
+
+# Third Time Was Not the Charm: Phases Overlapped Again + a Scroller Regression (Aug 7, 2026, v5.2.6)
+
+**Reported (device, verbatim, two screenshots):** "post's downloading: 134, reels downloading: 4, but why? eksathe keno download hochhe ami to bolei diyechi age 10 post save Hobe tarpor posts saving stop tarpor reels download hobe" + "Facebook er nav button ba jekhan theke home feed - reels - massage - notification eshob buttons thake eigula nai keno?" + "home feed a scrolling a problem ache majhe majhe scroll hoi na. tachara shonoi thik ache pray."
+
+Both remaining defects were my own v5.2.4/v5.2.5 work, and the report
+proves honesty matters more than pride:
+
+## 1. The stall watchdog measured files, not progress
+
+v5.2.5 replaced the fixed five-minute give-up with "three minutes without a
+NEW COMPLETED file". On the user's connection (~77 KB/s, visible in their
+status bar) a single 30 MB reel takes six-plus minutes to finish. The
+watchdog fired mid-download, step 3 (posts → 300) began filling - Posts:
+134 in the screenshot - while the reel queue kept draining, Reels: 4
+creeping beside it. The phases were sequential only for connections faster
+than the user's.
+
+**Fix:** stalled now means *three fully silent minutes* - no completed
+file, no byte of the in-flight transfer (new `SectionVault.gaugeBytes`,
+sampled per minute), and no queue movement (a permanently failing URL
+shedding itself counts as alive). A slow-but-alive ten-minute reel never
+looks dead; a truly dead connection read-times-out within a minute and the
+queue visibly shrinks, so three silent minutes only ever means *nothing is
+happening*. Behaviourally proven by a branch-for-branch simulation of the
+loop: 9 minutes of one slow file never trips it; a frozen queue bails at
+minute 3; a drained queue ends the phase at once.
+
+## 2. The header fix was applied to the wrong container
+
+v5.2.5 moved the saved cards INSIDE the feed scroller to spare the header.
+That protected the header - and broke scrolling ("majhe majhe scroll hoi
+na"): the `vscroller` is Facebook's JS-driven virtual list, and a static
+block inside it is not a thing the native scroller can always handle.
+
+**Fix (and this is the final shape, both failures recorded in the file so
+neither is ever retried):** cards join the EARLIEST container again (the
+screen root on every real capture - the pre-v5.2.5 layout whose scrolling
+was fine), and what hides is now scoped **by name**: only the old
+`data-type="vscroller"` sibling (`#__db_cards ~ [data-type="vscroller"]`).
+The header and tab row keep their place, the stale scroller vanishes
+whole, and a bare-scroller document keeps its historical sibling rule.
+DOM-level proof in jsdom: holder inside MScreen; the compose-emitted
+selector matches exactly the one old scroller; the header is not in the
+hide set; the reels snap pager hides whole with the cards still outside
+it; adblock passes still cannot condemn the holder.
+
+## Proof battery
+
+- 10/10 suites green locally (948 assertions: 281 pipeline incl. the new
+  gate simulations and placement contracts, 66 feed guard).
+- `kotlinc` over the tree: no new diagnostics.
+
+> Session: 2026-08-07 | Tag: v5.2.6 | Tests: 948 passed, 0 failed (10 suites)

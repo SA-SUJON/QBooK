@@ -19,34 +19,40 @@ package com.dustbook.app.offline
  * only restores the scroll position and reports it back - a nicety whose
  * failure costs nothing.
  *
- * Placement is deterministic:
+ * Placement is deterministic and deliberately simple:
  *
- *  1. the real feed container (`data-type="vscroller"` - the element the
- *     m.facebook.com captures show) gets the cards as its FIRST child,
- *     and a stylesheet hides the block's old children, which are only
- *     grey server placeholders and stale posts nobody saved;
- *  2. if some stored document has no feed container but still has a
- *     screen root (`data-mcomponent="MScreen"` - the reels/documents use
- *     one), the cards become ITS first child and the rest of that screen
- *     hides;
- *  3. if some stored document has neither, the cards go right after
- *     <body> and nothing is hidden - content is guaranteed either way;
- *  4. a document with no body receives the cards at its end.
+ *  1. the first element carrying a container marker
+ *     (`data-mcomponent="MScreen"`, else `data-type="vscroller"` - the
+ *     elements the m.facebook.com captures show) gets the cards as its
+ *     FIRST child;
+ *  2. if some stored document has no such container, the cards go right
+ *     after <body> and nothing is hidden - content is guaranteed either
+ *     way;
+ *  3. a document with neither receives the cards at its end.
  *
- * Facebook's own header and tab bar are never touched: they live outside
- * the feed container, which is exactly why the offline page still looks
- * like the online one.
+ * What is hidden is scoped just as carefully:
  *
- * Why the feed container is ranked AHEAD of the screen root: on a
- * captured home document the MScreen element opens first and CONTAINS
- * both the pinned header (`.fixed-container.top`) and the feed scroller.
- * A single alternating regex matches the earliest tag that carries either
- * marker, which is the MScreen open tag, so the cards landed next to the
- * header and the sibling-hiding rule below then removed everything after
- * them - the header and the tab bar included. Offline, Facebook's own
- * header was simply gone and the tab row's only copy was a stray saved
- * card. Searching the two markers separately, feed container first, puts
- * the cards back where the old posts lived and leaves the header alone.
+ *  - when the cards joined the screen root (the ordinary case: the
+ *    captures open MScreen first, and it contains both the pinned header
+ *    and the feed scroller), ONLY the scroller hides, by name. The old
+ *    stories vanish while the header and tab bar keep their place, which
+ *    is exactly why the offline page looks like the online one;
+ *  - when the cards joined a bare scroller (a document with no screen
+ *    root at all), the scroller's own later children hide, as they always
+ *    did;
+ *  - a body/end fallback hides nothing.
+ *
+ * Two placements were tried in front of users and are recorded here so
+ * they are never retried:
+ *
+ *  - an ALTERNATING regex over both markers matched the screen root and
+ *    then hid EVERY following sibling - Facebook's own header was simply
+ *    gone offline and the tab row's only copy was a stray saved card;
+ *  - inserting the cards into the feed scroller instead spared the
+ *    header, but the scroller is Facebook's JS-driven virtual list: a
+ *    static block inside it broke scrolling intermittently on device
+ *    ("majhe majhe scroll hoi na"), a regression that shipped in v5.2.5
+ *    and is reverted here.
  */
 object PageAssembly {
 
@@ -72,34 +78,38 @@ object PageAssembly {
             .replace(BASE_TAG, "")
 
     /**
-     * Everything past the cards inside the same container. Those are grey
-     * server placeholders and the stale posts the stored document shipped
-     * with; the saved set replaces them wholesale, or the two would mix
-     * on screen and look broken. Scoped to the container, so the header
-     * and tab bar above it are untouched.
+     * The old scroller next to the cards, hidden whole. Used when the
+     * holder sits in the screen root: the scroller's stale stories are
+     * the only thing that must vanish, and aiming at them by name is
+     * what keeps Facebook's own header and tab bar on screen.
+     */
+    private const val HIDE_SCROLLER =
+        "<style id=\"__db_hide_old\">#__db_cards~[data-type=\"vscroller\"]" +
+            "{display:none!important}</style>"
+
+    /**
+     * Everything past the cards inside the same scroller. Kept for the
+     * documents whose only container IS the scroller: there the stale
+     * children are its siblings, exactly as before.
      */
     private const val HIDE_OLD =
         "<style id=\"__db_hide_old\">#__db_cards~*{display:none!important}</style>"
 
-    /**
-     * The feed scroller in m.facebook.com markup.
-     *
-     * The reels screen also uses `data-type="vscroller"`, but as a snap
-     * pager (class "vscroller-snap") whose geometry Facebook's own layout
-     * computes; saved reels must keep sitting in the screen root, not in
-     * that pager. The negative lookahead keeps the pager out, so only the
-     * ordinary, vertically-flowing feed scroller ever matches here.
-     */
-    private val FEED_VSCROLLER = Regex(
-        "<div\\b(?=[^>]*data-type=[\"']vscroller[\"'])" +
-            "(?![^>]*vscroller-snap)[^>]*>",
-        RegexOption.IGNORE_CASE
-    )
-
-    /** Screen root / any scroller, for documents without a feed scroller. */
+    /** Screen root / feed container in m.facebook.com markup, by earliest match. */
     private val CONTAINER = Regex(
         "<div\\b[^>]*(?:data-type=[\"']vscroller[\"']" +
             "|data-mcomponent=[\"']MScreen[\"'])[^>]*>",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Just the scroller test, for choosing which stylesheet applies. */
+    private val VSCROLLER = Regex(
+        "data-type=[\"']vscroller[\"']",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val SCREEN_ROOT = Regex(
+        "data-mcomponent=[\"']MScreen[\"']",
         RegexOption.IGNORE_CASE
     )
 
@@ -120,16 +130,17 @@ object PageAssembly {
         if (cards.isEmpty()) return doc
         val holder = holderHtml(cards)
 
-        // Feed scroller first - see the note at the class level. Only its
-        // own later children are hidden then, and the pinned header above
-        // it keeps its place, exactly as online.
-        FEED_VSCROLLER.find(doc)?.let { m ->
-            val at = m.range.last + 1
-            return doc.substring(0, at) + HIDE_OLD + holder + doc.substring(at)
-        }
         CONTAINER.find(doc)?.let { m ->
             val at = m.range.last + 1
-            return doc.substring(0, at) + HIDE_OLD + holder + doc.substring(at)
+            val joinedScreenRoot =
+                SCREEN_ROOT.containsMatchIn(m.value) &&
+                    VSCROLLER.containsMatchIn(doc.substring(at))
+            // Screen root with its own scroller inside: hide the scroller
+            // alone and leave the header untouched. Everything else keeps
+            // the historical sibling rule (a bare scroller's stale
+            // children) or hides nothing (body/end fallback below).
+            val hide = if (joinedScreenRoot) HIDE_SCROLLER else HIDE_OLD
+            return doc.substring(0, at) + hide + holder + doc.substring(at)
         }
         BODY.find(doc)?.let { m ->
             val at = m.range.last + 1

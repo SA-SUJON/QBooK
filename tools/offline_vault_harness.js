@@ -57,17 +57,32 @@ function kotlinConst(src, name) {
   return unescapeKotlin(m[1]);
 }
 
+/**
+ * Extract a `const val NAME = "..." + "..."` (concatenated literals,
+ * joined), for the hide stylesheets PageAssembly builds in two parts.
+ */
+function kotlinConstJoined(src, name) {
+  const i = src.indexOf(name + ' =');
+  if (i < 0) throw new Error(name + ' const not found');
+  const region = src.slice(i, src.indexOf('\n\n', i));
+  const parts = [...region.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]);
+  if (!parts.length) throw new Error(name + ' const pattern not found');
+  return parts.map(unescapeKotlin).join('');
+}
+
 // ------------------------------------------------- PageAssembly (verbatim)
 
 const RX = {
   SCRIPT_BLOCK: kotlinRegex(assembly, 'SCRIPT_BLOCK'),
   SCRIPT_SELF: kotlinRegex(assembly, 'SCRIPT_SELF'),
   BASE_TAG: kotlinRegex(assembly, 'BASE_TAG'),
-  FEED_VSCROLLER: kotlinRegex(assembly, 'FEED_VSCROLLER'),
   CONTAINER: kotlinRegex(assembly, 'CONTAINER'),
+  VSCROLLER: kotlinRegex(assembly, 'VSCROLLER'),
+  SCREEN_ROOT: kotlinRegex(assembly, 'SCREEN_ROOT'),
   BODY: kotlinRegex(assembly, 'BODY'),
 };
 const HIDE_OLD = kotlinConst(assembly, 'HIDE_OLD');
+const HIDE_SCROLLER = kotlinConstJoined(assembly, 'HIDE_SCROLLER');
 
 /** Mirror of PageAssembly.sanitize(). */
 function sanitize(card) {
@@ -90,19 +105,18 @@ function holderHtml(cards) {
 function compose(doc, cards) {
   if (!cards.length) return doc;
   const holder = holderHtml(cards);
-  // Feed scroller first, exactly as the Kotlin: only its later children
-  // hide, and the pinned header above it keeps its place.
-  RX.FEED_VSCROLLER.lastIndex = 0;
-  let m = RX.FEED_VSCROLLER.exec(doc);
-  if (m) {
-    const at = m.index + m[0].length;
-    return doc.slice(0, at) + HIDE_OLD + holder + doc.slice(at);
-  }
   RX.CONTAINER.lastIndex = 0;
-  m = RX.CONTAINER.exec(doc);
+  let m = RX.CONTAINER.exec(doc);
   if (m) {
     const at = m.index + m[0].length;
-    return doc.slice(0, at) + HIDE_OLD + holder + doc.slice(at);
+    RX.SCREEN_ROOT.lastIndex = 0;
+    RX.VSCROLLER.lastIndex = 0;
+    const joinedScreenRoot =
+      RX.SCREEN_ROOT.test(m[0]) && RX.VSCROLLER.test(doc.slice(at));
+    // Screen root with its own scroller: hide the scroller alone, so the
+    // pinned header stays. Everything else keeps the sibling rule.
+    const hide = joinedScreenRoot ? HIDE_SCROLLER : HIDE_OLD;
+    return doc.slice(0, at) + hide + holder + doc.slice(at);
   }
   RX.BODY.lastIndex = 0;
   m = RX.BODY.exec(doc);
@@ -211,8 +225,8 @@ function addItems(existing, incoming, limit, floor) {
 
 module.exports = {
   ROOT, KT, SRC,
-  unescapeKotlin, kotlinRegex, kotlinConst,
-  RX, HIDE_OLD, sanitize, holderHtml, compose,
+  unescapeKotlin, kotlinRegex, kotlinConst, kotlinConstJoined,
+  RX, HIDE_OLD, HIDE_SCROLLER, sanitize, holderHtml, compose,
   photoKey, isVideoUrl, isAvatar, isChrome, isComplete, addItems,
   JUNK, isJunk,
   sources: { assembly, vault, docs, docsFeed },

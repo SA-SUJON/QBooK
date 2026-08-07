@@ -610,17 +610,72 @@ console.log('\nThe pipeline runs in the documented order');
 
   // A phase only ends when its downloads are drained: the count the user
   // reads is what actually plays, never markup still waiting on media.
-  // Giving up after five fixed minutes overlapped the phases - posts and
-  // reels climbed together - so the wait is per-section, by progress.
+  // Given up wrong twice already: a fixed five-minute clock, then a
+  // watchdog that counted only COMPLETED files - one 30 MB reel at
+  // 77 KB/s takes six-plus minutes, so the watchdog fired mid-download
+  // and the phases overlapped exactly as the user's screenshots showed.
+  // Stalled now means: no completed file, no in-flight byte, no queue
+  // movement, for three consecutive minutes.
   ok('each phase waits on its OWN section vault',
      /fun awaitThen\(section: String, next: \(\) -> Unit\)/.test(bsm) &&
      /OfflineVaults\.forSection\(section\)/.test(bsm));
   ok('the fixed five-minute give-up is gone, phases cannot overlap',
      !/300_000/.test(bsm) && /awaitIdle\(60_000\)/.test(bsm));
-  ok('the wait holds while files keep landing and bails only when dead',
-     /stalledMinutes\+\+/.test(bsm) && /stalledMinutes >= 3/.test(bsm));
+  ok('life is byte-level, not file-level, so a slow reel cannot stall',
+     /gaugeBytes\(\)/.test(bsm) &&
+     /pending != lastPending/.test(bsm) &&
+     /silentMinutes\+\+/.test(bsm));
+  ok('bail needs three fully silent minutes',
+     /if \(silentMinutes >= 3\) break/.test(bsm));
   ok('a phase ends when its queue genuinely stands empty',
      /if \(pending == 0 && !busy\) break/.test(bsm));
+  {
+    const vsGauge = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+    ok('the vault exposes the in-flight byte gauge',
+       /gaugeBytes = total/.test(vsGauge) && /fun gaugeBytes\(\)/.test(vsGauge));
+  }
+
+  // Behavioural proof of the watchdog, mirrored branch-for-branch from
+  // awaitThen() against a simulated vault. MINUTES runs the loop body
+  // once per minute, as awaitIdle(60_000) would return.
+  function simulateGate(minutes) {
+    let lastDone = -1, lastBytes = -1, lastPending = -1, silent = 0;
+    let broke = null;
+    for (let m = 0; m < minutes.length; m++) {
+      const v = minutes[m];
+      if (v.pending === 0 && !v.busy) { broke = 'drained@' + m; break; }
+      if (v.done !== lastDone || v.bytes !== lastBytes ||
+          v.pending !== lastPending) {
+        silent = 0; lastDone = v.done; lastBytes = v.bytes;
+        lastPending = v.pending;
+      } else {
+        silent++;
+        if (silent >= 3) { broke = 'stalled@' + m; break; }
+      }
+    }
+    return broke;
+  }
+  // 30 MB at 77 KB/s: nine minutes of one transfer, bytes moving - the
+  // v5.2.5 watchdog broke at minute 3 here; the new one must not.
+  const slowReel = [];
+  for (let i = 0; i < 9; i++) slowReel.push(
+    { pending: 25, busy: true, done: 4, bytes: i * 3400000 + 800000 });
+  slowReel.push({ pending: 25, busy: true, done: 5, bytes: 400 });
+  ok('a nine-minute single-file download never trips the watchdog',
+     simulateGate(slowReel) === null, String(simulateGate(slowReel)));
+  // A drained queue ends the phase at once, watchdog or not.
+  ok('queue drained ends the phase immediately',
+     simulateGate([{ pending: 0, busy: false, done: 0, bytes: 0 }]) === 'drained@0');
+  // Three fully silent minutes is the only stall bail.
+  const dead = [...Array(5)].map(() => ({ pending: 12, busy: true, done: 4, bytes: 900000 }));
+  ok('a truly dead queue bails after three silent minutes',
+     simulateGate(dead) === 'stalled@3', String(simulateGate(dead)));
+  // A queue shedding permanently-failing URLs counts as alive.
+  const failing = [1, 2, 3, 4].map((i) =>
+    ({ pending: 20 - i, busy: true, done: 4, bytes: 0 }));
+  failing.push({ pending: 0, busy: false, done: 4, bytes: 0 });
+  ok('permanent failures move the phase on instead of hanging it',
+     simulateGate(failing) === 'drained@4', String(simulateGate(failing)));
   const awaits = (bsm.match(/awaitThen\(OfflineFeed\.SECTION_/g) || []).length;
   ok('the wait follows every phase', awaits >= 4, String(awaits));
 }
@@ -855,17 +910,22 @@ console.log('\nEvery saved card reaches the page');
      res.doc.getElementById('__db_hide_old') !== null &&
      res.doc.querySelector('#feed .old') !== null);
 
-  // Round-5 report: offline, Facebook's own header and tab bar were not in
-  // their place. Proven with the real regex: a captured home document opens
-  // its screen root (MScreen) BEFORE the feed scroller, and one alternating
-  // regex matched that earlier tag - so the cards landed next to the header
-  // and the sibling rule then hid the header itself. The feed scroller is
-  // now matched first, deliberately.
-  ok('the feed scroller is ranked ahead of the screen root',
-     /FEED_VSCROLLER\.find\(doc\)[\s\S]{0,220}CONTAINER\.find\(doc\)/
-       .test(assemblySrc));
-  ok('the reels snap pager can never qualify as the feed',
-     /\(\?!\[\^>\]\*vscroller-snap\)/.test(assemblySrc));
+  // Round-5/-6 reports: offline, Facebook's own header and tab row were
+  // missing from their place; then, after cards were moved INSIDE the
+  // scroller (v5.2.5), scrolling failed intermittently on device
+  // ("majhe majhe scroll hoi na"). The scroller is Facebook's JS-driven
+  // virtual list - no static block belongs inside it. The correct shape:
+  // cards join the EARLIEST container (the screen root on real captures)
+  // as its first child, and only the old scroller hides - BY NAME - so
+  // the pinned header keeps its place.
+  ok('the cards join the earliest container, never a ranked scroller-first',
+     !/FEED_VSCROLLER/.test(assemblySrc) &&
+     /CONTAINER\.find\(doc\)/.test(assemblySrc));
+  ok('the old scroller hides by name, leaving the header alone',
+     /#__db_cards~\[data-type=..vscroller/.test(assemblySrc));
+  ok('the blanket sibling rule survives only for scroller-less documents',
+     /#__db_cards~\*/.test(assemblySrc) &&
+     /joinedScreenRoot/.test(assemblySrc));
   {
     // Full captured shape: screen root containing the pinned header AND
     // the feed scroller (fixture 8 of test_feed_guard.js).
@@ -884,23 +944,38 @@ console.log('\nEvery saved card reaches the page');
       ['<div data-tracking-duration-id="n9"><span>saved post</span></div>'],
       home);
     const holder2 = placed.doc.querySelector('[data-db-cards]');
-    ok('the cards land inside the feed scroller',
+    ok('the cards join the screen root, above the header, as its first child',
        !!holder2 &&
-       holder2.parentElement.getAttribute('data-type') === 'vscroller');
-    // The sibling-hiding rule as CSS would apply it, computed here by
-    // re-running its own selector, extracted from the same constant.
-    const hidden = [...placed.doc.querySelectorAll('#__db_cards ~ *')];
-    ok("the header stays: only the scroller's old children hide",
-       hidden.length === 2 &&
-       hidden.every((el) => el.classList.contains('old')),
+       holder2.parentElement.getAttribute('data-mcomponent') === 'MScreen' &&
+       holder2.parentElement.getAttribute('data-type') !== 'vscroller');
+    // The compose-emitted rule itself, re-applied exactly as CSS would.
+    const rule = placed.doc.getElementById('__db_hide_old').textContent;
+    const sel = rule.slice(0, rule.indexOf('{'));
+    const hidden = [...placed.doc.querySelectorAll(sel)];
+    ok('the old scroller - and only it - is what hides',
+       hidden.length === 1 && hidden[0].id === 'vs',
        hidden.map((el) => el.id || el.tagName).join(','));
-    ok("the tab row next to the header is not in the hide set either",
-       !hidden.some((el) => el.querySelector &&
-         el.querySelector('[aria-label="Reels"]')));
+    ok('the header with the tab row is not in the hide set',
+       !hidden.some((el) => el.id === 'hdr') &&
+       sel.indexOf('vscroller') >= 0);
 
-    // A reels document must keep the old placement: its scroller is a snap
-    // pager, geometry computed by Facebook's layout; saved reels stay in
-    // the screen root, never inside the pager.
+    // A document whose only container is the scroller keeps the old
+    // sibling rule: its stale children hide, nothing else.
+    const placed2 = renderOffline(
+      ['<div data-tracking-duration-id="n8"><span>saved post</span></div>'],
+      '<div data-type="vscroller" id="vs2">' +
+      '<div class="old" id="so1">stale</div>' +
+      '<div class="old" id="so2">stale2</div></div>');
+    const holder3 = placed2.doc.querySelector('[data-db-cards]');
+    const hidden2 = [...placed2.doc.querySelectorAll('#__db_cards ~ *')];
+    ok('a bare-scroller document keeps the sibling hide',
+       !!holder3 &&
+       holder3.parentElement.getAttribute('data-type') === 'vscroller' &&
+       hidden2.length === 2 &&
+       hidden2.every((el) => el.classList.contains('old')));
+
+    // Reels documents land in the screen root as well, and the snap pager
+    // hides whole - never a static block inside the JS-driven pager.
     const reelsDoc =
       '<div data-mcomponent="MScreen" data-type="container" class="m">' +
       '<div data-type="vscroller" data-mcomponent="MContainer"' +
@@ -911,10 +986,13 @@ console.log('\nEvery saved card reaches the page');
       ['<div data-tracking-duration-id="r9"><span>saved reel</span></div>'],
       reelsDoc);
     const holderR = placedR.doc.querySelector('[data-db-cards]');
-    ok('reels: the snap pager is never the card home',
+    const ruleR = placedR.doc.getElementById('__db_hide_old').textContent;
+    const selR = ruleR.slice(0, ruleR.indexOf('{'));
+    const hiddenR = [...placedR.doc.querySelectorAll(selR)];
+    ok('reels: cards join the screen root, the snap pager hides whole',
        !!holderR &&
        holderR.parentElement.getAttribute('data-mcomponent') === 'MScreen' &&
-       holderR.parentElement.getAttribute('data-type') !== 'vscroller');
+       hiddenR.length === 1 && hiddenR[0].id === 'pager');
   }
 
   // Regression contrast: the OLD template-literal approach genuinely lost

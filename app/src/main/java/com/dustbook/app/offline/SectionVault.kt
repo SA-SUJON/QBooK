@@ -94,6 +94,18 @@ open class SectionVault(
     @Volatile var downloaded: Int = 0
         private set
 
+    /**
+     * Bytes of the file currently arriving, reset per file. The pipeline's
+     * stall watchdog samples this every minute: a large reel on a slow
+     * connection completes NO new file for several minutes but is plainly
+     * alive here, and zero movement here - not zero new files - is what a
+     * dead connection actually looks like.
+     */
+    @Volatile private var gaugeBytes: Long = 0L
+
+    /** Bytes pulled so far for the transfer in flight (0 between files). */
+    fun gaugeBytes(): Long = gaugeBytes
+
     fun init(context: Context) {
         appContext = context.applicationContext
         if (root != null) return
@@ -413,6 +425,7 @@ open class SectionVault(
                 else guessMime(url)
 
             var total = 0L
+            gaugeBytes = 0L
             conn.inputStream.use { inp ->
                 FileOutputStream(tmp).use { out ->
                     val buf = ByteArray(64 * 1024)
@@ -420,11 +433,13 @@ open class SectionVault(
                         val r = inp.read(buf)
                         if (r < 0) break
                         total += r
+                        gaugeBytes = total
                         if (total > MAX_ENTRY_BYTES) break
                         out.write(buf, 0, r)
                     }
                 }
             }
+            gaugeBytes = 0L
             if (total <= 0L || total > MAX_ENTRY_BYTES) {
                 tmp.delete()
                 return false
