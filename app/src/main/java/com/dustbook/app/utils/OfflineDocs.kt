@@ -819,11 +819,25 @@ object OfflineDocs {
               var cards = document.getElementById('__db_cards');
               var cs = cards ? getComputedStyle(cards) : null;
               var chs = getComputedStyle(html), cbs = getComputedStyle(body);
+              var chain = '';
+              var p = cards ? cards.parentElement : null;
+              var depth = 0;
+              while (p && depth < 12) {
+                var pcs = getComputedStyle(p);
+                chain += (p.tagName + '#' + (p.id||'') + '.' +
+                  (p.getAttribute('data-mcomponent')||'') +
+                  ' of=' + pcs.overflow + ' oy=' + pcs.overflowY +
+                  ' pos=' + pcs.position +
+                  ' h=' + p.clientHeight + ' sh=' + p.scrollHeight) + '\n';
+                p = p.parentElement;
+                depth++;
+              }
               var box = document.createElement('div');
               box.style.cssText = 'position:fixed;top:0;left:0;right:0;' +
-                'z-index:999999;background:rgba(0,0,0,.85);color:#0f0;' +
-                'font:11px monospace;padding:6px;white-space:pre-wrap;' +
-                'pointer-events:none';
+                'max-height:60vh;overflow:auto;' +
+                'z-index:999999;background:rgba(0,0,0,.9);color:#0f0;' +
+                'font:9px monospace;padding:6px;white-space:pre-wrap;' +
+                'pointer-events:auto';
               box.textContent =
                 'html.of=' + chs.overflow + ' h=' + html.clientHeight +
                 ' sh=' + html.scrollHeight + '\n' +
@@ -833,7 +847,8 @@ object OfflineDocs {
                 ' children=' + (cards ? cards.children.length : 0) + '\n' +
                 'win.innerH=' + window.innerHeight +
                 ' scrollingEl.sh=' + (document.scrollingElement ?
-                  document.scrollingElement.scrollHeight : 'null');
+                  document.scrollingElement.scrollHeight : 'null') + '\n' +
+                '--- parent chain ---\n' + chain;
               var old = document.getElementById('__db_scroll_debug');
               if (old) old.remove();
               box.id = '__db_scroll_debug';
