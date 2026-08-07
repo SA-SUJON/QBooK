@@ -357,6 +357,16 @@ open class SectionVault(
             it.next()
             if (++labels >= 2) return true
         }
+        // The shortcuts/bookmarks menu (Finances, Marketplace, Groups,
+        // Memories, Saved, ...) - an app-drawer tile grid that carries its
+        // own small icon per tile, so it clears every check above and
+        // gets saved as if it were a post ("Finances" + Tether wallet
+        // icon between real cards, round-14 screenshot). No permalink a
+        // real post would carry (already true here - the early-return
+        // above passed only when it's absent), and its own heading is
+        // one of Facebook's fixed shortcut-menu labels.
+        val heading = TRAY_TEXT_TAGS.replace(html, " ").replace(Regex("\\s+"), " ").trim()
+        if (JUNK_SHORTCUT_HEADING.matches(heading)) return true
         return false
     }
 
@@ -824,6 +834,10 @@ open class SectionVault(
             "aria-label=[\"'](?:home|reels|watch|notifications|marketplace|" +
                 "menu|profile|friends|groups|gaming|messages|messenger|" +
                 "chats|search|create)[\"']",
+            RegexOption.IGNORE_CASE)
+        internal val JUNK_SHORTCUT_HEADING = Regex(
+            "^(?:finances|marketplace|groups|memories|saved|pages|events|" +
+                "friends|feeds)$",
             RegexOption.IGNORE_CASE)
 
 
