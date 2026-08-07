@@ -905,3 +905,47 @@ Outcome branches, recorded in advance so nobody launderers history:
   f58f290 baseline.
 
 > Session: 2026-08-08 | Tag: v5.2.14 | Tests: 1118 passed, 0 failed (10 suites)
+
+# Round 15 - v5.2.15 (125) | 2026-08-08
+
+## Mandatory, retrialed - the last CSS mode, clean this time
+
+v5.2.14's device verdict (user, verbatim): "reels offline: one swipe
+fast - 2/3 ta reels eksathe scroll hoi, baki shob kichu thik ache".
+That single sentence settled two open questions at once:
+  1. scroll-snap-stop:always is INERT on this WebView - no trap (the
+     good branch of round 14's trial), and no cap either: a fast fling
+     still sails through two or three reels. It stays as reinforcement,
+     but it cannot be the answer.
+  2. "Cannot scroll at all" is gone for good while stop:always rides
+     the cards - final confirmation that the dead-scroll of v5.2.11-
+     5.2.13 was always the #screen-root clip, never the snap mode.
+     Every historical mandatory/stop verdict was measured while the
+     clip held; NONE of them count any more.
+
+proximity mathematically cannot cap a fling (it permits any rest), so
+with the user's one remaining complaint being exactly the multi-skip,
+the only remaining CSS lever is mandatory - retrialed now in honest
+isolation: the clip is fixed, the offline reels page is layout-static
+(every card's box is settled at serve time, so mandatory's re-snap-on-
+layout-shift pathology has no fuel), and the shell fallback passes
+through REELS_SNAP_CSS's twin style updated to the same mode.
+
+Outcome branches, recorded in advance (again - history is not laundered):
+  - "one swipe one reel" at every speed -> closed, permanently.
+  - "scroll e cholena" returns -> mandatory is PROVEN dead on this
+    WebView; revert to proximity+stop:always (scrollable, skips). The
+    only road after that is a custom touch-intercepting pager - which
+    the user has twice rejected as artificial, so it needs their
+    explicit consent first. CSS has nothing else.
+No other file's behaviour is touched; home feed was clean per the
+user's own report and received no change.
+
+## Proof battery
+
+- 10/10 suites green (1118 assertions; pipeline 446 + ui 79 with the
+  two mandatory pins rewritten with their reasons, not flipped blind).
+- kotlinc over the tree: identical normalized diagnostic set to the
+  17efca1 baseline.
+
+> Session: 2026-08-08 | Tag: v5.2.15 | Tests: 1118 passed, 0 failed (10 suites)

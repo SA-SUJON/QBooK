@@ -274,8 +274,7 @@ console.log('\nNothing is invented offline');
     ok('and the only snap-type declarations sit on the document itself',
        (inject.match(/scroll-snap-type/g) || []).length === 2 &&
        /html,body\{[^}]*scroll-snap-type:none!important/.test(inject) &&
-       /html,body\{scroll-snap-type:y proximity!important/.test(inject) &&
-       !/scroll-snap-type:y mandatory/.test(inject));
+       /html,body\{scroll-snap-type:y mandatory!important/.test(inject));
     // The chrome row is a LIVE widget, not a saved card: the stories
     // tray's horizontal item snapping is part of the real page and must
     // keep working offline. Our gesture rules never reach under it.
@@ -1580,18 +1579,18 @@ console.log('\nEvery saved card reaches the page');
      /scroll-snap-type:none!important/.test(assemblySrc) &&
      /touch-action:manipulation!important/.test(assemblySrc) &&
      /scroll-snap-align:none!important/.test(assemblySrc));
-  ok('and the reels page alone opts back in: proximity + isolated stop',
+  ok('and the reels page alone opts back in: mandatory, isolated trial',
      /REELS_SNAP_CSS/.test(assemblySrc) &&
-     /html,body\{scroll-snap-type:y proximity!important\}/.test(assemblySrc) &&
+     /html,body\{scroll-snap-type:y mandatory!important\}/.test(assemblySrc) &&
      /#__db_cards>\*\{scroll-snap-align:start!important/.test(assemblySrc) &&
-     // Round-14 on-device retrial (see REELS-SCROLL-NOTES.md, item 1):
-     // stop:always was never tested without the #screen-root clip also
-     // active, so the round-13 "trap" verdict was confounded. Its
-     // presence is now REQUIRED; if the device reports the trap back
-     // even now, delete the property and this assertion permanently.
+     // Round-15 (see REELS-SCROLL-NOTES.md, item 2 - the last CSS mode):
+     // v5.2.14's device verdict killed both prior states: stop:always
+     // is inert here (scrolls fine, still skips 2/3 on a fast swipe),
+     // proximity alone cannot cap a fling either. mandatory is the one
+     // mode that forces exactly one area per rest - retrialed now that
+     // the clip bug and layout-shift sources are both gone. stop:always
+     // stays as reinforcement where the engine does honour it.
      /scroll-snap-stop:always/.test(
-       require('./offline_vault_harness.js').REELS_SNAP_CSS) &&
-     !/mandatory/.test(
        require('./offline_vault_harness.js').REELS_SNAP_CSS) &&
      /if \(snap\) reelsSnapCss\(padTop \?\: 0\)/.test(assemblySrc));
   ok('a recycled twin of a moved chrome unit is never moved twice',
@@ -1925,27 +1924,28 @@ console.log('\nEvery saved card reaches the page');
          rp.window.getComputedStyle(
            rd.querySelector('[data-type="vscroller"]')).display === 'none');
 
-      // Round-14 amendment II: the verdict above is RETRACTED as
-      // confounded. Every past failure with stop:always was measured
-      // while #screen-root clipped the page to one viewport of
-      // overflow:hidden - a page that cannot scroll at all cannot show
-      // any lighter symptom, so the property never got a clean test.
-      // With the clip fixed, proximity lets a fast fling sail through
-      // two or three reels ("scroll korle 2/3 ta"), which is exactly
-      // the symptom scroll-snap-stop exists to refuse. The user has
-      // also rejected every JS post-correction as artificial, so CSS
-      // is the only honest lever left. stop:always is back, in
-      // isolation, as an on-device trial: if this device again traps
-      // the scroll with it present, remove the property and this block
-      // PROVEN this time, and a custom pager is the only road left.
+      // Round-15 amendment III: the v5.2.14 device verdict closed the
+      // stop:always question - it is INERT on this WebView (scrolls
+      // fine, still skips 2/3). What it proved instead is bigger: the
+      // old "cannot scroll at all" really was the #screen-root clip,
+      // not the snap mode - every historical mandatory/stop verdict
+      // was shot while the clip held. mandatory is the mode that
+      // guarantees one snap area per rest at any fling speed, and the
+      // user's one remaining complaint is exactly "fast swipe passes
+      // 2/3". It is trialed in isolation now: the clip is fixed and
+      // offline reels are layout-static, so mandatory's layout-shift
+      // pathology has no fuel here. If the device reports the trap
+      // back, revert to proximity+stop:always and only a custom pager
+      // remains - and that road needs the user's explicit consent,
+      // because they have rejected JS-in-gesture twice already.
       // Computed through the same hostile cascade.
       const sp2 = new JSDOM('<html><head>' + REEL_CSS + '</head><body>' +
         H.compose(reelDoc, [savedReel], true) + '</body></html>');
       const sd2 = sp2.window.document;
       const csBody2 = sp2.window.getComputedStyle(sd2.body);
-      ok('reels opt back into snap, the trap-free kind: proximity',
-         /proximity/.test(csBody2.scrollSnapType) &&
-         !/mandatory/.test(sp2.window.getComputedStyle(sd2.body)
+      ok('reels opt back into snap, the one-area-per-rest kind: mandatory',
+         /mandatory/.test(csBody2.scrollSnapType) &&
+         !/proximity/.test(sp2.window.getComputedStyle(sd2.body)
            .scrollSnapType),
          csBody2.scrollSnapType);
       const csReel = sp2.window.getComputedStyle(

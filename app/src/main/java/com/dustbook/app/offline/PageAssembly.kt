@@ -226,12 +226,29 @@ object PageAssembly {
      *
      *    What remains is the one property CSS built exactly for this:
      *    scroll-snap-stop:always refuses a fling passage THROUGH a reel
-     *    - native, instant, no animation after the fact. Re-trialed
-     *    here in isolation, with the clip long gone. If on this
-     *    WebView the old "cannot scroll at all" trap RETURNS even in
-     *    isolation, the property is dead for good on this device and
-     *    must be removed permanently (record that in failed-attempts.md;
-     *    the alternative then is a custom pager, not CSS).
+     *    - native, instant, no animation after the fact. Re-trialed in
+     *    v5.2.14, in isolation, with the clip long gone.
+     *
+     *    Device verdict on v5.2.14 (user, verbatim): scroll works - the
+     *    trap is gone for good - but "one swipe fast - 2/3 ta reels
+     *    eksathe scroll hoi". So stop:always is PROVEN INERT on this
+     *    WebView: it neither traps nor caps. With it answerless, CSS
+     *    has exactly one lever left, and it is this one.
+     *
+     *  Round 15: mandatory, retrialed in isolation (REELS-SCROLL-NOTES
+     *    item 2 - the last CSS mode). The v5.2.11 "user could not scroll
+     *    at all" verdict on mandatory was itself measured WITH the
+     *    #screen-root clip active - never a clean test either. Now the
+     *    clip is gone and the offline reels page is fully static (every
+     *    reel's box is settled at serve time; nothing re-flows), which
+     *    removes mandatory's one pathology - re-snapping at every
+     *    layout shift mid-drag. Outcome branches, in advance:
+     *      - One swipe = one reel at every speed -> closed, for good.
+     *      - "Scroll e cholena" returns -> mandatory is PROVEN dead on
+     *        this WebView; revert to proximity+stop:always (scrolling
+     *        but skipping) and the only road left is a custom pager -
+     *        which the user has rejected as artificial, so that road
+     *        requires their explicit consent first.
      *
      * As before: every saved card is one snap area aligned to its start,
      * card descendants keep snap-align:none from the reset, and
@@ -241,7 +258,7 @@ object PageAssembly {
      */
     private const val REELS_SNAP_CSS =
         "<style id=\"__db_reels_snap\">" +
-            "html,body{scroll-snap-type:y proximity!important}" +
+            "html,body{scroll-snap-type:y mandatory!important}" +
             "#__db_cards>*{scroll-snap-align:start!important;" +
             "scroll-snap-stop:always!important;" +
             "scroll-snap-margin-top:__PAD__px!important}</style>"

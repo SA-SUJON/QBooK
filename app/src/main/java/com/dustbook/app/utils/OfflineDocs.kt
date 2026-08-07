@@ -456,13 +456,14 @@ object OfflineDocs {
             "<style>body{margin:0;background:#18191a;color:#e4e6eb;" +
             "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
             "sans-serif}</style>" + promoHideCss() +
-            // The shell is ours, so reels paging is stated directly:
-            // proximity settles at a reel when slowing down; stop:always
-            // was removed again - it belongs to the trap family that
-            // kept drags returning to the current reel (round 13).
+            // The shell is ours, so reels paging is stated directly and
+            // must match REELS_SNAP_CSS: mandatory since round 15, the
+            // isolated retrial after proximity was proven unable to cap
+            // a fast fling and stop:always proven inert on this WebView
+            // (v5.2.14 device report: scrolls fine, still skips 2/3).
             (if (screen == "reels") {
                 "<style id=\"__db_reels_snap\">" +
-                "html,body{scroll-snap-type:y proximity}" +
+                "html,body{scroll-snap-type:y mandatory}" +
                 "#__db_cards>*{scroll-snap-align:start}</style>"
             } else "") +
             "</head><body>" + PageAssembly.holderHtml(use) +
