@@ -45,10 +45,13 @@ package com.dustbook.app.offline
  *     scroller hidden and the content in normal flow, html/body/MScreen
  *     must behave like an ordinary page - and they do, by !important, no
  *     matter what rules the stored stylesheet carries;
- *  5. the fixed header stays fixed, exactly as online. Facebook offsets
- *     its first scroller child by the header's own height (the margin
- *     every capture shows); that same number pads our first in-flow
- *     block, so nothing slips underneath it.
+ *  5. the fixed header stays fixed, exactly as online. Facebook stamps
+ *     each virtual child an ABSOLUTE y as its margin (composer at 104,
+ *     tray at 160 = 104 + 56). Stripped and rebuilt as relative gaps
+ *     (own offset - previous offset - previous height), those same
+ *     numbers place the moved chrome EXACTLY where the online layout
+ *     has it, down to the pixel - no estimated padding, no dead band,
+ *     no overlap with the header.
  *
  * The junk decisions in step 3 reuse SectionVault's own signatures
  * verbatim (ad mark, tab-row labels, story links) - one definition, no
@@ -137,6 +140,12 @@ object PageAssembly {
      * declaration is !important so it wins against whatever the stored
      * stylesheet says about these elements; failing open would mean a page
      * that shows only its first screenful of saved posts.
+     *
+     * The last rule is for moved chrome: a moved unit rejoins normal flow
+     * COMPLETELY. The floating tab row can carry the same fixed-container
+     * class the header pins itself with; dropped between saved cards it
+     * would float above the logo bar offline, which is its own kind of
+     * misplaced chrome.
      */
     private const val RESET_SCREEN_ROOT =
         "<style id=\"__db_layout_reset\">" +
@@ -146,7 +155,10 @@ object PageAssembly {
             "top:auto!important;right:auto!important;bottom:auto!important;" +
             "left:auto!important;width:auto!important;height:auto!important;" +
             "min-height:0!important;max-height:none!important;" +
-            "overflow:visible!important;transform:none!important}</style>"
+            "overflow:visible!important;transform:none!important}" +
+            "#__db_chrome>*{position:static!important;top:auto!important;" +
+            "right:auto!important;bottom:auto!important;left:auto!important;" +
+            "z-index:auto!important;transform:none!important}</style>"
 
     /**
      * The tame half of the reset, for the fallback branches: letting the
@@ -223,9 +235,28 @@ object PageAssembly {
      * the identity attributes OfflineCapture.idOf() reads. Anything without
      * one - the composer, the stories tray - is chrome worth moving out.
      */
-    private val POST_SIG = Regex(
-        "story_fbid|/posts/|/videos/|/reel/|data-tracking-duration-id" +
-            "|data-video-id|data-successful-render-id|data-comp-id",
+    /**
+     * "Content begins here", proven by URLs ALONE.
+     *
+     * A stale post below the chrome always carries its own permalink
+     * (story_fbid, /posts/, /videos/, /reel/). Nothing else may stop the
+     * chrome walk: the generic tracking attributes Facebook stamps on
+     * every rendered container - data-tracking-duration-id,
+     * data-successful-render-id, data-comp-id, data-video-id - used to be
+     * in this signature, so a composer or stories tray carrying them read
+     * as a "post". One such attribute on the FIRST chrome child stopped
+     * the walk before it began, and the offline home lost its tab row,
+     * its composer and its stories tray in one stroke - the round-9
+     * report, proven in jsdom against the verbatim shipped code.
+     */
+    private val POST_LINK = Regex(
+        "story_fbid|/posts/|/videos/|/reel/",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** A unit's own declared height, stamped next to its virtual margin. */
+    private val HEIGHT = Regex(
+        "height\\s*:\\s*(\\d+)px",
         RegexOption.IGNORE_CASE
     )
 
@@ -291,19 +322,27 @@ object PageAssembly {
         // Facebook's floating tab row. On this device the tab row is not
         // part of the header at all - it floats INSIDE the scroller as a
         // badge-carrying unit, which is why hiding the scroller removed
-        // navigation itself. It is chrome, and it moves out with the rest;
-        // the signature is SectionVault's own so page and store cannot
-        // disagree on what the row is. (The row must still never be saved
-        // as a CARD - that filter stays in the vault, unchanged.)
-        val hasStoryLink = SectionVault.JUNK_STORY_LINK.containsMatchIn(slice)
+        // navigation itself.
+        //
+        // The row is decided by two or more EXACT navigation labels
+        // (Home, Friends, Chats, Reels, Notifications, Marketplace) and
+        // by NOTHING else. Round 8 also demanded "no story link" - but
+        // the real row is anchors, and /reel/ sits right there in it, so
+        // that excuse refused the row and the post signature below then
+        // stopped the whole walk: row, composer and tray all stayed
+        // hidden (the round-9 screenshot report). The story-link guard
+        // stays exactly one place: INSIDE the vault, where mistaking a
+        // real post for junk would trash saved content. Here the greater
+        // evil is losing navigation, and no post carries two exact nav
+        // labels. (The row must still never be saved as a CARD - that
+        // vault filter is unchanged.)
         var labels = 0
         val it = SectionVault.JUNK_TAB_LABEL.findAll(slice).iterator()
         while (it.hasNext()) {
             it.next()
-            if (++labels >= 2) break
+            if (++labels >= 2) return MOVE_TAB
         }
-        if (labels >= 2 && !hasStoryLink) return MOVE_TAB
-        if (POST_SIG.containsMatchIn(slice)) return STOP
+        if (POST_LINK.containsMatchIn(slice)) return STOP
         return MOVE
     }
 
@@ -317,6 +356,30 @@ object PageAssembly {
         val tag = FIRST_TAG.find(slice) ?: return slice
         val stripped = tag.value.replace(MARGIN_STRIP, "")
         return stripped + slice.substring(tag.value.length)
+    }
+
+    /** The absolute y Facebook stamped on THIS virtual child, if any. */
+    private fun ownMargin(slice: String): Int? {
+        val tag = FIRST_TAG.find(slice) ?: return null
+        return MARGIN.find(tag.value)?.groupValues?.get(1)?.toIntOrNull()
+    }
+
+    /** The child's own declared height, stamped next to the margin. */
+    private fun ownHeight(slice: String): Int? {
+        val tag = FIRST_TAG.find(slice) ?: return null
+        return HEIGHT.find(tag.value)?.groupValues?.get(1)?.toIntOrNull()
+    }
+
+    /** Give a moved unit back one exact gap, on its own opening tag. */
+    private fun withMargin(unit: String, gapPx: Int): String {
+        val tag = FIRST_TAG.find(unit) ?: return unit
+        val open = tag.value
+        val newOpen = if (open.contains("style=\"")) {
+            open.replaceFirst("style=\"", "style=\"margin-top:${gapPx}px;")
+        } else {
+            open.dropLast(1) + " style=\"margin-top:${gapPx}px\">"
+        }
+        return newOpen + unit.substring(open.length)
     }
 
     /**
@@ -389,9 +452,8 @@ object PageAssembly {
                 val vsOpenEndB = vsOpenEnd + shift
 
                 val children = topLevelChildren(base, vsOpenEndB)
-                val moved = ArrayList<String>()
-                val tabs = ArrayList<String>()
-                val offset: Int? = stolenOffset(base, children)
+                val moved = ArrayList<Triple<String, Int?, Int?>>()
+                val tabs = ArrayList<Triple<String, Int?, Int?>>()
                 var bytes = 0
 
                 // Rebuild the scroller with the moved units excised. A
@@ -409,20 +471,44 @@ object PageAssembly {
                     if (kind == MOVE || kind == MOVE_TAB) {
                         inner += base.substring(cursor, c.start)
                         cursor = c.end
-                        val stripped = stripVirtualMargin(slice)
-                        if (kind == MOVE_TAB) tabs.add(stripped)
-                        else moved.add(stripped)
+                        // Triple: unit without its virtual margin, the
+                        // absolute offset it carried, its declared height.
+                        val entry = Triple(stripVirtualMargin(slice),
+                            ownMargin(slice), ownHeight(slice))
+                        if (kind == MOVE_TAB) tabs.add(entry)
+                        else moved.add(entry)
                         bytes += slice.length
                     }
                     // LEAVE: junk stays hidden with the scroller it belongs to.
                 }
 
-                val pad = if (offset != null && offset > 0) "${offset}px" else null
+                // Facebook's margins are ABSOLUTE y offsets in the virtual
+                // list (composer at 104, tray at 160 = 104 + 56), useless
+                // as-is in normal flow. Turned into gaps they rebuild the
+                // online layout exactly, with Facebook's own numbers:
+                // each unit keeps (own offset - previous offset -
+                // previous height) above itself, and the row lands under
+                // the pinned header at Facebook's own first offset.
+                val seq = tabs + moved
+                val padTop = seq.firstOrNull()?.second ?: stolenOffset(base, children)
+                val pad = if (padTop != null && padTop > 0) "${padTop}px" else null
+                val parts = ArrayList<String>(seq.size)
+                for (i in seq.indices) {
+                    val own = seq[i].second
+                    val gap = if (i == 0 || own == null) 0
+                        else {
+                            val prev = seq[i - 1]
+                            if (prev.second == null) 0
+                            else maxOf(0, own - prev.second!! - (prev.third ?: 0))
+                        }
+                    parts.add(if (gap > 0) withMargin(seq[i].first, gap)
+                        else seq[i].first)
+                }
                 val padCss = "<style id=\"__db_top_pad\">" +
-                    (if (moved.isNotEmpty() || tabs.isNotEmpty()) "#__db_chrome" else "#__db_cards") +
+                    (if (seq.isNotEmpty()) "#__db_chrome" else "#__db_cards") +
                     "{padding-top:" + (pad ?: "0") + "!important}</style>"
                 // The tab row is navigation: before the composer and tray.
-                val chromeBody = (tabs + moved).joinToString("\n")
+                val chromeBody = parts.joinToString("\n")
                 val chrome =
                     if (chromeBody.isEmpty()) ""
                     else "<div id=\"__db_chrome\"" +

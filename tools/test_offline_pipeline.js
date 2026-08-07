@@ -1320,12 +1320,20 @@ console.log('\nEvery saved card reaches the page');
      /tabs \+ moved/.test(assemblySrc));
   ok('junk decisions reuse the vault signatures, one definition no drift',
      /SectionVault\.JUNK_AD_TAG/.test(assemblySrc) &&
-     /SectionVault\.JUNK_TAB_LABEL/.test(assemblySrc) &&
-     /SectionVault\.JUNK_STORY_LINK/.test(assemblySrc));
-  ok('the first real post stops the chrome walk, bounds and all',
-     /POST_SIG/.test(assemblySrc) &&
+     /SectionVault\.JUNK_TAB_LABEL/.test(assemblySrc));
+  ok('the story-link guard now guards STORAGE only, never navigation',
+     !/SectionVault\.JUNK_STORY_LINK/.test(assemblySrc));
+  ok('only a real post URL stops the chrome walk, bounds and all',
+     /private val POST_LINK = Regex/.test(assemblySrc) &&
+     !/POST_SIG/.test(assemblySrc) &&
      /MAX_CHROME_UNITS = 6/.test(assemblySrc) &&
      /MAX_CHROME_BYTES = 300 \* 1024/.test(assemblySrc));
+  ok('absolute virtual offsets become relative gaps with FB own numbers',
+     /fun ownMargin/.test(assemblySrc) && /fun ownHeight/.test(assemblySrc) &&
+     /fun withMargin/.test(assemblySrc) &&
+     /Triple\(stripVirtualMargin/.test(assemblySrc));
+  ok('moved chrome is forced fully in-flow, fixed class notwithstanding',
+     /#__db_chrome>\*\{position:static!important/.test(assemblySrc));
   ok('the pinned header keeps its fixed place via a stolen offset',
      /fun stolenOffset/.test(assemblySrc) && /MARGIN/.test(assemblySrc) &&
      /__db_top_pad/.test(assemblySrc) && /stripVirtualMargin/.test(assemblySrc));
@@ -1351,19 +1359,28 @@ console.log('\nEvery saved card reaches the page');
       'position:absolute;top:0;bottom:0;left:0;right:0;transform:translateZ(0)}' +
       '.fixed-container{position:fixed;top:0;left:0;right:0;z-index:300}' +
       '.vscroller{overflow-y:auto;height:100%}</style>';
+    // ROUND-9 realism: the tab row is ANCHORS (home.php, friends, reel/,
+    // notifications, marketplace) and Facebook stamps its tracking ids on
+    // plain chrome containers too. Margins are the virtual list absolute
+    // y offsets: bar 0..52, tab row 52..104, composer 104..160, tray 160..
     const tabRow =
-      '<div data-mcomponent="MContainer" class="m fixed-container top" id="tabrow">' +
-      '<div role="button" aria-label="Home">15+</div>' +
-      '<div role="button" aria-label="Friends">15+</div>' +
-      '<div role="button" aria-label="Chats">4</div>' +
-      '<div role="button" aria-label="Reels">15+</div>' +
-      '<div role="button" aria-label="Notifications">9</div></div>';
+      '<div data-mcomponent="MContainer" class="m fixed-container top" id="tabrow"' +
+      ' data-comp-id="12"' +
+      ' style="margin-top:52px; height:52px; z-index:0; width:360px;">' +
+      '<a href="https://m.facebook.com/home.php" role="button" aria-label="Home">H</a>' +
+      '<a href="https://m.facebook.com/friends/" role="button" aria-label="Friends">15+</a>' +
+      '<a href="https://m.facebook.com/messages/" role="button" aria-label="Chats">4</a>' +
+      '<a href="https://m.facebook.com/reel/" role="button" aria-label="Reels">15+</a>' +
+      '<a href="https://m.facebook.com/notifications/" role="button" aria-label="Notifications">9</a>' +
+      '<a href="https://m.facebook.com/marketplace/" role="button" aria-label="Marketplace">M</a>' +
+      '</div>';
     const composer =
       '<div data-mcomponent="MContainer" id="composer"' +
+      ' data-successful-render-id="88" data-tracking-duration-id="3"' +
       ' style="margin-top:104px; height:56px; z-index:0; width:360px;">' +
       '<div role="textbox">What\u2019s on your mind?</div></div>';
     const tray =
-      '<div data-mcomponent="MContainer" id="tray" class="m"' +
+      '<div data-mcomponent="MContainer" id="tray" class="m" data-comp-id="44"' +
       ' style="margin-top:160px; height:232px; z-index:0; width:360px;">' +
       '<a href="https://m.facebook.com/stories/111">Create story</a>' +
       '<a href="https://m.facebook.com/stories/222">Your Story</a></div>';
@@ -1444,12 +1461,61 @@ console.log('\nEvery saved card reaches the page');
     ok('nothing moved twice', page.match(/Create story/g).length === 1 &&
        page.match(/aria-label="Notifications"/g).length === 1);
 
-    ok('the chrome carries the stolen header offset (104px)',
-       /padding-top\s*:\s*104px/.test(chrome.getAttribute('style') || '') &&
-       /#__db_chrome\{padding-top:104px/.test(page));
-    ok('moved units lost their virtualisation margins only',
-       !/margin-top/i.test(chrome.querySelector('#composer').getAttribute('style')) &&
-       /height\s*:\s*232px/.test(chrome.querySelector('#tray').getAttribute('style')));
+    // The offline page now lays out like the online screenshot, computed
+    // through the real cascade. FB absolute offsets: bar 52, row 52..104,
+    // composer 104..160, tray 160.. - rebuilt as padding + zeroed gaps.
+    const csChrome = dom2.window.getComputedStyle(chrome);
+    const csTab = dom2.window.getComputedStyle(pd.getElementById('tabrow'));
+    const csComp = dom2.window.getComputedStyle(pd.getElementById('composer'));
+    const csTray = dom2.window.getComputedStyle(pd.getElementById('tray'));
+    ok('chrome pads by the first unit own offset (52 = the fixed bar height)',
+       csChrome.paddingTop === '52px', csChrome.paddingTop);
+    ok('composer gap = 104 - 52(row offset) - 52(row height) = 0',
+       parseFloat(csComp.marginTop) === 0, csComp.marginTop);
+    ok('tray gap = 160 - 104 - 56 = 0',
+       parseFloat(csTray.marginTop) === 0, csTray.marginTop);
+    ok('virtual margins are stripped from every moved unit opening tag',
+       !/margin-top/i.test(pd.getElementById('tabrow').getAttribute('style')) &&
+       !/margin-top/i.test(pd.getElementById('composer').getAttribute('style')) &&
+       !/margin-top/i.test(pd.getElementById('tray').getAttribute('style')));
+    ok('moved units keep Facebook own inline heights',
+       csTab.height === '52px' && csComp.height === '56px' &&
+       csTray.height === '232px');
+    ok('the moved tab row computes in-flow despite its fixed-container class',
+       csTab.position === 'static' && csTab.transform === 'none' &&
+       csTab.top === 'auto', csTab.position);
+
+    // Contrast: the SHIPPED v5.2.8 rule on this exact document. Anchors
+    // carrying /reel/ made the story-link excuse refuse the row, and the
+    // old post signature - data-comp-id and friends included - stopped at
+    // the very first child: all three pieces stayed hidden, precisely the
+    // round-9 screenshot. Simulated with the shipped rule, verbatim.
+    const LABEL = /aria-label=["'](?:home|reels|watch|notifications|marketplace|menu|profile|friends|groups|gaming|messages|messenger|chats|search|create)["']/gi;
+    const STORY = /story_fbid|\/posts\/|\/videos\/|\/reel\//i;
+    const OLDSIG = /story_fbid|\/posts\/|\/videos\/|\/reel\/|data-tracking-duration-id|data-video-id|data-successful-render-id|data-comp-id/i;
+    const classifyV528 = (slice) => {
+      LABEL.lastIndex = 0;
+      let labels = 0;
+      while (LABEL.exec(slice) !== null) { if (++labels >= 2) break; }
+      STORY.lastIndex = 0;
+      if (labels >= 2 && !STORY.test(slice)) return 3;
+      OLDSIG.lastIndex = 0;
+      if (OLDSIG.test(slice)) return 2;
+      return 0;
+    };
+    ok('contrast: the v5.2.8 rule really did stop at the tab row itself',
+       classifyV528(pd.getElementById('tabrow').outerHTML) === 2 &&
+       classifyV528(pd.getElementById('composer').outerHTML) === 2 &&
+       classifyV528(pd.getElementById('tray').outerHTML) === 2);
+    ok('the fixed rule walks tab row, composer, tray and stops at the post',
+       H.classify(fixtureFor('tabrow')) === 3 &&
+       H.classify(fixtureFor('composer')) === 0 &&
+       H.classify(fixtureFor('tray')) === 0 &&
+       H.classify(fixtureFor('stale1')) === 2);
+    function fixtureFor(id) {
+      return ({ tabrow: tabRow, composer: composer, tray: tray,
+               stale1: stalePost })[id];
+    }
 
     // Scroll proof under the hostile cascade.
     const csB = dom2.window.getComputedStyle(B);
@@ -1481,6 +1547,78 @@ console.log('\nEvery saved card reaches the page');
     ok('contrast: v5.2.7 parked the cards before the header',
        (ldoc.getElementById('__db_cards')
          .compareDocumentPosition(ldoc.getElementById('hdr')) & 4) !== 0);
+
+    // VARIANT SWEEP: whatever the device's flavour of the same home
+    // document is, the same three pieces come out. (Round-9 report
+    // proved guessing one shape is not enough.)
+    const variantDoc = (children) =>
+      '<div data-mcomponent="MScreen" data-type="container" class="m bg-s2">' +
+      '<div class="m fixed-container top" id="hdrV">bar</div>' +
+      '<div data-type="vscroller" class="m vscroller">' + children +
+      '</div></div>';
+    const btnRowNoMargin =
+      '<div data-mcomponent="MContainer" class="m fixed-container top" id="tabrow">' +
+      '<div role="button" aria-label="Home">15+</div>' +
+      '<div role="button" aria-label="Reels">15+</div></div>';
+    const linkRowNoMargin =
+      '<div data-mcomponent="MContainer" class="m fixed-container top" id="tabrow">' +
+      '<a href="/home.php" role="button" aria-label="Home">H</a>' +
+      '<a href="/reel/" role="button" aria-label="Reels">15+</a></div>';
+    const promoUnit =
+      '<div data-mcomponent="MContainer" id="rooms"' +
+      ' style="margin-top:400px; height:70px;"><span>Rooms</span></div>';
+    const variantRun = (children) => {
+      const vp = new JSDOM('<html><head>' + hostile + '</head><body>' +
+        H.compose(variantDoc(children), savedCards) +
+        '</body></html>', { url: 'https://m.facebook.com/' });
+      const vd = vp.window.document;
+      return { d: vd, w: vp.window,
+               chrome: vd.getElementById('__db_chrome'),
+               vs: vd.querySelector('[data-type="vscroller"]') };
+    };
+    {
+      const v = variantRun(btnRowNoMargin + composer + tray + stalePost);
+      ok('variant buttons/no-margins: the three pieces move out, nav first',
+         v.chrome.firstElementChild.id === 'tabrow' &&
+         !!v.chrome.querySelector('#composer') &&
+         !!v.chrome.querySelector('#tray') &&
+         !v.chrome.querySelector('#stale1'));
+      ok('variant buttons/no-margins: stale scroller hidden',
+         v.w.getComputedStyle(v.vs).display === 'none');
+    }
+    {
+      const v = variantRun(linkRowNoMargin + composer + tray + stalePost);
+      ok('variant anchors/no-margins: row with /reel/ href still moves out',
+         !!v.chrome.querySelector('#tabrow') &&
+         !!v.chrome.querySelector('#composer'));
+      ok('variant anchors/no-margins: pad falls to the first margin carrier',
+         v.w.getComputedStyle(v.chrome).paddingTop === '104px');
+    }
+    {
+      const v = variantRun(btnRowNoMargin + composer + tray + promoUnit + stalePost);
+      ok('variant promo banner: it moves out too, the post still stops it',
+         !!v.chrome.querySelector('#rooms') &&
+         !v.chrome.querySelector('#stale1'));
+    }
+    {
+      const v = variantRun(composer + tray + stalePost);
+      ok('variant no tab row: composer leads with its own offset',
+         v.chrome.firstElementChild.id === 'composer' &&
+         v.w.getComputedStyle(v.chrome).paddingTop === '104px');
+    }
+    {
+      const adUnit = '<div data-db-ad="1" id="ad1"><span>Sponsored</span></div>';
+      const v = variantRun(btnRowNoMargin + composer + tray + adUnit + stalePost);
+      ok('variant ad between chrome and posts: left hidden inside',
+         !v.chrome.querySelector('#ad1') &&
+         !!v.d.querySelector('[data-type="vscroller"] #ad1'));
+    }
+    {
+      const v = variantRun('');
+      ok('variant empty scroller: saved cards still served, no chrome at all',
+         !!v.d.getElementById('__db_cards') &&
+         v.d.querySelectorAll('#__db_chrome').length === 0);
+    }
 
     // A plain single-screen document still composes correctly.
     const single =
@@ -1524,7 +1662,8 @@ console.log('\nEvery saved card reaches the page');
       '<div data-mcomponent="MScreen" data-type="container" class="m">' +
       '<div data-type="vscroller" data-mcomponent="MContainer"' +
       ' class="m vscroller vscroller-snap" id="pager">' +
-      '<div data-video-id="v1" data-mcomponent="MContainer" class="old">old reel</div>' +
+      '<div data-video-id="v1" data-mcomponent="MContainer" class="old">' +
+      '<a href="https://m.facebook.com/reel/77">old reel</a></div>' +
       '</div></div>';
     const placedR = renderOffline(
       ['<div data-tracking-duration-id="r9"><span>saved reel</span></div>'],

@@ -526,3 +526,66 @@ one vault fetching.
 - `kotlinc` over the tree: identical diagnostic classes to the baseline.
 
 > Session: 2026-08-07 | Tag: v5.2.8 | Tests: 1057 passed, 0 failed (10 suites)
+
+# Round 9 - v5.2.9: nav buttons, composer and stories tray missing offline (the fixture lied, not the idea)
+
+Reported with the ONLINE home screenshot as reference: offline home
+showed saved posts but nothing above them - no Home/Friends/Chats/
+Reels/Notifications/Marketplace row, no "What's on your mind?", no
+stories. Verbatim: "screenshot ta dekho ... just eita fix korlei hoye
+jabe shob fix."
+
+## The proof, before any fix
+
+The round-8 fixture had made the tab row out of BUTTONS with no hrefs
+and left Facebook's tracking attributes off the chrome units. Against
+markup shaped the way m.facebook.com actually serves it - the tab row
+is ANCHORS (home.php, friends, messages, /reel/, notifications,
+marketplace) and data-comp-id / data-successful-render-id /
+data-tracking-duration-id ride on plain containers - the SHIPPED v5.2.8
+classify stopped at the very first child:
+
+  tabRow   -> STOP  ("/reel/" href killed the story-link exception,
+                      then matched the post signature itself)
+  composer -> STOP  (data-successful-render-id etc.)
+  tray     -> STOP  (data-comp-id)
+
+So the chrome walk ended before it began: row, composer and tray all
+stayed hidden with the scroller. Reproduced 100% in jsdom against the
+verbatim production mirror BEFORE writing the fix.
+
+## The fix, three parts
+
+1. The tab row is decided by two or more EXACT navigation labels and
+   by nothing else - the real row carries /reel/ right inside it, so a
+   story-link excuse here loses navigation itself. The story-link guard
+   stays exactly one place: inside the vault, where it protects real
+   posts from being trashed.
+2. "Content begins here" is proven by post URLs alone (story_fbid,
+   /posts/, /videos/, /reel/). The generic tracking attributes are gone
+   from the stop signature: Facebook stamps them on the composer and
+   the tray as happily as on posts.
+3. Placement now uses Facebook's own geometry: the virtual-list margins
+   are ABSOLUTE y offsets (bar 52, row 52..104, composer 104..160,
+   tray 160..) - rebuilt as relative gaps (own offset - previous
+   offset - previous height) the offline page reproduces the online
+   layout to the pixel, computed through the real CSS cascade. Moved
+   chrome is also forced fully in-flow (#__db_chrome>* position:static
+   !important): the tab row shares the header's fixed-container class
+   and would otherwise float over the logo bar.
+
+## Proof battery
+
+- jsdom device-shape fixture, now with anchors + tracking attributes +
+  FB offsets: all three pieces move out, computed paddingTop 52px,
+  computed gaps 0/0, heights kept, position:static through the cascade.
+  Contrast against the verbatim v5.2.8 rule on the same document:
+  STOP, STOP, STOP - the bug was real.
+- 10/10 suites green locally (1074 assertions: 383 pipeline).
+- kotlinc over the tree: identical diagnostic classes to the baseline.
+- Harness lesson reapplied twice this round: quoted prose inside an
+  extracted const region corrupts the extractor (mirror-only failure),
+  and over-escaped Kotlin for one new regex produced a mirror-only null
+  - mirror/test divergence means suspect the extractor first.
+
+> Session: 2026-08-07 | Tag: v5.2.9 | Tests: 1074 passed, 0 failed (10 suites)

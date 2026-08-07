@@ -88,7 +88,8 @@ const RX = {
   FIRST_TAG: kotlinRegex(assembly, 'FIRST_TAG'),
   MARGIN: kotlinRegex(assembly, 'MARGIN'),
   MARGIN_STRIP: kotlinRegex(assembly, 'MARGIN_STRIP'),
-  POST_SIG: kotlinRegex(assembly, 'POST_SIG'),
+  POST_LINK: kotlinRegex(assembly, 'POST_LINK'),
+  HEIGHT: kotlinRegex(assembly, 'HEIGHT'),
 };
 const HIDE_OLD = kotlinConst(assembly, 'HIDE_OLD');
 const HIDE_SCREEN_ROOT = kotlinConstJoined(assembly, 'HIDE_SCREEN_ROOT');
@@ -150,17 +151,16 @@ const MOVE = 0, LEAVE = 1, STOP = 2, MOVE_TAB = 3;
 /** Mirror of PageAssembly.classify(), using the vault's own signatures. */
 function classify(slice) {
   if (slice.toLowerCase().includes(JUNK.AD_TAG.toLowerCase())) return LEAVE;
-  // The floating tab row is CHROME on this device - it moves out (before
-  // the composer and tray, navigation first) rather than hiding with the
-  // scroller. The vault's own filter against saving it as a card stays.
-  const hasStoryLink = test0(JUNK.STORY_LINK, slice);
+  // The floating tab row is decided by two or more EXACT navigation
+  // labels and by nothing else - the real row is anchors and carries
+  // /reel/ right inside it, so a story-link excuse here loses navigation
+  // itself (the round-9 report). The vault keeps that guard for storage.
   let labels = 0;
   JUNK.TAB_LABEL.lastIndex = 0;
   while (JUNK.TAB_LABEL.exec(slice) !== null) {
-    if (++labels >= 2) break;
+    if (++labels >= 2) return MOVE_TAB;
   }
-  if (labels >= 2 && !hasStoryLink) return MOVE_TAB;
-  if (test0(RX.POST_SIG, slice)) return STOP;
+  if (test0(RX.POST_LINK, slice)) return STOP;
   return MOVE;
 }
 
@@ -171,6 +171,33 @@ function stripVirtualMargin(slice) {
   RX.MARGIN_STRIP.lastIndex = 0;
   const stripped = tag[0].replace(RX.MARGIN_STRIP, '');
   return stripped + slice.slice(tag[0].length);
+}
+
+/** Mirror of PageAssembly.ownMargin(). */
+function ownMargin(slice) {
+  const tag = exec0(RX.FIRST_TAG, slice);
+  if (!tag) return null;
+  const m = exec0(RX.MARGIN, tag[0]);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/** Mirror of PageAssembly.ownHeight(). */
+function ownHeight(slice) {
+  const tag = exec0(RX.FIRST_TAG, slice);
+  if (!tag) return null;
+  const m = exec0(RX.HEIGHT, tag[0]);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/** Mirror of PageAssembly.withMargin(). */
+function withMargin(unit, gapPx) {
+  const tag = exec0(RX.FIRST_TAG, unit);
+  if (!tag) return unit;
+  const open = tag[0];
+  const newOpen = open.indexOf('style="') >= 0 ?
+    open.replace('style="', 'style="margin-top:' + gapPx + 'px;') :
+    open.slice(0, -1) + ' style="margin-top:' + gapPx + 'px">';
+  return newOpen + unit.slice(open.length);
 }
 
 /** Mirror of PageAssembly.stolenOffset(). */
@@ -223,7 +250,6 @@ function compose(doc, cards) {
 
       const children = topLevelChildren(base, vsOpenEndB);
       const moved = [], tabs = [];
-      const offset = children.length ? stolenOffset(base, children) : null;
       let bytes = 0;
       let cursor = vsOpenEndB;
       let inner = '';
@@ -237,15 +263,30 @@ function compose(doc, cards) {
         if (kind === MOVE || kind === MOVE_TAB) {
           inner += base.slice(cursor, c.start);
           cursor = c.end;
-          (kind === MOVE_TAB ? tabs : moved).push(stripVirtualMargin(slice));
+          // [unit without virtual margin, own absolute offset, own height]
+          (kind === MOVE_TAB ? tabs : moved).push(
+            [stripVirtualMargin(slice), ownMargin(slice), ownHeight(slice)]);
           bytes += slice.length;
         }
       }
-      const pad = offset != null && offset > 0 ? offset + 'px' : null;
+      // Facebook's margins are absolute y offsets; rebuilt as gaps they
+      // reconstruct the online layout with Facebook's own numbers.
+      const seq = tabs.concat(moved);
+      const padTopI = (seq.length && seq[0][1] != null) ? seq[0][1]
+        : (children.length ? stolenOffset(base, children) : null);
+      const pad = padTopI != null && padTopI > 0 ? padTopI + 'px' : null;
+      const parts = seq.map((entry, i) => {
+        const own = entry[1];
+        let gap = 0;
+        if (i > 0 && own != null && seq[i - 1][1] != null) {
+          gap = Math.max(0, own - seq[i - 1][1] - (seq[i - 1][2] || 0));
+        }
+        return gap > 0 ? withMargin(entry[0], gap) : entry[0];
+      });
       const padCss = '<style id="__db_top_pad">' +
-        (moved.length + tabs.length ? '#__db_chrome' : '#__db_cards') +
+        (seq.length ? '#__db_chrome' : '#__db_cards') +
         '{padding-top:' + (pad || '0') + '!important}</style>';
-      const chromeBody = tabs.concat(moved).join('\n');
+      const chromeBody = parts.join('\n');
       const chrome = !chromeBody ? '' :
         '<div id="__db_chrome"' + (pad ? ' style="padding-top:' + pad + '"' : '') +
         '>' + chromeBody + '</div>';
@@ -409,6 +450,7 @@ module.exports = {
   RX, HIDE_OLD, HIDE_SCREEN_ROOT, RESET_SCREEN_ROOT, RESET_GENERAL,
   sanitize, holderHtml, compose, composeLegacy,
   classify, stripVirtualMargin, stolenOffset, topLevelChildren,
+  ownMargin, ownHeight, withMargin,
   photoKey, isVideoUrl, isAvatar, isChrome, isComplete, addItems,
   JUNK, isJunk,
   sources: { assembly, vault, docs, docsFeed },
