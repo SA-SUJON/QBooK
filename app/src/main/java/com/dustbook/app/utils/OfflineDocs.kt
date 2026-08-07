@@ -273,7 +273,7 @@ object OfflineDocs {
                     "<script>" + storyViewer(cards, resumeId) + "</script>"
                 } else "") +
                 (if (cards.isNotEmpty() && screen != "stories") {
-                    "<script>" + PageAssembly.resumeScript(resumeId) + "</script>"
+                    "<script>" + PageAssembly.resumeScript(resumeId, screen) + "</script>"
                 } else "") +
                 (if (screen == "home") unmuteByDefaultScript() else "") +
                 if (screen == "reels" || screen == "watch" || screen == "stories") {
@@ -457,14 +457,13 @@ object OfflineDocs {
             "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
             "sans-serif}</style>" + promoHideCss() +
             // The shell is ours, so reels paging is stated directly:
-            // one card per gesture, no pinned bar to compensate for.
-            // Proximity, never mandatory: mandatory held the scroller
-            // hostage while reel videos settled their sizes (round 11).
+            // proximity settles at a reel when slowing down; stop:always
+            // was removed again - it belongs to the trap family that
+            // kept drags returning to the current reel (round 13).
             (if (screen == "reels") {
                 "<style id=\"__db_reels_snap\">" +
                 "html,body{scroll-snap-type:y proximity}" +
-                "#__db_cards>*{scroll-snap-align:start;" +
-                "scroll-snap-stop:always}</style>"
+                "#__db_cards>*{scroll-snap-align:start}</style>"
             } else "") +
             "</head><body>" + PageAssembly.holderHtml(use) +
             unmuteStripScript() +

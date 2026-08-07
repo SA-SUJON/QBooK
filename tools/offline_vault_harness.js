@@ -119,9 +119,15 @@ function sanitize(card) {
              .replace(RX.BASE_TAG, '');
 }
 
-/** Mirror of PageAssembly.holderHtml(). */
+/** Mirror of PageAssembly.holderHtml() (with the round-13 lazy preload). */
+const SNAP_PRELOAD_FIRST = kotlinInt(assembly, 'SNAP_PRELOAD_FIRST');
+const SNAP_PRELOAD_FIRST_HOLDER = SNAP_PRELOAD_FIRST;
 function holderHtml(cards, snap) {
-  const body = cards.map(sanitize).join('\n');
+  const body = cards.map((c, i) => {
+    const clean = sanitize(c);
+    return (snap && i >= SNAP_PRELOAD_FIRST) ?
+      clean.split('preload="auto"').join('preload="metadata"') : clean;
+  }).join('\n');
   const sentinel = snap ?
     '<div id="__db_snap_t" style="height:0;scroll-snap-align:start"></div>\n' : '';
   return '<div id="__db_cards" data-db-cards="1">\n' + sentinel + body + '\n</div>';
@@ -404,6 +410,8 @@ const JUNK = {
   STORY_LINK: kotlinRegex(vault, 'JUNK_STORY_LINK'),
   TAB_LABEL: kotlinRegex(vault, 'JUNK_TAB_LABEL'),
   TRAY_LINK: kotlinRegex(vault, 'JUNK_TRAY_LINK'),
+  TRAY_TEASER: kotlinRegex(vault, 'JUNK_TRAY_TEASER'),
+  TRAY_CREATE: kotlinRegex(vault, 'JUNK_TRAY_CREATE'),
 };
 
 /** Mirror of SectionVault.isJunk(), branch for branch. */
@@ -422,6 +430,19 @@ function isJunk(section, html) {
       seenStories.add(m2[1]);
       if (++stories >= 2) return true;
     }
+  }
+  // Shape-agnostic tier (round 13): three-plus "...story" labels, or
+  // one plus the tray's create tile text. The permalink guard above
+  // already excused real posts.
+  JUNK.TRAY_TEASER.lastIndex = 0;
+  let teasers = 0, mt;
+  while ((mt = JUNK.TRAY_TEASER.exec(html)) !== null) {
+    if (++teasers >= 3) return true;
+  }
+  if (teasers >= 1) {
+    const text = html.replace(/<[^>]+>/g, ' ');
+    JUNK.TRAY_CREATE.lastIndex = 0;
+    if (JUNK.TRAY_CREATE.test(text)) return true;
   }
   JUNK.TAB_LABEL.lastIndex = 0;
   let labels = 0, m;
@@ -494,6 +515,7 @@ module.exports = {
   ROOT, KT, SRC,
   unescapeKotlin, kotlinRegex, kotlinConst, kotlinConstJoined,
   RX, HIDE_OLD, HIDE_SCREEN_ROOT, RESET_SCREEN_ROOT, RESET_GENERAL,
+  REELS_SNAP_CSS, reelsSnapCss, SNAP_PRELOAD_FIRST_HOLDER,
   sanitize, holderHtml, compose, composeLegacy,
   classify, stripVirtualMargin, stolenOffset, topLevelChildren,
   ownMargin, ownHeight, withMargin, chromeKey,

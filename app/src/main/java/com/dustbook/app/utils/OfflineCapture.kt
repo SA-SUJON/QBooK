@@ -315,14 +315,42 @@ object OfflineCapture {
             // above; the tray never was - which is exactly how a whole
             // tray got saved as a card, and once the compose layer also
             // started laying out the scroller's own tray, the offline
-            // home showed it TWICE ("story er ta double asche"). Two or
-            // more story links and no post permalink is only ever that
-            // tray; a post ABOUT a story keeps its own story_fbid. The
-            // vault applies the same signature to old saves on read.
+            // home showed it TWICE ("story er ta double asche").
+            //
+            // Round 10 keyed on the teaser links being /stories/ URLs.
+            // That shape was a FIXTURE assumption, never the user's real
+            // markup - v5.2.12 still showed the tray twice, which is only
+            // possible with fewer than two distinct /stories/ hrefs in
+            // the saved card (the vault would have healed it at read).
+            // What every shape DOES share, visible in the user's own
+            // screenshots: each teaser is labelled - "Create story",
+            // "Your Story", "<name>'s story". Count elements whose
+            // aria-label mentions "story": three-plus of them (and no
+            // post permalink below) is only ever that tray, whatever the
+            // hrefs look like, and a real post keeps its own story_fbid
+            // and therefore stays safe. The "Create story" text is held
+            // as the one-teaser variant's second witness. The vault
+            // applies these same signatures to old saves on read.
+            var teasers = 0;
+            var labelled = c.querySelectorAll('[aria-label]');
+            var createText = '';
+            for (var ti = 0; ti < labelled.length; ti++) {
+              var al = (labelled[ti].getAttribute('aria-label') || '')
+                .toLowerCase();
+              if (al.indexOf('story') >= 0) teasers++;
+            }
             if (c.querySelectorAll('a[href*="/stories/"]').length >= 2 &&
                 !c.querySelector('a[href*="/posts/"],a[href*="story_fbid"],' +
                                  'a[href*="/videos/"],a[href*="/reel/"]')) {
               return true;
+            }
+            if (!c.querySelector('a[href*="/posts/"],a[href*="story_fbid"],' +
+                                 'a[href*="/videos/"],a[href*="/reel/"]')) {
+              if (teasers >= 3) return true;
+              if (teasers >= 1 &&
+                  textIn(c).toLowerCase().indexOf('create story') >= 0) {
+                return true;
+              }
             }
             // Facebook bottom tab bar — aria-labels from device captures
             var label = (c.getAttribute('aria-label') || '').toLowerCase();

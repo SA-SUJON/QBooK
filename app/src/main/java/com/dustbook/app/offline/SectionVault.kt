@@ -299,6 +299,24 @@ open class SectionVault(
         RegexOption.IGNORE_CASE
     )
 
+    /**
+     * The shape-agnostic tray signature (round 13): elements labelled
+     * "...story" - "Create story", "Your Story", "<name>'s story" in the
+     * user's own screenshots. Round 10 keyed on /stories/ hrefs, a
+     * fixture assumption; the real tray's links were something else,
+     * which is the only way its saved card survived a dozen heals.
+     */
+    internal val JUNK_TRAY_TEASER = Regex(
+        "aria-label\\s*=\\s*[\"'][^\"']*story[^\"']*[\"']",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** The lone-teaser variant's second witness: its create tile text. */
+    internal val JUNK_TRAY_CREATE = Regex("create story", RegexOption.IGNORE_CASE)
+
+    /** Tags stripped, so caption prose never poses as tray tile text. */
+    private val TRAY_TEXT_TAGS = Regex("<[^>]+>", RegexOption.IGNORE_CASE)
+
     private fun isJunk(html: String): Boolean {
         if (html.contains(JUNK_AD_TAG, ignoreCase = true)) return true
         if (section != SECTION_FEED_ID) return false
@@ -318,6 +336,20 @@ open class SectionVault(
             if (seenStories.add(st.next().groupValues[1]) && ++stories >= 2) {
                 return true
             }
+        }
+        // Shape-agnostic tier: three-plus "...story" labels is only ever
+        // the tray; one label plus the create tile's own text is the
+        // two-tile shape. Real posts already passed the permalink guard
+        // above, so they cannot reach this.
+        var teasers = 0
+        val te = JUNK_TRAY_TEASER.findAll(html).iterator()
+        while (te.hasNext()) {
+            te.next()
+            if (++teasers >= 3) return true
+        }
+        if (teasers >= 1 &&
+            JUNK_TRAY_CREATE.containsMatchIn(html.replace(TRAY_TEXT_TAGS, " "))) {
+            return true
         }
         var labels = 0
         val it = JUNK_TAB_LABEL.findAll(html).iterator()

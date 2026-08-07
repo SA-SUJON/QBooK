@@ -191,23 +191,28 @@ object PageAssembly {
      *    (v5.2.9: Facebook's own, felt identical).
      *
      *  So proximity instead: it can never hold the scroller hostage -
-     *    an in-between rest position is perfectly legal - but together
-     *    with scroll-snap-stop:always a fling still stops at the very
-     *    NEXT reel, and slowing down near a reel boundary settles on it:
-     *    one reel per gesture, like online, with no trap possible.
+     *    an in-between rest position is perfectly legal - while slowing
+     *    down near a reel boundary still settles on it. One property
+     *    from that attempt is deliberately gone again: scroll-snap-stop
+     *    survived the mandatory->proximity change untouched, the user
+     *    still could not scroll, and it is the remaining member of the
+     *    trap family - on mobile Chrome it routinely makes even gentle
+     *    drags return to the current area. It is out, honestly recorded
+     *    as a suspected - not proven - cause, because gesture physics
+     *    cannot be run in jsdom and this device has falsified two
+     *    armchair snap theories already.
      *
      * As before: every saved card is one snap area aligned to its start,
      * card descendants keep snap-align:none from the reset, and
      * snap-margin-top carries the offset Facebook stamped for its own
      * pinned bar (__PAD__), so a reel locks just below the bar instead
-     * of sliding underneath it. All three properties are gesture-only.
+     * of sliding underneath it. All properties we add are gesture-only.
      */
     private const val REELS_SNAP_CSS =
         "<style id=\"__db_reels_snap\">" +
             "html,body{scroll-snap-type:y proximity!important}" +
             "#__db_cards>*{scroll-snap-align:start!important;" +
-            "scroll-snap-margin-top:__PAD__px!important;" +
-            "scroll-snap-stop:always!important}</style>"
+            "scroll-snap-margin-top:__PAD__px!important}</style>"
 
     /** The snap opt-in with [padTop] - Facebook's own stamped bar offset. */
     private fun reelsSnapCss(padTop: Int): String =
@@ -319,7 +324,21 @@ object PageAssembly {
 
     /** The saved cards as one block, ready to sit inside the document. */
     fun holderHtml(cards: List<String>, snap: Boolean = false): String {
-        val body = cards.joinToString("\n") { sanitize(it) }
+        // Every stored reel is stamped preload="auto" at capture so it
+        // can start instantly. On a feed of a few clips that is free -
+        // but a full screen of thirty reels all buffering at once keeps
+        // the decoder and the main thread permanently busy, and a busy
+        // page feels exactly like "scroll hoina". Online, only the
+        // current reel and its neighbour hold data; the player fetches
+        // the rest when the user arrives. Match that: past the first
+        // few, drop to metadata (headers only) - a tap still starts
+        // playback at once, the page just breathes. Read-time rewrite,
+        // so libraries saved by older builds benefit too.
+        val body = cards.mapIndexed { i, c ->
+            val clean = sanitize(c)
+            if (snap && i >= SNAP_PRELOAD_FIRST) clean.replace(
+                "preload=\"auto\"", "preload=\"metadata\"") else clean
+        }.joinToString("\n")
         // With snap on (the reels page), this zero-height sentinel is the
         // snap area for scroll position 0: after any relayout the snapper
         // knows the very top is a legal rest, so the page can never be
@@ -331,6 +350,9 @@ object PageAssembly {
         return "<div id=\"__db_cards\" data-db-cards=\"1\">\n" +
             sentinel + body + "\n</div>"
     }
+
+    /** How many leading reels keep preload="auto" (current + next + slack). */
+    private const val SNAP_PRELOAD_FIRST = 3
 
     /** One scroller child as (start, end) offsets of its outer element. */
     private data class Child(val start: Int, val end: Int)
@@ -635,11 +657,18 @@ object PageAssembly {
      * @param resumeId "SCROLL:<px>" for the feed scroller, otherwise a
      *                 reel or story id to bring into view.
      */
-    fun resumeScript(resumeId: String?): String {
+    fun resumeScript(resumeId: String?, section: String): String {
         val main = """
         (function(){
           if (window.__dbOfflineResume) return;
           window.__dbOfflineResume = true;
+
+          // Which offline screen this copy of the script serves. The feed
+          // reports nothing at all: home never resumes (round 11), and a
+          // video post merely SCROLLED PAST on the home page used to be
+          // written into the reels slot - hijacking the next real reels
+          // resume (round-13 assist for "reels scroll hoina").
+          var SEC = "__SEC__";
 
           function holder() {
             return document.querySelector('[data-db-cards]');
@@ -700,6 +729,7 @@ object PageAssembly {
           // Track position so the next session resumes here.
           var __lastReport = 0;
           function reportCurrent() {
+            if (SEC === 'feed') return;
             var now = Date.now();
             if (now - __lastReport < 2000) return;
             __lastReport = now;
@@ -714,7 +744,11 @@ object PageAssembly {
                 var vid = cards[i].getAttribute('data-video-id') ||
                           cards[i].getAttribute('data-story-id');
                 if (vid && window.FBPro && FBPro.reportPosition) {
-                  try { FBPro.reportPosition('reel', vid); } catch (e) {}
+                  // The write goes to THIS screen's slot. Hardcoding
+                  // 'reel' here used to write story ids into the reels
+                  // resume whenever the stories screen was scrolled.
+                  var key = (SEC === 'stories') ? 'story' : 'reel';
+                  try { FBPro.reportPosition(key, vid); } catch (e) {}
                 }
                 return;
               }
@@ -733,11 +767,13 @@ object PageAssembly {
         })();
         """.trimIndent()
 
-        // Set the resume target outside the template so tests can eval the
-        // raw source without an unresolved Kotlin template variable.
+        // Set the section and the resume target outside the template so
+        // tests can eval the raw source without an unresolved Kotlin
+        // template variable.
+        val bound = main.replace("__SEC__", section)
         if (resumeId != null) {
-            return "window.__dbResumeId=" + "\"$resumeId\";\n" + main
+            return "window.__dbResumeId=" + "\"$resumeId\";\n" + bound
         }
-        return main
+        return bound
     }
 }

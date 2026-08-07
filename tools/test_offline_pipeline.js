@@ -153,14 +153,64 @@ console.log('\nHome opens at the very top, every time');
   ok('reels and stories keep their resume, untouched',
      /offlineResumeReel/.test(resumeBlock) &&
      /offlineResumeStories/.test(resumeBlock));
-  // The machinery itself is unchanged and keeps working where an id is
-  // still fed to it.
+  // Round-13 contamination fix, on top: the report current on home used to
+  // write home video posts' data-video-id into the REELS resume slot. The
+  // script now knows which screen embedded it and home reports nothing.
   const asm2 = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
   ok('the resume machinery itself stays for the screens that use it',
-     /fun resumeScript\(resumeId: String\?\)/.test(asm2) &&
+     /fun resumeScript\(resumeId: String\?, section: String\)/.test(asm2) &&
      /__dbResumeId/.test(asm2));
+  ok('the script is told which screen it serves, at bind time',
+     asm2.includes('var SEC = "__SEC__"') &&
+     asm2.includes('.replace("__SEC__", section)') &&
+     /resumeScript\(resumeId, screen\)/.test(docs));
+  ok('a home-embedded script reports nothing, ever',
+     asm2.includes("if (SEC === 'feed') return;"));
+  // Round-13 second leak in the same slot: the report wrote 'reel'
+  // unconditionally, so scrolling the STORIES screen overwrote the
+  // reels resume with a story id. The slot now follows the screen.
+  ok('the write goes to the screen that made it, not always to reels',
+     asm2.includes("var key = (SEC === 'stories') ? 'story' : 'reel';") &&
+     /FBPro\.reportPosition\(key, vid\)/.test(asm2) &&
+     !/FBPro\.reportPosition\('reel', vid\)/.test(asm2));
+  ok('reportPosition knows the\u00a0story key on the Kotlin side',
+     /"stories", "story" ->/.test(
+       fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8')));
   ok('only the reels screen asks compose for one-card-per-gesture snap',
      /compose\(docText, cards, snap = screen == "reels"\)/.test(docs));
+}
+
+console.log('\nNearby reels stay eager, far reels stay lazy');
+{
+  // Round-13 assistant for "reels scroll hoina": capture stamps
+  // preload="auto" on every video, so a full shelf of playable reels all
+  // preloaded at once and sat on the main thread. Snap-mode compose now
+  // rewrites cards past the first few to metadata at READ time, so old
+  // libraries heal on their next open. The constant is one number in
+  // one place; the harness mirrors holderHtml line for line.
+  const asm3 = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
+  ok('one constant decides how many snap cards stay eager',
+     /private const val SNAP_PRELOAD_FIRST = 3/.test(asm3));
+  ok('the rewrite lives in holderHtml, snap mode only',
+     /i >= SNAP_PRELOAD_FIRST/.test(asm3) &&
+     asm3.includes('preload=\\"metadata\\"'));
+  const H3 = require('./offline_vault_harness.js');
+  const rows = [];
+  for (let i = 0; i < 6; i++) {
+    rows.push('<div data-video-id="v' + i + '"><video preload="auto" ' +
+      'data-video-url="https://video.fbcdn.net/v.mp4"></video></div>');
+  }
+  const snapH = H3.holderHtml(rows, true);
+  const lazyH = H3.holderHtml(rows, false);
+  const cnt = (s, re) => (s.match(re) || []).length;
+  ok('mirror: three eager, three lazy on a six-reel page',
+     cnt(snapH, /preload="auto"/g) === 3 &&
+     cnt(snapH, /preload="metadata"/g) === 3,
+     'auto=' + cnt(snapH, /preload="auto"/g) +
+     ' metadata=' + cnt(snapH, /preload="metadata"/g));
+  ok('mirror: non-snap pages are untouched',
+     cnt(lazyH, /preload="auto"/g) === 6 &&
+     cnt(lazyH, /preload="metadata"/g) === 0);
 }
 
 // ------------------------------------------- offline must not look different
@@ -1521,12 +1571,12 @@ console.log('\nEvery saved card reaches the page');
      /scroll-snap-type:none!important/.test(assemblySrc) &&
      /touch-action:manipulation!important/.test(assemblySrc) &&
      /scroll-snap-align:none!important/.test(assemblySrc));
-  ok('and the reels page alone opts back in: proximity plus stop means ' +
-     'one reel per fling and no snap trap',
+  ok('and the reels page alone opts back in: proximity, no trap family',
      /REELS_SNAP_CSS/.test(assemblySrc) &&
      /html,body\{scroll-snap-type:y proximity!important\}/.test(assemblySrc) &&
      /#__db_cards>\*\{scroll-snap-align:start!important/.test(assemblySrc) &&
-     /scroll-snap-stop:always!important/.test(assemblySrc) &&
+     !/scroll-snap-stop/.test(
+       require('./offline_vault_harness.js').REELS_SNAP_CSS) &&
      /if \(snap\) reelsSnapCss\(padTop \?\: 0\)/.test(assemblySrc));
   ok('a recycled twin of a moved chrome unit is never moved twice',
      /chromeSeen/.test(assemblySrc) &&
@@ -1859,14 +1909,12 @@ console.log('\nEvery saved card reaches the page');
          rp.window.getComputedStyle(
            rd.querySelector('[data-type="vscroller"]')).display === 'none');
 
-      // Round-11 follow-up, amended in round 12: killing snap
-      // document-wide fixed the bounce but freed flings to run through
-      // three or four reels; re-arming MANDATORY then held the scroller
-      // hostage while reel videos settled their sizes (the round-12
-      // "scroll hoi na"). PROXIMITY cannot trap - an in-between rest is
-      // always legal - while scroll-snap-stop:always still ends every
-      // fling at the very next reel. Computed through the same hostile
-      // cascade. The home feed keeps the plain compose and never snaps.
+      // Round-13 amendment: the user still could not scroll on
+      // proximity + stop:always. stop is the remaining member of the
+      // trap family on mobile Chrome (gentle drags get pulled back to
+      // the current area), so it is out - proximity alone settles at a
+      // reel when the gesture slows near a boundary and can never pin
+      // the scroller. Computed through the same hostile cascade.
       const sp2 = new JSDOM('<html><head>' + REEL_CSS + '</head><body>' +
         H.compose(reelDoc, [savedReel], true) + '</body></html>');
       const sd2 = sp2.window.document;
@@ -1880,8 +1928,9 @@ console.log('\nEvery saved card reaches the page');
         sd2.getElementById('reelSurface'));
       ok('every saved reel is exactly one snap area at its start',
          csReel.scrollSnapAlign === 'start', csReel.scrollSnapAlign);
-      ok('a fast fling stops at the very next reel, never three or four',
-         csReel.scrollSnapStop === 'always', csReel.scrollSnapStop);
+      ok('no trap-family property remains on the area ' +
+         '(stop:always removed in round 13)',
+         csReel.scrollSnapStop === 'normal', csReel.scrollSnapStop);
       ok('the reel\u2019s gesture still lets the drag scroll',
          csReel.touchAction === 'manipulation', csReel.touchAction);
       ok('a zero-height sentinel keeps scroll 0 a legal rest position',
@@ -2277,6 +2326,51 @@ console.log('\nThe stories tray never becomes a card, and old saves heal');
   const healed = withSavedTray.filter((c) => !H2.isJunk('feed', c));
   ok('a tray saved by an older build heals at the next read',
      healed.length === 1 && healed[0] === feedPost3);
+
+  // Round-13 amendment, proven end to end in scratch/round13_proof.js:
+  // the user's REAL tray survived every v5.2.12 heal because its teasers
+  // link to PROFILES, not /stories/ URLs - the two-distinct-href shape
+  // above was a fixture assumption. The signature that now catches it
+  // counts story-labelled teasers instead of hrefs, with the one-teaser
+  // variant needing visible "create story" text as second witness, and
+  // the same post-permalink guard in front. Capture and vault use one
+  // definition of the tiers each; the vault mirrors it for old stores.
+  const realTray =
+    '<div class="t2">' +
+    '<div aria-label="Create story">Create story +</div>' +
+    '<div aria-label="Your story">Your Story</div>' +
+    '<a href="/profile.php?id=701" aria-label="Shuvo story, 1 new">x</a>' +
+    '<a href="/profile.php?id=702" aria-label="Evan story">y</a>' +
+    '<span>' + 'words on the stories row, filler text only. '.repeat(5) +
+    '</span></div>';
+  ok('the capture filter knows the linkless real-shape tray',
+     /var teasers = 0/.test(cap) &&
+     /if \(teasers >= 3\) return true/.test(cap) &&
+     /indexOf\('create story'\)/.test(cap));
+  const realFeed = runCapture(cap, 'https://m.facebook.com/',
+    '<body><div data-type="vscroller">' + realTray + feedPost3 +
+    '</div></body>');
+  ok('the verbatim capture SKIPS the real-shape tray',
+     !realFeed.some((it) => it.h.indexOf('class="t2"') >= 0));
+  ok('and still captures the post beside it',
+     realFeed.some((it) => it.h.indexOf('story_fbid=881') >= 0));
+  ok('the vault carries the same teaser signature, one definition',
+     /JUNK_TRAY_TEASER/.test(vaultSrc) &&
+     /JUNK_TRAY_CREATE/.test(vaultSrc) &&
+     /TRAY_TEXT_TAGS/.test(vaultSrc));
+  ok('vault mirror: the saved real-shape tray heals at the next read',
+     H2.isJunk('feed', realTray));
+  ok('vault mirror: one lone teaser tile does not condemn a post',
+     !H2.isJunk('feed',
+       '<div><div aria-label="Mim&#39;s story">tile</div>' +
+       '<span>an ordinary update about my week at the office</span>' +
+       '<a href="https://m.facebook.com/story.php?story_fbid=881">p</a></div>'));
+  ok('vault mirror: teaser tiles plus story_fbid still means a post',
+     !H2.isJunk('feed',
+       '<div><div aria-label="Mim&#39;s story">1</div>' +
+       '<div aria-label="Rina&#39;s story">2</div>' +
+       '<div aria-label="Tan&#39;s story">3</div>' +
+       '<a href="https://m.facebook.com/story.php?story_fbid=881">p</a></div>'));
 }
 
 console.log('\\nOne condemned card can never blank the whole offline feed');

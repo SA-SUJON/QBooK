@@ -795,3 +795,61 @@ healing path is untouched.
   baseline (expected android/org.json noise only).
 
 > Session: 2026-08-07 | Tag: v5.2.12 | Tests: 1102 passed, 0 failed (10 suites)
+
+# Round 13 - v5.2.13 (123) | 2026-08-07
+
+## 1. "story double ashe" - the tray fixture was never the real tray
+
+Round 10 healed saved trays on a signature of two DISTINCT /stories/ hrefs.
+That shape came from a fixture, never from the user's device - and the
+double surviving every read-heal through v5.2.12 is the proof: the vault
+junk-checks every stored card at every load(), so a tray carrying two such
+links could not possibly have lasted. The user's round-13 screenshot
+(two identical Create story / Your Story / Shuvo Dats / Evan L trays,
+then a post) shows the real anatomy: one tray is the scroller's own chrome
+the compose layer moves out (deduped since round 10 by chromeSeen), the
+other is a whole tray sitting in the store as a CARD. Verbatim capture
+proof: the v5.2.12 OfflineCapture script, run in jsdom on the real shape
+(story-labelled teasers whose links go to PROFILES, zero /stories/ hrefs),
+saves the tray as a card; the round-13 script runs the identical page and
+skips it, while posts sharing one story with their own story_fbid - and
+prose containing "create story" with a permalink - still save. New
+signature is shape-agnostic: count elements whose aria-label mentions
+"story" (3+ of them, or 1 + visible "create story" text, with the same
+post-permalink guard). SectionVault mirrors it, so old stores heal at the
+next read. Fixture-shaped trays stay skipped by both versions, verified.
+
+## 2. "reels scroll hoina" - honestly: suspected, not proven
+
+Two armchair snap theories have now been falsified by this one device
+(5.2.11 mandatory-snap trapped, 5.2.12 proximity+stop:always still
+failed). scroll-snap-stop:always was the last surviving member of the
+mandatory family (Chromium treats it as a forced land even under
+proximity), so it is removed everywhere - REELS_SNAP_CSS and the shell
+style keep proximity + align start only. This is a SUSPECTED cause:
+jsdom cannot run gesture physics, and the code comments say so in plain
+words. Two assistants that ARE provable:
+  - Lazy preload: every saved reel card was stamped preload="auto" at
+    capture; 29 playable reels all preloading sits on the main thread
+    exactly like "scroll hoina". holderHtml in snap mode now rewrites
+    cards beyond SNAP_PRELOAD_FIRST(3) to preload="metadata" at read
+    time (old libraries heal on their next open), first three stay
+    eager. Proven via the mirror: 3 auto / 2 metadata on a 5-card page.
+  - Resume-slot pollution, two leaks, both proven verbatim:
+    a) the home feed's embedded resume script reported a scrolled-past
+       home video post's data-video-id into the REELS resume slot; the
+       script now knows its screen (SEC) and reports nothing on feed.
+    b) reportCurrent hardcoded 'reel', so scrolling the STORIES screen
+       wrote story ids into the REELS slot too; the write now lands in
+       the slot of the screen that made it (story -> offlineResumeStories).
+
+## Proof battery
+
+- jsdom round-13 proof: 20/20 (old-saves-tray vs new-skips, vault
+  old-keeps vs new-heals, post-guards both directions, home-pollutes vs
+  home-silent, stories-hijack vs slot-correct, lazy preload counts).
+- 10/10 suites green (1117 assertions; pipeline 445).
+- kotlinc over the tree: identical normalized diagnostic set to the
+  v5.2.12 baseline (1762 lines = expected android/framework noise only).
+
+> Session: 2026-08-07 | Tag: v5.2.13 | Tests: 1117 passed, 0 failed (10 suites)
