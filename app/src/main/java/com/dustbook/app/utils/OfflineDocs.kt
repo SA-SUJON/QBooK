@@ -458,9 +458,11 @@ object OfflineDocs {
             "sans-serif}</style>" + promoHideCss() +
             // The shell is ours, so reels paging is stated directly:
             // one card per gesture, no pinned bar to compensate for.
+            // Proximity, never mandatory: mandatory held the scroller
+            // hostage while reel videos settled their sizes (round 11).
             (if (screen == "reels") {
                 "<style id=\"__db_reels_snap\">" +
-                "html,body{scroll-snap-type:y mandatory}" +
+                "html,body{scroll-snap-type:y proximity}" +
                 "#__db_cards>*{scroll-snap-align:start;" +
                 "scroll-snap-stop:always}</style>"
             } else "") +

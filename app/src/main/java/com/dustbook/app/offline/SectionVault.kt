@@ -157,7 +157,13 @@ open class SectionVault(
             // every incomplete id comes back through this door.
             val existingIds = HashSet<String>()
             for (e in existing) if (e.id.isNotBlank()) existingIds.add(e.id)
-            var room = if (hardCap != null) hardCap - existing.size
+            // Seats are counted in playable entries: an entry whose media
+            // never landed holds no seat (the round-12 rule, counted the
+            // same way at both sync gates above the vault). Counting raw
+            // entries here is what made a shelf of undownloaded reels
+            // permanently read as "full".
+            var room = if (hardCap != null)
+                hardCap - existing.count { isComplete(it) }
                 else Int.MAX_VALUE
 
             val filtered = incoming

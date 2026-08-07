@@ -303,7 +303,8 @@ console.log('\nNothing is reconstructed');
          .every(d => allowed.has(d.split(':')[0]))) &&
        (assembly.match(/scroll-snap-type/g) || []).length === 2 &&
        /html,body\{[^}]*scroll-snap-type:none!important/.test(assembly) &&
-       /html,body\{scroll-snap-type:y mandatory!important/.test(assembly) &&
+       /html,body\{scroll-snap-type:y proximity!important/.test(assembly) &&
+       !/scroll-snap-type:y mandatory/.test(assembly) &&
        !/db_chrome\b[^{]*\{[^}]*scroll-snap-align/.test(assembly));
   }
 }

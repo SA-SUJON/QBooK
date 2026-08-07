@@ -44,6 +44,22 @@ object VideoHelper {
               v.setAttribute('preload', 'auto');
             } catch (e) {}
 
+            // The native control bar has to go. While it exists, a tap on
+            // a playing video is spent showing and hiding the bar (that
+            // timestamp/seek strip at the bottom the user described) and
+            // never reaches the tap bridge below - so online the tap
+            // paused, offline it did not ("play hobar somoy tap korle
+            // pause hoi na"). The bar survives only on Facebook's own
+            // live pages; offline its job is done by the bridge instead.
+            // Scoped to videos inside saved cards: a video sitting in the
+            // story viewer's overlay keeps whatever controls it came
+            // with.
+            try {
+              if (v.closest && v.closest('#__db_cards')) {
+                v.removeAttribute('controls');
+              }
+            } catch (e) {}
+
             // The stored markup already carries the cached MP4 URL on
             // the video tag's src. Only help the element discover the
             // data; let the user or Facebook's own player start it.

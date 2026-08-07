@@ -242,10 +242,19 @@ object OfflineSync {
                         // is exactly how a full store of expired signed URLs
                         // stayed stuck at "reels 4 of 30" forever.
                         val batch = if (exactTotal != null) {
-                            val stored = OfflineFeed.loadItems(sec)
-                            val storedIds = stored
+                            // Re-capture passes free against EVERY stored
+                            // id, complete or not - that is how an expired
+                            // URL gets replaced. But the SEATS are counted
+                            // in playable items only (the round-12 rule,
+                            // from the user: "kono reels playable holei
+                            // count hobe tar age na"). Raw markup used to
+                            // hold those seats, so a full shelf of
+                            // still-undownloaded reels read as "target
+                            // reached" and nothing fresh could ever enter.
+                            val storedIds = OfflineFeed.loadItems(sec)
                                 .mapTo(HashSet()) { it.id }
-                            var room = exactTotal - stored.size
+                            var room = exactTotal -
+                                OfflineFeed.realPlayableCount(sec)
                             newItems.filter {
                                 if (it.id.isNotBlank() &&
                                     it.id in storedIds) true

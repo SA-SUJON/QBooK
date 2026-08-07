@@ -215,7 +215,8 @@ console.log('\nNothing is invented offline');
     ok('and the only snap-type declarations sit on the document itself',
        (inject.match(/scroll-snap-type/g) || []).length === 2 &&
        /html,body\{[^}]*scroll-snap-type:none!important/.test(inject) &&
-       /html,body\{scroll-snap-type:y mandatory!important/.test(inject));
+       /html,body\{scroll-snap-type:y proximity!important/.test(inject) &&
+       !/scroll-snap-type:y mandatory/.test(inject));
     // The chrome row is a LIVE widget, not a saved card: the stories
     // tray's horizontal item snapping is part of the real page and must
     // keep working offline. Our gesture rules never reach under it.
@@ -336,6 +337,13 @@ console.log('\nVideo sound');
   ok('one sound at a time: a new play pauses the rest',
      /addEventListener\('play',/.test(vh) &&
      /vs\[i\] !== e\.target && !vs\[i\]\.paused/.test(vh));
+  // Round-12: the native control bar ate the tap (show/hide the
+  // timestamp strip) instead of reaching the bridge, so a playing reel
+  // would never pause. Saved-card videos lose the bar; the story
+  // viewer's overlay videos keep theirs.
+  ok('the native control bar is stripped from saved-card videos only',
+     /v\.closest\('#__db_cards'\)\) \{[\s\S]{0,120}removeAttribute\('controls'\)/
+       .test(vh));
 
   {
     // Behaviour, not just text: the script VERBATIM, run in a real DOM.
@@ -355,9 +363,10 @@ console.log('\nVideo sound');
     })();
     const card =
       '<div id="__db_cards"><div class="m" id="rc">' +
-      '<span id="playGlyph">glyph</span><video id="v1"></video>' +
+      '<span id="playGlyph">glyph</span><video id="v1" controls></video>' +
       '<a href="/reel/comments/1" id="cmt">12 comments</a></div>' +
-      '<div class="m" id="rc2"><video id="v2"></video></div></div>';
+      '<div class="m" id="rc2"><video id="v2" controls></video></div></div>' +
+      '<video id="vOutside" controls></video>';
     function run() {
       const dom = new JSDOM('<html><body>' + card + '</body></html>',
         { runScripts: 'outside-only', url: 'https://m.facebook.com/reel/' });
@@ -404,6 +413,12 @@ console.log('\nVideo sound');
       .dispatchEvent(new d5.w.MouseEvent('click', { bubbles: true }));
     ok('the story pager\u2019s zones are never hijacked',
        d5.calls.play.length === 0);
+    const e2 = run();
+    ok('saved-card videos shed the tap-eating native control bar',
+       !e2.w.document.getElementById('v1').hasAttribute('controls') &&
+       !e2.w.document.getElementById('v2').hasAttribute('controls'));
+    ok('a video outside the cards keeps its controls',
+       e2.w.document.getElementById('vOutside').hasAttribute('controls'));
   }
 }
 
@@ -963,7 +978,7 @@ console.log('\nThe cap holds atomically, and a full store still heals');
   // decided INSIDE the vault lock - both capture paths used to compute
   // "remaining" outside any lock, which is exactly how 50 became 53.
   ok('the room decision lives inside the vault lock',
-     /synchronized\(this\) \{[\s\S]{0,1200}var room = if \(hardCap != null\) hardCap - existing\.size/.test(vaultSrc));
+     /synchronized\(this\) \{[\s\S]{0,1800}var room = if \(hardCap != null\)[\s\S]{0,120}existing\.count \{ isComplete\(it\) \}/.test(vaultSrc));
   ok('a stored id re-captured spends no room (replacement, not addition)',
      /if \(it\.id\.isNotBlank\(\) && it\.id in existingIds\) true[\s\S]{0,80}else if \(room > 0\) \{ room--; true \} else false/.test(vaultSrc));
   ok('no take-of-remaining shortcut remains anywhere in the vault',
@@ -1002,6 +1017,19 @@ console.log('\nThe cap holds atomically, and a full store still heals');
   ok('and one brand new id on top still does not fit',
      H.addItems(healed, [{ id: 'zz', html: '<div>z</div>', media: [] }],
        30, 250, 30).length === 30);
+
+  // Round-12: seats are the PLAYABLE entries. The same full shelf, but
+  // with nothing downloaded at all, holds no seats - so fresh reels
+  // walk straight in instead of starving behind dead markup.
+  const noMedia = () => false;
+  const shelfBecomes = H.addItems(full,
+    Array.from({ length: 5 }, (_, i) =>
+      ({ id: 'new' + i, html: '<div>fresh ' + i + '</div>',
+         media: ['n' + i + '.mp4'] })),
+    30, 250, 30, noMedia);
+  ok('a full shelf of media-less reels holds no seats: five fresh ids walk in',
+     shelfBecomes.filter((e) => e.id.indexOf('new') === 0).length === 5,
+     JSON.stringify(shelfBecomes.map((e) => e.id)));
 }
 
 console.log('\nAn entry is "known" only when it is playable');
@@ -1075,8 +1103,8 @@ console.log('\nAn exact phase total stops fetching where it was asked');
   ok('calls can pass an exact total',
      /fun run[\s\S]{0,500}exactTotal: Int\? = null/.test(sync) &&
      /fun runAll[\s\S]{0,500}exactTotal: Int\? = null/.test(sync));
-  ok('the batch is capped by what the store still needs',
-     /var room = exactTotal - stored\.size/.test(sync));
+  ok('the batch is capped by what the store still needs to PLAY',
+     /var room = exactTotal -[\s\S]{0,60}OfflineFeed\.realPlayableCount\(sec\)/.test(sync));
   ok('a re-capture of a stored id passes even when the store is full',
      /if \(it\.id\.isNotBlank\(\) &&[\s\S]{0,60}it\.id in storedIds\) true/.test(sync));
   ok('only the kept batch is queued for download',
@@ -1135,7 +1163,7 @@ console.log('\nAn exact phase total stops fetching where it was asked');
   // bind it, or "stops at my number" is only true for the background run.
   const mainSrc = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
   ok('the foreground merge is capped by the chosen counts',
-     /fun onOfflineItems\(section: String, json: String, done: Boolean\)[\s\S]{0,1600}prefs\.offlinePostTarget[\s\S]{0,500}prefs\.offlineReelTarget[\s\S]{0,500}var room = cap - stored\.size/.test(mainSrc));
+     /fun onOfflineItems\(section: String, json: String, done: Boolean\)[\s\S]{0,1600}prefs\.offlinePostTarget[\s\S]{0,500}prefs\.offlineReelTarget[\s\S]{0,800}var room = cap - OfflineFeed\.realPlayableCount\(section\)/.test(mainSrc));
   // Faithful port of the foreground gate, run through its boundaries.
   function foreground(section, existing, completeIds, reported, caps) {
     const cap = caps[section] || 0;
@@ -1143,7 +1171,9 @@ console.log('\nAn exact phase total stops fetching where it was asked');
     const known = new Set(completeIds);
     const storedIds = new Set(existing);
     const fresh = reported.filter((it) => !known.has(it.id));
-    let room = cap - existing.length;
+    // Round-12: seats count playable items only (completeIds here),
+    // never raw markup still waiting on its media.
+    let room = cap - completeIds.length;
     return fresh.filter((it) => {
       if (it.id && storedIds.has(it.id)) return true;
       if (room > 0) { room--; return true; }
@@ -1164,6 +1194,10 @@ console.log('\nAn exact phase total stops fetching where it was asked');
   ok('foreground: unfinished stored reels re-save past a full store',
      foreground('reels', mk('r', 30).map((x) => x.id), ['r1'],
        mk('r', 30), caps).length === 29);
+  ok('foreground: a full shelf of UNPLAYABLE entries holds no seats - ' +
+     'five fresh reels walk straight in (the round-12 fix)',
+     foreground('reels', mk('r', 30).map((x) => x.id), ['r1'],
+       mk('n', 5), caps).length === 5);
   ok('foreground: stories stay uncapped (no user-set count)',
      foreground('stories', [], [], mk('s', 3), caps).length === 3);
 }
@@ -1487,10 +1521,10 @@ console.log('\nEvery saved card reaches the page');
      /scroll-snap-type:none!important/.test(assemblySrc) &&
      /touch-action:manipulation!important/.test(assemblySrc) &&
      /scroll-snap-align:none!important/.test(assemblySrc));
-  ok('and the reels page alone opts back in: mandatory, one area per ' +
-     'card, stop at the very next',
+  ok('and the reels page alone opts back in: proximity plus stop means ' +
+     'one reel per fling and no snap trap',
      /REELS_SNAP_CSS/.test(assemblySrc) &&
-     /html,body\{scroll-snap-type:y mandatory!important\}/.test(assemblySrc) &&
+     /html,body\{scroll-snap-type:y proximity!important\}/.test(assemblySrc) &&
      /#__db_cards>\*\{scroll-snap-align:start!important/.test(assemblySrc) &&
      /scroll-snap-stop:always!important/.test(assemblySrc) &&
      /if \(snap\) reelsSnapCss\(padTop \?\: 0\)/.test(assemblySrc));
@@ -1825,21 +1859,22 @@ console.log('\nEvery saved card reaches the page');
          rp.window.getComputedStyle(
            rd.querySelector('[data-type="vscroller"]')).display === 'none');
 
-      // Round-11 follow-up: killing snap document-wide fixed the bounce
-      // but freed flings to run through three or four reels - "ekbare
-      // 3/4 ta kora jacche, ekta ekta kore ashe na". The reels screen
-      // opts back in (compose's snap argument): the body scroller snaps
-      // y mandatory again, every saved card is exactly one snap area,
-      // and scroll-snap-stop:always is what makes a fast fling stop at
-      // the NEXT reel - the online pager's feel, computed through the
-      // same hostile cascade. The home feed keeps the plain compose
-      // above and never snaps.
+      // Round-11 follow-up, amended in round 12: killing snap
+      // document-wide fixed the bounce but freed flings to run through
+      // three or four reels; re-arming MANDATORY then held the scroller
+      // hostage while reel videos settled their sizes (the round-12
+      // "scroll hoi na"). PROXIMITY cannot trap - an in-between rest is
+      // always legal - while scroll-snap-stop:always still ends every
+      // fling at the very next reel. Computed through the same hostile
+      // cascade. The home feed keeps the plain compose and never snaps.
       const sp2 = new JSDOM('<html><head>' + REEL_CSS + '</head><body>' +
         H.compose(reelDoc, [savedReel], true) + '</body></html>');
       const sd2 = sp2.window.document;
       const csBody2 = sp2.window.getComputedStyle(sd2.body);
-      ok('reels opt back into snap: the body scroller is mandatory again',
-         /mandatory/.test(csBody2.scrollSnapType),
+      ok('reels opt back into snap, the trap-free kind: proximity',
+         /proximity/.test(csBody2.scrollSnapType) &&
+         !/mandatory/.test(sp2.window.getComputedStyle(sd2.body)
+           .scrollSnapType),
          csBody2.scrollSnapType);
       const csReel = sp2.window.getComputedStyle(
         sd2.getElementById('reelSurface'));
@@ -1973,7 +2008,7 @@ console.log('\nNo app-promo bar flashes on an offline page');
   ok('it is prepended to the stored document, not appended',
      /val html = promoHideCss\(\) \+\s*\n\s*withCards/.test(docs));
   ok('the assembled page gets it inside head',
-     /promoHideCss\(\) \+[\s\S]{0,500}?"<\/head><body>"/.test(docs));
+     /promoHideCss\(\) \+[\s\S]{0,900}?"<\/head><body>"/.test(docs));
   ok('it covers the store links and the known banner ids',
      /play\.google\.com\/store/.test(docs) &&
      /mobile_app_install_banner/.test(docs) &&
@@ -2445,7 +2480,7 @@ console.log('\nEvery section keeps what it saves, in its own store');
      /dirName = "stories"/.test(stories));
   ok('reels refuse entries with no playable video, at their own door',
      /videoRequired = true/.test(reels) &&
-     /fun addItems[\s\S]{0,1800}if \(videoRequired\)/.test(vaultSrc));
+     /fun addItems[\s\S]{0,2600}if \(videoRequired\)/.test(vaultSrc));
   ok('per-section retention floors exist',
      /keepFloor = 500/.test(home) && /keepFloor = 250/.test(reels) &&
      /keepFloor = 200/.test(stories));
@@ -2511,6 +2546,23 @@ console.log('\nThe number is read from the files, and the screen shows it');
      /OfflineFeed\.realPlayableCount\(OfflineFeed\.SECTION_REELS\)/.test(settings) &&
      /OfflineFeed\.realPlayableCount\(OfflineFeed\.SECTION_FEED\)/.test(settings) &&
      /OfflineFeed\.realPlayableCount\(OfflineFeed\.SECTION_STORIES\)/.test(settings));
+  // Round-12, the user's own rule, verbatim: "kono reels playable holei
+  // count hobe tar age na". A card earns its seat only once it can play;
+  // markup with its media still in the air holds nothing. Counting raw
+  // entries here is exactly how a shelf of half-downloaded reels read as
+  // "target reached" while the screen could show one of them.
+  ok('every intake gate counts seats in playable items only',
+     /var room = cap - OfflineFeed\.realPlayableCount\(section\)/
+       .test(main) &&
+     /var room = exactTotal -\s*\n\s*OfflineFeed\.realPlayableCount\(sec\)/
+       .test(sync) &&
+     /hardCap - existing\.count \{ isComplete\(it\) \}/
+       .test(fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8')));
+  ok('re-captures still pass free against every stored id, media or not',
+     /it\.id in storedIds\) true/.test(sync) &&
+     /it\.id in storedIds\) true/.test(main) &&
+     /else if \(room > 0\) \{ room--; true \} else false/.test(sync) &&
+     /else if \(room > 0\) \{ room--; true \} else false/.test(main));
   ok('the page asks for exactly the counted cards',
      /OfflineFeed\.cardMarkupList\(it\)/.test(docs));
   ok('and serves them as the document itself',

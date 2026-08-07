@@ -459,14 +459,18 @@ function isComplete(media, has) {
  * Mirror of SectionVault.addItems() merge: newest first, deduped, floored.
  * With a hardCap, a re-capture of a stored id passes for free (it replaces
  * rather than adds) while a brand-new id spends one unit of room, decided
- * in one pass - exactly the production lock's rule.
+ * in one pass - exactly the production lock's rule. Round 12: room counts
+ * PLAYABLE entries only; `has` reports whether an asset is on disk
+ * (defaults to present, matching the old raw behaviour for callers that
+ * never modelled media).
  */
-function addItems(existing, incoming, limit, floor, hardCap) {
+function addItems(existing, incoming, limit, floor, hardCap, has) {
   const keep = Math.max(limit, floor);
+  const hasAsset = has || (() => true);
   const existingIds = new Set(
     existing.map((e) => e.id).filter((x) => x && x.length));
   let room = (hardCap == null) ? Number.MAX_SAFE_INTEGER :
-    hardCap - existing.length;
+    hardCap - existing.filter((e) => isComplete(e.media, hasAsset)).length;
   const allowed = incoming.filter((it) => {
     if (it.id && it.id.length && existingIds.has(it.id)) return true;
     if (room > 0) { room--; return true; }

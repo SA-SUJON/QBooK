@@ -174,32 +174,37 @@ object PageAssembly {
             "touch-action:manipulation!important}</style>"
 
     /**
-     * One reel per gesture, rebuilt on the body scroller - the round-11
-     * report was "reels post er moto scroll hocche, ekbare 3/4 ta kora
-     * jacche, ekta ekta kore ashe na". Round 10 killed scroll-snap
-     * document-wide because the dead pager's mandatory snap bounced every
-     * drag back to the start; with snap gone entirely a fling simply ran
-     * through three or four reels. The reels screen therefore opts back
-     * in - and ONLY the reels screen (see [compose]'s snap argument):
+     * One reel per gesture, rebuilt on the body scroller.
      *
-     *  - html,body get snap-type y mandatory again. The reset's
-     *    snap-type:none is !important at the same specificity, so the
-     *    LATER rule decides - this style is emitted after the reset.
-     *  - every saved card is one snap area aligned to its start, and
-     *    scroll-snap-stop:always is what makes a fast fling stop at the
-     *    NEXT area instead of gliding through several - the online
-     *    pager's exact feel.
-     *  - snap-margin-top carries the offset Facebook stamped for its own
-     *    pinned bar (__PAD__), so a reel locks just below the bar
-     *    instead of sliding underneath it. Card DESCENDANTS keep
-     *    snap-align:none from the reset - only the card starts an area.
+     * Snap mode history, all proven on the user's own device:
      *
-     * All three properties are gesture-only: nothing about how a card
-     * looks comes from them.
+     *  - v5.2.10 killed scroll-snap document-wide to heal a bounce-back:
+     *    with the snap pager hidden, a fling then ran through three or
+     *    four reels at once ("ekbare 3/4 ta kora jacche, ekta ekta kore
+     *    ashe na").
+     *  - v5.2.11 re-armed it as MANDATORY - and the user could not
+     *    scroll at all. Mandatory assigns the scroller to the nearest
+     *    snap area at every moment, and Chrome re-snaps after every
+     *    layout change; with twenty-nine reel videos settling their
+     *    sizes one after another, every drag was yanked straight back.
+     *    It was the second time a mandatory snap trapped this app
+     *    (v5.2.9: Facebook's own, felt identical).
+     *
+     *  So proximity instead: it can never hold the scroller hostage -
+     *    an in-between rest position is perfectly legal - but together
+     *    with scroll-snap-stop:always a fling still stops at the very
+     *    NEXT reel, and slowing down near a reel boundary settles on it:
+     *    one reel per gesture, like online, with no trap possible.
+     *
+     * As before: every saved card is one snap area aligned to its start,
+     * card descendants keep snap-align:none from the reset, and
+     * snap-margin-top carries the offset Facebook stamped for its own
+     * pinned bar (__PAD__), so a reel locks just below the bar instead
+     * of sliding underneath it. All three properties are gesture-only.
      */
     private const val REELS_SNAP_CSS =
         "<style id=\"__db_reels_snap\">" +
-            "html,body{scroll-snap-type:y mandatory!important}" +
+            "html,body{scroll-snap-type:y proximity!important}" +
             "#__db_cards>*{scroll-snap-align:start!important;" +
             "scroll-snap-margin-top:__PAD__px!important;" +
             "scroll-snap-stop:always!important}</style>"

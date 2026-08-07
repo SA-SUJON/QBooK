@@ -2249,10 +2249,13 @@ class MainActivity : AppCompatActivity() {
                 // Full store: only re-captures of entries already held
                 // (same id - a stored-but-unfinished item whose media
                 // needs its fresh URL to land) still pass; they replace
-                // rather than add. Brand-new ids spend the room left.
-                val stored = OfflineFeed.loadItems(section)
-                val storedIds = stored.mapTo(HashSet()) { it.id }
-                var room = cap - stored.size
+                // rather than add. Brand-new ids spend the room left -
+                // counted in PLAYABLE items: markup without its media
+                // holds no seat (round-12 rule from the user), exactly
+                // like the pipeline's own gate in OfflineSync.
+                val storedIds = OfflineFeed.loadItems(section)
+                    .mapTo(HashSet()) { it.id }
+                var room = cap - OfflineFeed.realPlayableCount(section)
                 newItems = newItems.filter {
                     if (it.id.isNotBlank() && it.id in storedIds) true
                     else if (room > 0) { room--; true } else false

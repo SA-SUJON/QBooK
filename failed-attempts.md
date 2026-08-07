@@ -735,3 +735,63 @@ script.
   exist exactly twice, both on html/body.
 
 > Session: 2026-08-07 | Tag: v5.2.11 | Tests: 1095 passed, 0 failed (10 suites)
+
+# Round 12 - v5.2.12: reels froze completely, tap would not pause, and the seats a reel holds
+
+Follow-up to v5.2.11, verbatim: "reels 29 download but offline a open
+kore ekta reels play kore scroll korte giye dekhi scroll hoi na"
+/ "tap korle pause hoi na niche time stamp ba video koto hoiche eita
+deikhai" / "counting aro strong hobe kono reels playable holei count
+hobe tar age na."
+
+## 1. One trap traded for another: mandatory -> proximity
+
+v5.2.11 armed scroll-snap-type: y mandatory on the body scroller.
+Mandatory assigns the scroller to the nearest snap area AT EVERY MOMENT
+and Chrome re-snaps after every layout change; with 29 reel videos
+settling their sizes one after another, every drag was yanked back -
+"scroll hoi na" with all 29 playable. It was the second mandatory trap
+this app built (v5.2.9: Facebook's own pager, identical feel). The fix
+keeps the one-reel-per-fling rule and removes the trap class entirely:
+snap-type y PROXIMITY (an in-between rest is always legal, so nothing
+can pin the scroller) + scroll-snap-stop:always (a fling still stops
+at the very next reel) + align:start + Facebook's own bar offset as
+snap-margin + the zero-height sentinel keeping scroll 0 a legal rest.
+The home feed still carries no snap rules at all. Proven through the
+real CSS cascade, hostile Facebook CSS included, jsdom.
+
+## 2. The pause tap died inside the native control bar
+
+The user's clue was the clue: "niche time stamp ... eita deikhai ota
+diye video tene deoa jai" - a NATIVE controls strip existed on the
+stored reels. While <video controls> stands, a tap on a playing video
+is spent showing and hiding that strip and never reaches the page, so
+the round-11 tap bridge never fired and nothing paused. Fix: the
+offline assist strips the controls attribute from videos inside saved
+cards (the bridge governs their taps: play, pause); videos outside the
+cards - the story viewer's overlay - keep theirs. Proven verbatim in
+jsdom: attributes removed inside, kept outside, tap toggles both ways.
+
+## 3. "Counting aro strong hobe" - seats are counted by what plays
+
+The settings row and the served page already agreed on the playable
+count - but all three intake gates counted RAW stored markup when they
+assigned seats: MainActivity's foreground cap, OfflineSync's
+exactTotal, the vault's hardCap. A shelf of thirty still-undownloaded
+reels read as "target reached" and no fresh reel could ever walk in.
+All three now compute room as target - realPlayableCount()/isComplete
+(the user's rule, verbatim, in comments at every gate), while
+re-captures of every stored id still pass free - the expired-URL
+healing path is untouched.
+
+## Proof battery
+
+- jsdom round-12 proof: 16/16 (proximity cascade both contrast ways,
+  controls strip inside/kept outside, tap pause toggles, playable-only
+  rooms at all three gates, raw-size rooms gone).
+- 10/10 suites green (1102 assertions; pipeline 430 incl. new
+  behavioural "full shelf of media-less reels holds no seats").
+- kotlinc over the tree: identical 49 diagnostic classes to the v5.2.11
+  baseline (expected android/org.json noise only).
+
+> Session: 2026-08-07 | Tag: v5.2.12 | Tests: 1102 passed, 0 failed (10 suites)
