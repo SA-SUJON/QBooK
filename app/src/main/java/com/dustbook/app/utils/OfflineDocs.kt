@@ -276,9 +276,10 @@ object OfflineDocs {
                     "<script>" + PageAssembly.resumeScript(resumeId, screen) + "</script>"
                 } else "") +
                 (if (screen == "home") unmuteByDefaultScript() else "") +
-                if (screen == "reels" || screen == "watch" || screen == "stories") {
+                (if (screen == "reels" || screen == "watch" || screen == "stories") {
                     "<script>" + VideoHelper.getOfflineVideoAssistScript() + "</script>"
-                } else ""
+                } else "") +
+                (if (screen == "reels") "<script>" + reelsScrollDebugScript() + "</script>" else "")
 
             // Encode once, serve many times.
             val b = html.toByteArray()
@@ -804,6 +805,50 @@ object OfflineDocs {
      * body it applies to, so the bar never gets a frame to paint in, and no
      * script has to run first.
      */
+    /**
+     * TEMPORARY DIAGNOSTIC - reels-not-scrolling investigation. Shows the
+     * actual computed overflow/height/scrollHeight values on screen so
+     * the cause can be seen on the real device. Remove once the root
+     * cause is found and fixed for real.
+     */
+    private fun reelsScrollDebugScript(): String = """
+        (function(){
+          function report() {
+            try {
+              var html = document.documentElement, body = document.body;
+              var cards = document.getElementById('__db_cards');
+              var cs = cards ? getComputedStyle(cards) : null;
+              var chs = getComputedStyle(html), cbs = getComputedStyle(body);
+              var box = document.createElement('div');
+              box.style.cssText = 'position:fixed;top:0;left:0;right:0;' +
+                'z-index:999999;background:rgba(0,0,0,.85);color:#0f0;' +
+                'font:11px monospace;padding:6px;white-space:pre-wrap;' +
+                'pointer-events:none';
+              box.textContent =
+                'html.of=' + chs.overflow + ' h=' + html.clientHeight +
+                ' sh=' + html.scrollHeight + '\n' +
+                'body.of=' + cbs.overflow + ' h=' + body.clientHeight +
+                ' sh=' + body.scrollHeight + '\n' +
+                'cards h=' + (cards ? cards.offsetHeight : 'null') +
+                ' children=' + (cards ? cards.children.length : 0) + '\n' +
+                'win.innerH=' + window.innerHeight +
+                ' scrollingEl.sh=' + (document.scrollingElement ?
+                  document.scrollingElement.scrollHeight : 'null');
+              var old = document.getElementById('__db_scroll_debug');
+              if (old) old.remove();
+              box.id = '__db_scroll_debug';
+              document.body.appendChild(box);
+            } catch (e) {
+              console.error('scroll debug failed', e);
+            }
+          }
+          if (document.readyState === 'complete') report();
+          else window.addEventListener('load', report);
+          setTimeout(report, 1500);
+          setTimeout(report, 3500);
+        })();
+    """.trimIndent()
+
     private fun promoHideCss(): String = """
         <style id="__db_promo_hide">
         #header-notices,div[id^="header-notice"],
