@@ -292,16 +292,18 @@ console.log('\nNothing is reconstructed');
     // single snap-type lift sits on html,body; siblings and chrome are
     // never touch-targets for styling. Nothing about how a card looks
     // may come from us.
-    const allowed = new Set(['scroll-snap-align', 'touch-action']);
-    const cardRules = [...assembly.matchAll(/#__db_cards\s+[^{]*\{([^}]*)\}/g)]
+    const allowed = new Set(['scroll-snap-align', 'touch-action',
+      'scroll-snap-margin-top', 'scroll-snap-stop']);
+    const cardRules = [...assembly.matchAll(/#__db_cards[\s>][^{]*\{([^}]*)\}/g)]
       .map(m => m[1]);
     ok('injected markup is not restyled',
        cardRules.length > 0 &&
        cardRules.every(body => body.replace(/["+\s]/g, '').split(';')
          .filter(Boolean)
          .every(d => allowed.has(d.split(':')[0]))) &&
-       (assembly.match(/scroll-snap-type/g) || []).length === 1 &&
+       (assembly.match(/scroll-snap-type/g) || []).length === 2 &&
        /html,body\{[^}]*scroll-snap-type:none!important/.test(assembly) &&
+       /html,body\{scroll-snap-type:y mandatory!important/.test(assembly) &&
        !/db_chrome\b[^{]*\{[^}]*scroll-snap-align/.test(assembly));
   }
 }

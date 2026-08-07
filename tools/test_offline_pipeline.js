@@ -138,6 +138,31 @@ console.log('\nAll three sections are reachable offline');
      /return shellFor\(screen\)/.test(docs));
 }
 
+console.log('\nHome opens at the very top, every time');
+{
+  // Round-11 bug 1: offline home opened a little below the top and every
+  // back-navigation returned to that same fake position. The mechanism,
+  // proven with the verbatim script in jsdom: serve passed home the
+  // stored feed position, and doResume() then set scrollTop immediately
+  // and again at 300/800/1500/2500 ms; reporting only happens while
+  // scrolled DOWN, so nothing could ever clear the stale offset.
+  const resumeBlock = docs.slice(docs.indexOf('val resumeId = when (screen)'),
+                                 docs.indexOf('val docText'));
+  ok('home is served with no resume id at all',
+     /"home" -> null/.test(resumeBlock));
+  ok('reels and stories keep their resume, untouched',
+     /offlineResumeReel/.test(resumeBlock) &&
+     /offlineResumeStories/.test(resumeBlock));
+  // The machinery itself is unchanged and keeps working where an id is
+  // still fed to it.
+  const asm2 = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
+  ok('the resume machinery itself stays for the screens that use it',
+     /fun resumeScript\(resumeId: String\?\)/.test(asm2) &&
+     /__dbResumeId/.test(asm2));
+  ok('only the reels screen asks compose for one-card-per-gesture snap',
+     /compose\(docText, cards, snap = screen == "reels"\)/.test(docs));
+}
+
 // ------------------------------------------- offline must not look different
 console.log('\nNothing is invented offline');
 {
@@ -173,19 +198,24 @@ console.log('\nNothing is invented offline');
     // Neither property changes a pixel. Anything else aimed at a card -
     // colours, fonts, sizes, spacing - is a restyle and breaks the rule,
     // the way it broke in every round that tried it.
-    const allowed = new Set(['scroll-snap-align', 'touch-action']);
-    // Descendant selectors only: rules about the holder's SIBLINGS (the
-    // '~' cleanup that hides stale scrollers) are structure, not cards.
-    const cardRules = [...inject.matchAll(/#__db_cards\s+[^{]*\{([^}]*)\}/g)]
+    // Gesture neutralisation only - and for the reels screen, gesture
+    // RESTORATION: snap-align/stop/margin direct how the scroller rests,
+    // never how a card looks. The list below is the whole allowance.
+    const allowed = new Set(['scroll-snap-align', 'touch-action',
+      'scroll-snap-margin-top', 'scroll-snap-stop']);
+    // Rules about the holder's SIBLINGS (the '~' cleanup that hides
+    // stale scrollers) are structure, not cards, and stay out of scope.
+    const cardRules = [...inject.matchAll(/#__db_cards[\s>][^{]*\{([^}]*)\}/g)]
       .map(m => m[1]);
     ok('injected cards are not restyled by us',
        cardRules.length > 0 &&
        cardRules.every(body => body.replace(/["+\s]/g, '').split(';')
          .filter(Boolean)
          .every(d => allowed.has(d.split(':')[0])))) &&
-    ok('and the only snap declaration sits on the document itself',
-       (inject.match(/scroll-snap-type/g) || []).length === 1 &&
-       /html,body\{[^}]*scroll-snap-type:none!important/.test(inject));
+    ok('and the only snap-type declarations sit on the document itself',
+       (inject.match(/scroll-snap-type/g) || []).length === 2 &&
+       /html,body\{[^}]*scroll-snap-type:none!important/.test(inject) &&
+       /html,body\{scroll-snap-type:y mandatory!important/.test(inject));
     // The chrome row is a LIVE widget, not a saved card: the stories
     // tray's horizontal item snapping is part of the real page and must
     // keep working offline. Our gesture rules never reach under it.
@@ -290,6 +320,91 @@ console.log('\nVideo sound');
      !/v\.muted\s*=\s*true/.test(vh));
   ok('and no running video is un-muted either',
      !/v\.muted\s*=\s*false/.test(vh));
+
+  // Round-11: "reels Play hoi na". The stored control's handler lives in
+  // Facebook's own JS, which never ships with the page - so a tap met a
+  // dead handler. The assist now bridges taps itself, at capture phase.
+  ok('a tap bridge exists and toggles the card\u2019s own video',
+     /addEventListener\('click',/.test(vh) &&
+     /t\.closest\('#__db_cards>\*'\)/.test(vh) &&
+     /v\.play\(\)/.test(vh) && /v\.pause\(\)/.test(vh));
+  ok('real links, buttons and form fields keep their own jobs',
+     /t\.closest\('a,button,\[role="button"\],input,textarea,select'\)/
+       .test(vh));
+  ok('the story pager is never hijacked',
+     /__db_story_overlay/.test(vh));
+  ok('one sound at a time: a new play pauses the rest',
+     /addEventListener\('play',/.test(vh) &&
+     /vs\[i\] !== e\.target && !vs\[i\]\.paused/.test(vh));
+
+  {
+    // Behaviour, not just text: the script VERBATIM, run in a real DOM.
+    const script = (() => {
+      const marker = 'fun getOfflineVideoAssistScript(): String = ';
+      const i = vh.indexOf(marker);
+      if (i < 0) throw new Error('assist script marker gone');
+      const a = vh.indexOf('"""', i), b = vh.indexOf('"""', a + 3);
+      const body = vh.slice(a + 3, b);
+      if (/\$\{/.test(body)) throw new Error('assist interpolates');
+      const lines = body.split('\n');
+      const ind = lines.filter(l => l.trim())
+        .map(l => l.match(/^ */)[0].length);
+      const min = ind.length ? Math.min.apply(null, ind) : 0;
+      return lines.map(l => l.slice(min)).join('\n')
+        .replace(/^\n+/, '').replace(/\s+$/, '');
+    })();
+    const card =
+      '<div id="__db_cards"><div class="m" id="rc">' +
+      '<span id="playGlyph">glyph</span><video id="v1"></video>' +
+      '<a href="/reel/comments/1" id="cmt">12 comments</a></div>' +
+      '<div class="m" id="rc2"><video id="v2"></video></div></div>';
+    function run() {
+      const dom = new JSDOM('<html><body>' + card + '</body></html>',
+        { runScripts: 'outside-only', url: 'https://m.facebook.com/reel/' });
+      const w = dom.window;
+      const calls = { play: [], pause: [] };
+      for (const id of ['v1', 'v2']) {
+        const v = w.document.getElementById(id);
+        Object.defineProperty(v, 'paused',
+          { get() { return this.__p !== false; }, configurable: true });
+        v.play = function() { v.__p = false; calls.play.push(id); };
+        v.pause = function() { v.__p = true; calls.pause.push(id); };
+      }
+      w.eval(script);
+      return { w, calls };
+    }
+    const a = run();
+    a.w.document.getElementById('playGlyph')
+      .dispatchEvent(new a.w.MouseEvent('click', { bubbles: true }));
+    ok('a tap on the reel surface plays it',
+       a.calls.play.length === 1 && a.calls.pause.length === 0,
+       JSON.stringify(a.calls));
+    a.w.document.getElementById('playGlyph')
+      .dispatchEvent(new a.w.MouseEvent('click', { bubbles: true }));
+    ok('a second tap pauses, like the online reel',
+       a.calls.play.length === 1 && a.calls.pause.length === 1,
+       JSON.stringify(a.calls));
+    const b = run();
+    b.w.document.getElementById('cmt')
+      .dispatchEvent(new b.w.MouseEvent('click', { bubbles: true }));
+    ok('a tap on a real link navigates instead of playing',
+       b.calls.play.length === 0);
+    const c2 = run();
+    c2.w.document.getElementById('v1').__p = false;
+    c2.w.document.getElementById('v2')
+      .dispatchEvent(new c2.w.Event('play', { bubbles: true }));
+    ok('a newly started video pauses the others',
+       c2.calls.pause.length === 1 && c2.calls.pause[0] === 'v1',
+       JSON.stringify(c2.calls));
+    const d5 = run();
+    const so = d5.w.document.createElement('div');
+    so.id = '__db_story_overlay';
+    d5.w.document.body.appendChild(so);
+    d5.w.document.getElementById('playGlyph')
+      .dispatchEvent(new d5.w.MouseEvent('click', { bubbles: true }));
+    ok('the story pager\u2019s zones are never hijacked',
+       d5.calls.play.length === 0);
+  }
 }
 
 console.log('\nProfile pictures are saved');
@@ -1250,7 +1365,8 @@ console.log('\nEvery saved card reaches the page');
   // into the page. Delivery is now static: the cards are composed into the
   // stored document in Kotlin and served AS the page.
   ok('cards are composed into the stored document before serving',
-     /PageAssembly\.compose\(docText, cards\)/.test(docs));
+     /PageAssembly\.compose\(docText, cards, snap = screen == "reels"\)/
+       .test(docs));
   ok('the runtime injection script is gone',
      !fs.existsSync(KT('utils/OfflineInject.kt')));
   ok('the story viewer still uses the proven JSON delivery',
@@ -1371,6 +1487,13 @@ console.log('\nEvery saved card reaches the page');
      /scroll-snap-type:none!important/.test(assemblySrc) &&
      /touch-action:manipulation!important/.test(assemblySrc) &&
      /scroll-snap-align:none!important/.test(assemblySrc));
+  ok('and the reels page alone opts back in: mandatory, one area per ' +
+     'card, stop at the very next',
+     /REELS_SNAP_CSS/.test(assemblySrc) &&
+     /html,body\{scroll-snap-type:y mandatory!important\}/.test(assemblySrc) &&
+     /#__db_cards>\*\{scroll-snap-align:start!important/.test(assemblySrc) &&
+     /scroll-snap-stop:always!important/.test(assemblySrc) &&
+     /if \(snap\) reelsSnapCss\(padTop \?\: 0\)/.test(assemblySrc));
   ok('a recycled twin of a moved chrome unit is never moved twice',
      /chromeSeen/.test(assemblySrc) &&
      /fun chromeKey/.test(assemblySrc));
@@ -1701,6 +1824,46 @@ console.log('\nEvery saved card reaches the page');
       ok('the hidden snap pager stays hidden',
          rp.window.getComputedStyle(
            rd.querySelector('[data-type="vscroller"]')).display === 'none');
+
+      // Round-11 follow-up: killing snap document-wide fixed the bounce
+      // but freed flings to run through three or four reels - "ekbare
+      // 3/4 ta kora jacche, ekta ekta kore ashe na". The reels screen
+      // opts back in (compose's snap argument): the body scroller snaps
+      // y mandatory again, every saved card is exactly one snap area,
+      // and scroll-snap-stop:always is what makes a fast fling stop at
+      // the NEXT reel - the online pager's feel, computed through the
+      // same hostile cascade. The home feed keeps the plain compose
+      // above and never snaps.
+      const sp2 = new JSDOM('<html><head>' + REEL_CSS + '</head><body>' +
+        H.compose(reelDoc, [savedReel], true) + '</body></html>');
+      const sd2 = sp2.window.document;
+      const csBody2 = sp2.window.getComputedStyle(sd2.body);
+      ok('reels opt back into snap: the body scroller is mandatory again',
+         /mandatory/.test(csBody2.scrollSnapType),
+         csBody2.scrollSnapType);
+      const csReel = sp2.window.getComputedStyle(
+        sd2.getElementById('reelSurface'));
+      ok('every saved reel is exactly one snap area at its start',
+         csReel.scrollSnapAlign === 'start', csReel.scrollSnapAlign);
+      ok('a fast fling stops at the very next reel, never three or four',
+         csReel.scrollSnapStop === 'always', csReel.scrollSnapStop);
+      ok('the reel\u2019s gesture still lets the drag scroll',
+         csReel.touchAction === 'manipulation', csReel.touchAction);
+      ok('a zero-height sentinel keeps scroll 0 a legal rest position',
+         !!sd2.getElementById('__db_snap_t') &&
+         sd2.getElementById('__db_snap_t').nextElementSibling ===
+           sd2.getElementById('reelSurface'));
+      ok('the plain compose carries no snap rules at all',
+         H.compose(reelDoc, [savedReel]).indexOf('__db_reels_snap') < 0 &&
+         H.compose(reelDoc, [savedReel]).indexOf('__db_snap_t') < 0);
+      // Snap-margin with Facebook's own stamped offset lifts the lock
+      // point below the pinned bar; jsdom knows no scroll-snap-margin,
+      // so the value is pinned at the source level.
+      ok('the lock point sits Facebook\u2019s own offset below the bar',
+         /scroll-snap-margin-top:__PAD__px!important/.test(
+           fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8')) &&
+         /reelsSnapCss\(padTop \?\: 0\)/.test(
+           fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8')));
     }
 
     // A plain single-screen document still composes correctly.
@@ -1810,7 +1973,7 @@ console.log('\nNo app-promo bar flashes on an offline page');
   ok('it is prepended to the stored document, not appended',
      /val html = promoHideCss\(\) \+\s*\n\s*withCards/.test(docs));
   ok('the assembled page gets it inside head',
-     /promoHideCss\(\) \+\s*\n\s*"<\/head>/.test(docs));
+     /promoHideCss\(\) \+[\s\S]{0,500}?"<\/head><body>"/.test(docs));
   ok('it covers the store links and the known banner ids',
      /play\.google\.com\/store/.test(docs) &&
      /mobile_app_install_banner/.test(docs) &&
@@ -2351,7 +2514,8 @@ console.log('\nThe number is read from the files, and the screen shows it');
   ok('the page asks for exactly the counted cards',
      /OfflineFeed\.cardMarkupList\(it\)/.test(docs));
   ok('and serves them as the document itself',
-     /PageAssembly\.compose\(docText, cards\)/.test(docs));
+     /PageAssembly\.compose\(docText, cards, snap = screen == "reels"\)/
+       .test(docs));
 
   // End to end over a simulated section: the count, the card list and the
   // page are all produced from the one store the way the app does it -

@@ -672,3 +672,66 @@ a guess-fix here would be exactly a fake fix, and we promised none.
 - Variant sweep: twin-tray document keeps exactly one visible tray.
 
 > Session: 2026-08-07 | Tag: v5.2.10 | Tests: 1074 passed, 0 failed (10 suites)
+
+# Round 11 - v5.2.11: offline home opened below the top, reels scrolled free and would not play
+
+User report, verbatim: "offline a app open korle ekdom top a na theke
+ektu niche theke start hocche abar barti kore scroll up kore top a jete
+hocche kichu te click kore ber hole abar sei top theke ektu niche niye
+jacche" and "reels Play hoi na. reels scroll korle post er moto scroll
+hocche... ekbare 3/4 ta kora jacche ekta ekta kore ashe na."
+
+## 1. The "fake top" was the scroll-resume script itself
+
+Mechanism, proven by running the script VERBATIM in jsdom on the
+composed home document: serve passed home Prefs.offlineResumeFeed, and
+doResume() then set scrollTop immediately and again at 300/800/1500/
+2500 ms - which is why a quick manual scroll back up got yanked down
+four more times. A stored video id variant scrolled the matching card
+into CENTER. And reportCurrent() only ever writes positions while
+scrolled DOWN (scrollTop > 0), so a stale offset could never be cleared:
+every open and every back-navigation re-served the same jump.
+Fix: home is served with resumeId null. Reels/stories resume untouched;
+the script itself is unchanged and still works where it is fed an id.
+
+## 2a. Free-scrolling reels were the price of round 10
+
+Round 10 killed scroll-snap document-wide to heal the bounce-back, and
+with snap gone a fling simply ran through three or four reels. The reels
+screen - and only the reels screen - now opts back in via compose's new
+snap argument: html,body get scroll-snap-type:y mandatory again (later
+!important rule at equal specificity beats the reset), every saved card
+is one snap area (align:start), scroll-snap-stop:always makes a fast
+fling stop at the NEXT reel (the online pager's feel), snap-margin-top
+lifts the lock point below Facebook's own pinned bar using the offset
+Facebook stamped, and a zero-height sentinel keeps scroll 0 a legal
+rest position so relayouts cannot drag the page down. The home feed
+keeps the plain compose and never snaps. Proven through the real CSS
+cascade in jsdom, hostile Facebook CSS included.
+
+## 2b. Dead play: the tap met Facebook's missing JS
+
+A stored reel's play control ran on the site's JS, which never ships
+with the saved page - a tap reached a dead handler (proven verbatim:
+play never called). The offline assist script now bridges taps at
+capture phase: a tap on a saved card toggles its own video (play /
+pause), real links/buttons/inputs are left to their own jobs, the story
+pager's tap zones are untouched, and a newly playing video pauses every
+other player - one sound at a time, like online. Mute state is still
+never forced. All five behaviours proven in jsdom against the verbatim
+script.
+
+## Proof battery
+
+- jsdom scratch proof: 19/19 - bug mechanisms reproduced against the
+  verbatim pre-fix source (scrollTop 420 jump, center call, snap none,
+  play never called), then every fix verified present and no-regressed.
+- 10/10 suites green (1095 assertions; pipeline 423, ui 79).
+- kotlinc over the tree: identical diagnostic classes to the v5.2.10
+  baseline.
+- The "cards are never restyled by us" guards now run an allowlist:
+  only gesture properties (snap-align, snap-margin, snap-stop,
+  touch-action) may ever reach inside the card holder; snap-type may
+  exist exactly twice, both on html/body.
+
+> Session: 2026-08-07 | Tag: v5.2.11 | Tests: 1095 passed, 0 failed (10 suites)

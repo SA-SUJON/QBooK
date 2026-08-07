@@ -174,6 +174,41 @@ object PageAssembly {
             "touch-action:manipulation!important}</style>"
 
     /**
+     * One reel per gesture, rebuilt on the body scroller - the round-11
+     * report was "reels post er moto scroll hocche, ekbare 3/4 ta kora
+     * jacche, ekta ekta kore ashe na". Round 10 killed scroll-snap
+     * document-wide because the dead pager's mandatory snap bounced every
+     * drag back to the start; with snap gone entirely a fling simply ran
+     * through three or four reels. The reels screen therefore opts back
+     * in - and ONLY the reels screen (see [compose]'s snap argument):
+     *
+     *  - html,body get snap-type y mandatory again. The reset's
+     *    snap-type:none is !important at the same specificity, so the
+     *    LATER rule decides - this style is emitted after the reset.
+     *  - every saved card is one snap area aligned to its start, and
+     *    scroll-snap-stop:always is what makes a fast fling stop at the
+     *    NEXT area instead of gliding through several - the online
+     *    pager's exact feel.
+     *  - snap-margin-top carries the offset Facebook stamped for its own
+     *    pinned bar (__PAD__), so a reel locks just below the bar
+     *    instead of sliding underneath it. Card DESCENDANTS keep
+     *    snap-align:none from the reset - only the card starts an area.
+     *
+     * All three properties are gesture-only: nothing about how a card
+     * looks comes from them.
+     */
+    private const val REELS_SNAP_CSS =
+        "<style id=\"__db_reels_snap\">" +
+            "html,body{scroll-snap-type:y mandatory!important}" +
+            "#__db_cards>*{scroll-snap-align:start!important;" +
+            "scroll-snap-margin-top:__PAD__px!important;" +
+            "scroll-snap-stop:always!important}</style>"
+
+    /** The snap opt-in with [padTop] - Facebook's own stamped bar offset. */
+    private fun reelsSnapCss(padTop: Int): String =
+        REELS_SNAP_CSS.replace("__PAD__", padTop.toString())
+
+    /**
      * The tame half of the reset, for the fallback branches: letting the
      * document itself scroll never hurts, and it is all those branches
      * can safely assume.
@@ -278,9 +313,18 @@ object PageAssembly {
     private const val MAX_CHROME_BYTES = 300 * 1024
 
     /** The saved cards as one block, ready to sit inside the document. */
-    fun holderHtml(cards: List<String>): String {
+    fun holderHtml(cards: List<String>, snap: Boolean = false): String {
         val body = cards.joinToString("\n") { sanitize(it) }
-        return "<div id=\"__db_cards\" data-db-cards=\"1\">\n$body\n</div>"
+        // With snap on (the reels page), this zero-height sentinel is the
+        // snap area for scroll position 0: after any relayout the snapper
+        // knows the very top is a legal rest, so the page can never be
+        // dragged down to the first card on its own. Invisible by size,
+        // and without a snap container its align property is inert.
+        val sentinel = if (snap)
+            "<div id=\"__db_snap_t\" style=\"height:0;" +
+                "scroll-snap-align:start\"></div>\n" else ""
+        return "<div id=\"__db_cards\" data-db-cards=\"1\">\n" +
+            sentinel + body + "\n</div>"
     }
 
     /** One scroller child as (start, end) offsets of its outer element. */
@@ -440,9 +484,16 @@ object PageAssembly {
      * the placement rules above. [cards] must be exactly the items the
      * count reports, so the screen and the number agree by construction.
      */
-    fun compose(doc: String, cards: List<String>): String {
+    /**
+     * @param snap true only for the reels page: the body scroller keeps
+     *             scroll-snap and every card is one snap area, so a fling
+     *             lands exactly one reel further - never three or four.
+     *             The feed must never snap, which is why it stays false
+     *             everywhere else.
+     */
+    fun compose(doc: String, cards: List<String>, snap: Boolean = false): String {
         if (cards.isEmpty()) return doc
-        val holder = holderHtml(cards)
+        val holder = holderHtml(cards, snap)
 
         CONTAINER.find(doc)?.let { m ->
             val at = m.range.last + 1
@@ -551,6 +602,7 @@ object PageAssembly {
 
                 return base.substring(0, vsStartB) +
                     RESET_SCREEN_ROOT + HIDE_SCREEN_ROOT +
+                    (if (snap) reelsSnapCss(padTop ?: 0) else "") +
                     (if (pad != null) padCss else "") +
                     chrome + holder +
                     base.substring(vsStartB, vsOpenEndB) + inner +

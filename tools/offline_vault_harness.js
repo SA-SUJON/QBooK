@@ -95,6 +95,12 @@ const HIDE_OLD = kotlinConst(assembly, 'HIDE_OLD');
 const HIDE_SCREEN_ROOT = kotlinConstJoined(assembly, 'HIDE_SCREEN_ROOT');
 const RESET_SCREEN_ROOT = kotlinConstJoined(assembly, 'RESET_SCREEN_ROOT');
 const RESET_GENERAL = kotlinConstJoined(assembly, 'RESET_GENERAL');
+const REELS_SNAP_CSS = kotlinConstJoined(assembly, 'REELS_SNAP_CSS');
+
+/** Mirror of PageAssembly.reelsSnapCss(). */
+function reelsSnapCss(padTop) {
+  return REELS_SNAP_CSS.replace('__PAD__', String(padTop));
+}
 
 /** Integer const vals, matched as source text (kotlinConst reads strings).
  *  Evaluates the simple `N * M` products Kotlin allows in const vals. */
@@ -114,9 +120,11 @@ function sanitize(card) {
 }
 
 /** Mirror of PageAssembly.holderHtml(). */
-function holderHtml(cards) {
+function holderHtml(cards, snap) {
   const body = cards.map(sanitize).join('\n');
-  return '<div id="__db_cards" data-db-cards="1">\n' + body + '\n</div>';
+  const sentinel = snap ?
+    '<div id="__db_snap_t" style="height:0;scroll-snap-align:start"></div>\n' : '';
+  return '<div id="__db_cards" data-db-cards="1">\n' + sentinel + body + '\n</div>';
 }
 
 /** Reset a global regex before a one-shot exec/test on an input. */
@@ -240,9 +248,9 @@ function lastScreenTagBefore(doc, pos) {
  * Mirror of PageAssembly.compose(), branch for branch. Kotlin's
  * m.range.last + 1 is index + match length.
  */
-function compose(doc, cards) {
+function compose(doc, cards, snap) {
   if (!cards.length) return doc;
-  const holder = holderHtml(cards);
+  const holder = holderHtml(cards, snap);
   let m = exec0(RX.CONTAINER, doc);
   if (m) {
     const at = m.index + m[0].length;
@@ -312,7 +320,8 @@ function compose(doc, cards) {
         '<div id="__db_chrome"' + (pad ? ' style="padding-top:' + pad + '"' : '') +
         '>' + chromeBody + '</div>';
       return base.slice(0, vsStartB) +
-        RESET_SCREEN_ROOT + HIDE_SCREEN_ROOT + (pad ? padCss : '') +
+        RESET_SCREEN_ROOT + HIDE_SCREEN_ROOT +
+        (snap ? reelsSnapCss(padTopI || 0) : '') + (pad ? padCss : '') +
         chrome + holder +
         base.slice(vsStartB, vsOpenEndB) + inner + base.slice(cursor);
     }

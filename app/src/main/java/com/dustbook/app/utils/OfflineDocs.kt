@@ -236,11 +236,18 @@ object OfflineDocs {
             val cards = section?.let { OfflineFeed.cardMarkupList(it) } ?: emptyList()
 
             // Resume position, so the user picks up where they left off
-            // instead of scrolling from the top every time.
+            // instead of scrolling from the top every time - EXCEPT on
+            // home. Replaying a stored feed position yanked the freshly
+            // loaded page below the top five times over 2.5 seconds,
+            // fought the user scrolling back up, and repeated forever
+            // because positions are only ever reported while scrolled
+            // down: the fake "home feed top" of the round-11 report.
+            // Home simply starts at the top; reels and stories keep
+            // their resume untouched.
             val resumeId = when (screen) {
                 "reels", "watch" -> appContext?.let { Prefs(it).offlineResumeReel }
                 "stories" -> appContext?.let { Prefs(it).offlineResumeStories }
-                "home" -> appContext?.let { Prefs(it).offlineResumeFeed }
+                "home" -> null
                 else -> null
             }
 
@@ -252,7 +259,9 @@ object OfflineDocs {
             // because they are the document.
             val withCards =
                 if (cards.isNotEmpty() && screen != "stories") {
-                    PageAssembly.compose(docText, cards)
+                    // Only reels snaps one card per gesture; a snapping
+                    // home feed would be a bug of its own.
+                    PageAssembly.compose(docText, cards, snap = screen == "reels")
                 } else docText
 
             val html = promoHideCss() +
@@ -447,6 +456,14 @@ object OfflineDocs {
             "<style>body{margin:0;background:#18191a;color:#e4e6eb;" +
             "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto," +
             "sans-serif}</style>" + promoHideCss() +
+            // The shell is ours, so reels paging is stated directly:
+            // one card per gesture, no pinned bar to compensate for.
+            (if (screen == "reels") {
+                "<style id=\"__db_reels_snap\">" +
+                "html,body{scroll-snap-type:y mandatory}" +
+                "#__db_cards>*{scroll-snap-align:start;" +
+                "scroll-snap-stop:always}</style>"
+            } else "") +
             "</head><body>" + PageAssembly.holderHtml(use) +
             unmuteStripScript() +
             "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +

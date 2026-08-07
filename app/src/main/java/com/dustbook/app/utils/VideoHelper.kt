@@ -79,6 +79,48 @@ object VideoHelper {
           // Assist any videos already on the page
           var existing = document.querySelectorAll('video');
           for (var i=0; i<existing.length; i++) assistVideo(existing[i]);
+
+          // Tap-to-play. A stored reel's own play control ran on the
+          // site's JS, which never ships with the saved page, so a tap
+          // met a dead handler and NOTHING ever started (the round-11
+          // report: "reels Play hoi na"). Tapping a saved card now
+          // toggles its video - exactly what a tap does online. Real
+          // links and buttons (comments, share, the poster's name) keep
+          // their own jobs, and the story pager's zones are left alone:
+          // a story advances left/right instead of pausing mid-way.
+          document.addEventListener('click', function(e) {
+            try {
+              if (document.getElementById('__db_story_overlay')) return;
+              var t = e.target;
+              if (!t || !t.closest) return;
+              if (t.closest('a,button,[role="button"],input,textarea,select'))
+                return;
+              var card = t.closest ? t.closest('#__db_cards>*') : null;
+              var v = card && card.querySelector ? card.querySelector('video') : null;
+              if (!v) v = t.closest('video');
+              if (!v) return;
+              e.preventDefault();
+              if (v.paused) {
+                var p = v.play();
+                if (p && p.catch) p.catch(function() {});
+              } else {
+                v.pause();
+              }
+            } catch (err) {}
+          }, true);
+
+          // One sound at a time, the way the online pager behaves: a
+          // video that starts playing pauses every other player.
+          document.addEventListener('play', function(e) {
+            try {
+              var vs = document.querySelectorAll('video');
+              for (var i = 0; i < vs.length; i++) {
+                if (vs[i] !== e.target && !vs[i].paused) {
+                  try { vs[i].pause(); } catch (err) {}
+                }
+              }
+            } catch (err) {}
+          }, true);
         })();
     """.trimIndent()
 
