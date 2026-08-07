@@ -853,3 +853,55 @@ words. Two assistants that ARE provable:
   v5.2.12 baseline (1762 lines = expected android/framework noise only).
 
 > Session: 2026-08-07 | Tag: v5.2.13 | Tests: 1117 passed, 0 failed (10 suites)
+
+# Round 14 - v5.2.14 (124) | 2026-08-08
+
+## 1. The confession: three rounds of snap theories were all confounded
+
+An on-device diagnostic overlay (outside contributor, notes archived as
+REELS-SCROLL-NOTES.md) finally named the actual scroll killer that
+v5.2.11, v5.2.12 AND v5.2.13 all chased and never saw: the stored
+Facebook document's #screen-root carries overflow:hidden and clips the
+whole page to one viewport. A page that cannot scroll at all cannot
+demonstrate a "bounce-back trap" either - so the v5.2.11 mandatory
+verdict AND the v5.2.12/13 scroll-snap-stop:always verdict were both
+measured against TWO bugs at once and are hereby retracted as
+non-evidence. Fix for the clip itself (kept verbatim, user-confirmed):
+un-clip #screen-root in RESET_SCREEN_ROOT and RESET_GENERAL, and wire
+reelsSnapCss into the no-screen-root fallback branches too.
+
+## 2. The JS gesture corrector is gone - the user is right, it was fake
+
+The "cap the fling via JS" answer (watch touchstart/touchend, wait for
+the native settle, then scrollIntoView back to start+-1) produced the
+exact complaints the user quoted: a 20px peek-drag auto-advances to the
+next reel (proven in jsdom: 4px dir threshold, correction fires after
+settle even when native snap had already returned to the same card),
+and a hard fling gets visibly pulled back ("auto ferot eshe"). The
+whole block is removed; the serving template contains no touch listener
+at all, proven by extraction in jsdom (scrollIntoView fires zero times
+across a full touch-drag-scroll event storm) and pinned so it can never
+sneak back without the suite naming the round.
+
+## 3. scroll-snap-stop:always, re-trialed - in isolation this time
+
+It is the one CSS property built to refuse fling passage through a snap
+area: native, instant, no after-the-fact animation. It now rides the
+cards rule again, as an on-device trial with the clip long gone.
+Outcome branches, recorded in advance so nobody launderers history:
+  - One swipe = one reel on device -> property stays, verdict
+    corrected, case closed.
+  - "Cannot scroll at all" RETURNS -> the property is PROVEN (finally,
+    honestly) incompatible with this WebView; delete it and its test
+    pins permanently and build a custom pager - CSS has no other lever.
+
+## Proof battery
+
+- jsdom round-14 proof: 4/4 (no touch listener in verbatim template,
+  zero programmatic scrolls on a simulated drag, resume reporting kept).
+- 10/10 suites green (1118 assertions; pipeline 446, pins re-validated
+  not blindly flipped - the two stop:always pins now document WHY).
+- kotlinc over the tree: identical normalized diagnostic set to the
+  f58f290 baseline.
+
+> Session: 2026-08-08 | Tag: v5.2.14 | Tests: 1118 passed, 0 failed (10 suites)

@@ -176,6 +176,15 @@ console.log('\nHome opens at the very top, every time');
   ok('reportPosition knows the\u00a0story key on the Kotlin side',
      /"stories", "story" ->/.test(
        fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8')));
+  // Round-14: the user rejected every JS gesture correction as
+  // artificial ("full scroll na korleo auto scroll hoye jacche").
+  // The resume script must contain NO touch handling at all - the pin
+  // is scoped to the extracted template because the Kotlin file's
+  // comments legitimately mention touchstart in their round history.
+  const tpl = asm2.slice(asm2.indexOf('val main = """'),
+                         asm2.indexOf('""".trimIndent()', asm2.indexOf('val main = """')));
+  ok('no JS ever rides the gesture again: no touch listener remains',
+     !/touchstart|touchend|settleAfter/.test(tpl));
   ok('only the reels screen asks compose for one-card-per-gesture snap',
      /compose\(docText, cards, snap = screen == "reels"\)/.test(docs));
 }
@@ -1571,11 +1580,18 @@ console.log('\nEvery saved card reaches the page');
      /scroll-snap-type:none!important/.test(assemblySrc) &&
      /touch-action:manipulation!important/.test(assemblySrc) &&
      /scroll-snap-align:none!important/.test(assemblySrc));
-  ok('and the reels page alone opts back in: proximity, no trap family',
+  ok('and the reels page alone opts back in: proximity + isolated stop',
      /REELS_SNAP_CSS/.test(assemblySrc) &&
      /html,body\{scroll-snap-type:y proximity!important\}/.test(assemblySrc) &&
      /#__db_cards>\*\{scroll-snap-align:start!important/.test(assemblySrc) &&
-     !/scroll-snap-stop/.test(
+     // Round-14 on-device retrial (see REELS-SCROLL-NOTES.md, item 1):
+     // stop:always was never tested without the #screen-root clip also
+     // active, so the round-13 "trap" verdict was confounded. Its
+     // presence is now REQUIRED; if the device reports the trap back
+     // even now, delete the property and this assertion permanently.
+     /scroll-snap-stop:always/.test(
+       require('./offline_vault_harness.js').REELS_SNAP_CSS) &&
+     !/mandatory/.test(
        require('./offline_vault_harness.js').REELS_SNAP_CSS) &&
      /if \(snap\) reelsSnapCss\(padTop \?\: 0\)/.test(assemblySrc));
   ok('a recycled twin of a moved chrome unit is never moved twice',
@@ -1909,12 +1925,20 @@ console.log('\nEvery saved card reaches the page');
          rp.window.getComputedStyle(
            rd.querySelector('[data-type="vscroller"]')).display === 'none');
 
-      // Round-13 amendment: the user still could not scroll on
-      // proximity + stop:always. stop is the remaining member of the
-      // trap family on mobile Chrome (gentle drags get pulled back to
-      // the current area), so it is out - proximity alone settles at a
-      // reel when the gesture slows near a boundary and can never pin
-      // the scroller. Computed through the same hostile cascade.
+      // Round-14 amendment II: the verdict above is RETRACTED as
+      // confounded. Every past failure with stop:always was measured
+      // while #screen-root clipped the page to one viewport of
+      // overflow:hidden - a page that cannot scroll at all cannot show
+      // any lighter symptom, so the property never got a clean test.
+      // With the clip fixed, proximity lets a fast fling sail through
+      // two or three reels ("scroll korle 2/3 ta"), which is exactly
+      // the symptom scroll-snap-stop exists to refuse. The user has
+      // also rejected every JS post-correction as artificial, so CSS
+      // is the only honest lever left. stop:always is back, in
+      // isolation, as an on-device trial: if this device again traps
+      // the scroll with it present, remove the property and this block
+      // PROVEN this time, and a custom pager is the only road left.
+      // Computed through the same hostile cascade.
       const sp2 = new JSDOM('<html><head>' + REEL_CSS + '</head><body>' +
         H.compose(reelDoc, [savedReel], true) + '</body></html>');
       const sd2 = sp2.window.document;
@@ -1928,9 +1952,9 @@ console.log('\nEvery saved card reaches the page');
         sd2.getElementById('reelSurface'));
       ok('every saved reel is exactly one snap area at its start',
          csReel.scrollSnapAlign === 'start', csReel.scrollSnapAlign);
-      ok('no trap-family property remains on the area ' +
-         '(stop:always removed in round 13)',
-         csReel.scrollSnapStop === 'normal', csReel.scrollSnapStop);
+      ok('the area refuses fling passage through it ' +
+         '(stop:always re-trialed in isolation, round 14)',
+         csReel.scrollSnapStop === 'always', csReel.scrollSnapStop);
       ok('the reel\u2019s gesture still lets the drag scroll',
          csReel.touchAction === 'manipulation', csReel.touchAction);
       ok('a zero-height sentinel keeps scroll 0 a legal rest position',

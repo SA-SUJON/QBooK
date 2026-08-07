@@ -205,11 +205,33 @@ object PageAssembly {
      *    cannot be run in jsdom and this device has falsified two
      *    armchair snap theories already.
      *
-     *  Round 16: a fast fling still skips two or three reels ("scroll
-     *    korle 2/3 ta reels scroll hoye jai") now that #screen-root no
-     *    longer clips the page to one viewport height. snap-stop is NOT
-     *    the fix, per the round-13 finding above; a velocity cap belongs
-     *    on the gesture, in resumeScript's territory, not in this CSS.
+     *  Round 14 - the confession that rewrites the paragraph above:
+     *    EVERY "can't scroll" failure on this list (v5.2.11 mandatory,
+     *    v5.2.12 proximity + stop:always) was measured while #screen-root
+     *    still clipped the whole page to one viewport of overflow:hidden.
+     *    A page that cannot scroll cannot demonstrate a trap either:
+     *    scroll-snap-stop:always was NEVER tested in isolation. The
+     *    clip fix (found on-device with a diagnostic overlay) is what
+     *    made reels scrollable at all - proximity alone then showed its
+     *    one honest weakness: a fast fling sails through two or three
+     *    snap areas ("scroll korle 2/3 ta reels scroll hoye jai").
+     *
+     *    The round-13/16 answer was a JS gesture corrector
+     *    (touchstart/touchend, settle, then scrollIntoView to start+or-1).
+     *    The user rejected it as artificial, twice - verbatim: "halka
+     *    scroll korle auto scroll hoye jacche, eita to real hoilo na",
+     *    and they are right: any correction that fires AFTER the finger
+     *    lifts is visibly fake. It is fully removed; no JS touches the
+     *    gesture path anywhere now.
+     *
+     *    What remains is the one property CSS built exactly for this:
+     *    scroll-snap-stop:always refuses a fling passage THROUGH a reel
+     *    - native, instant, no animation after the fact. Re-trialed
+     *    here in isolation, with the clip long gone. If on this
+     *    WebView the old "cannot scroll at all" trap RETURNS even in
+     *    isolation, the property is dead for good on this device and
+     *    must be removed permanently (record that in failed-attempts.md;
+     *    the alternative then is a custom pager, not CSS).
      *
      * As before: every saved card is one snap area aligned to its start,
      * card descendants keep snap-align:none from the reset, and
@@ -221,6 +243,7 @@ object PageAssembly {
         "<style id=\"__db_reels_snap\">" +
             "html,body{scroll-snap-type:y proximity!important}" +
             "#__db_cards>*{scroll-snap-align:start!important;" +
+            "scroll-snap-stop:always!important;" +
             "scroll-snap-margin-top:__PAD__px!important}</style>"
 
     /** The snap opt-in with [padTop] - Facebook's own stamped bar offset. */
@@ -784,99 +807,6 @@ object PageAssembly {
             });
           }
 
-          // Reels only: a fast fling can carry proximity snap past more
-          // than one reel in a single gesture ("scroll korle 2/3 ta
-          // reels scroll hoye jai", round-16). scroll-snap-stop was
-          // tried for this exact symptom before and made the page
-          // un-scrollable outright (round-13) - CSS is off the table.
-          // This instead watches where a touch gesture STARTS; once the
-          // finger lifts and native scrolling/snap fully settles, the
-          // page is corrected to land on the very next (or previous)
-          // reel from where the gesture began - no matter how far the
-          // native fling actually carried it. Nothing here touches the
-          // gesture itself while it is happening - no preventDefault,
-          // no mid-drag code - so the drag always feels exactly as free
-          // as it does now; only the rest position is capped afterward.
-          if (SEC === 'reels') {
-            var startCard = null, dragging = false, startY = 0;
-
-            function cardList(h) {
-              return Array.prototype.slice.call(h.children).filter(
-                function(c){ return c.id !== '__db_snap_t'; });
-            }
-            // Nearest card to the viewport TOP, not the midpoint: each
-            // reel snaps to start (scroll-snap-align:start), so "the
-            // current reel" is whichever one sits closest to y=0 - the
-            // same point the browser itself snaps to.
-            function nearestCard(h) {
-              var list = cardList(h);
-              var best = null, bestDist = Infinity;
-              for (var i = 0; i < list.length; i++) {
-                var d = Math.abs(list[i].getBoundingClientRect().top);
-                if (d < bestDist) { bestDist = d; best = i; }
-              }
-              return best;
-            }
-
-            document.addEventListener('touchstart', function(ev){
-              var h = holder();
-              if (!h) { dragging = false; return; }
-              dragging = true;
-              startY = ev.touches && ev.touches[0] ? ev.touches[0].clientY : 0;
-              var idx = nearestCard(h);
-              startCard = idx == null ? null : cardList(h)[idx];
-            }, {passive: true});
-
-            document.addEventListener('touchend', function(ev){
-              if (!dragging || !startCard) { dragging = false; return; }
-              dragging = false;
-              var endY = (ev.changedTouches && ev.changedTouches[0]) ?
-                ev.changedTouches[0].clientY : startY;
-              var dir = endY < startY - 4 ? 1 :
-                        endY > startY + 4 ? -1 : 0;
-              settleAfter(function(){
-                var h = holder();
-                if (!h) return;
-                var list = cardList(h);
-                var fromIdx = list.indexOf(startCard);
-                if (fromIdx < 0) return;
-                var targetIdx = dir === 0 ? fromIdx : fromIdx + dir;
-                targetIdx = Math.max(0, Math.min(list.length - 1, targetIdx));
-                var target = list[targetIdx];
-                if (target && target.scrollIntoView) {
-                  target.scrollIntoView({block: 'start', behavior: 'smooth'});
-                }
-              });
-            }, {passive: true});
-
-            // Waits for native fling/snap to stop moving the scroller
-            // before correcting the rest position - correcting mid-fling
-            // would just be fought by the browser's own settle.
-            function settleAfter(fn) {
-              var box = scroller();
-              if (!box) { setTimeout(fn, 400); return; }
-              var done = false;
-              function finish() {
-                if (done) return;
-                done = true;
-                clearInterval(iv);
-                clearTimeout(fallback);
-                fn();
-              }
-              var last = box.scrollTop, stable = 0;
-              var iv = setInterval(function(){
-                var now = box.scrollTop;
-                if (now === last) {
-                  stable++;
-                  if (stable >= 2) finish();
-                } else {
-                  stable = 0;
-                  last = now;
-                }
-              }, 80);
-              var fallback = setTimeout(finish, 900);
-            }
-          }
         })();
         """.trimIndent()
 
