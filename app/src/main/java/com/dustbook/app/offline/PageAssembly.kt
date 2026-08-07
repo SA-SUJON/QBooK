@@ -789,64 +789,69 @@ object PageAssembly {
           // reels scroll hoye jai", round-16). scroll-snap-stop was
           // tried for this exact symptom before and made the page
           // un-scrollable outright (round-13) - CSS is off the table.
-          // This instead watches where a touch gesture STARTS and ENDS;
-          // once the finger lifts and native scrolling settles, if the
-          // gesture landed more than one reel away from where it began,
-          // it steps back to the very next one. Nothing here touches
-          // the gesture itself - no preventDefault, no mid-drag code -
-          // so the drag always feels exactly as free as it does now,
-          // and a normal single-reel flick never triggers this at all.
+          // This instead watches where a touch gesture STARTS; once the
+          // finger lifts and native scrolling/snap fully settles, the
+          // page is corrected to land on the very next (or previous)
+          // reel from where the gesture began - no matter how far the
+          // native fling actually carried it. Nothing here touches the
+          // gesture itself while it is happening - no preventDefault,
+          // no mid-drag code - so the drag always feels exactly as free
+          // as it does now; only the rest position is capped afterward.
           if (SEC === 'reels') {
-            var startTop = 0, startCard = null, dragging = false;
+            var startCard = null, dragging = false, startY = 0;
+
+            function cardList(h) {
+              return Array.prototype.slice.call(h.children).filter(
+                function(c){ return c.id !== '__db_snap_t'; });
+            }
+            // Nearest card to the viewport TOP, not the midpoint: each
+            // reel snaps to start (scroll-snap-align:start), so "the
+            // current reel" is whichever one sits closest to y=0 - the
+            // same point the browser itself snaps to.
+            function nearestCard(h) {
+              var list = cardList(h);
+              var best = null, bestDist = Infinity;
+              for (var i = 0; i < list.length; i++) {
+                var d = Math.abs(list[i].getBoundingClientRect().top);
+                if (d < bestDist) { bestDist = d; best = i; }
+              }
+              return best;
+            }
+
             document.addEventListener('touchstart', function(ev){
-              var box = scroller();
-              if (!box) return;
-              dragging = true;
-              startTop = box.scrollTop;
               var h = holder();
-              startCard = h ? cardAt(h, box) : null;
+              if (!h) { dragging = false; return; }
+              dragging = true;
+              startY = ev.touches && ev.touches[0] ? ev.touches[0].clientY : 0;
+              var idx = nearestCard(h);
+              startCard = idx == null ? null : cardList(h)[idx];
             }, {passive: true});
 
-            document.addEventListener('touchend', function(){
-              if (!dragging) return;
+            document.addEventListener('touchend', function(ev){
+              if (!dragging || !startCard) { dragging = false; return; }
               dragging = false;
-              if (!startCard) return;
-              var landed = startCard;
+              var endY = (ev.changedTouches && ev.changedTouches[0]) ?
+                ev.changedTouches[0].clientY : startY;
+              var dir = endY < startY - 4 ? 1 :
+                        endY > startY + 4 ? -1 : 0;
               settleAfter(function(){
-                var box = scroller();
                 var h = holder();
-                if (!box || !h) return;
+                if (!h) return;
                 var list = cardList(h);
                 var fromIdx = list.indexOf(startCard);
-                var curIdx = -1;
-                var cur = cardAt(h, box);
-                if (cur) curIdx = list.indexOf(cur);
-                if (fromIdx < 0 || curIdx < 0) return;
-                var delta = curIdx - fromIdx;
-                if (Math.abs(delta) <= 1) return;
-                var target = list[fromIdx + (delta > 0 ? 1 : -1)];
+                if (fromIdx < 0) return;
+                var targetIdx = dir === 0 ? fromIdx : fromIdx + dir;
+                targetIdx = Math.max(0, Math.min(list.length - 1, targetIdx));
+                var target = list[targetIdx];
                 if (target && target.scrollIntoView) {
                   target.scrollIntoView({block: 'start', behavior: 'smooth'});
                 }
               });
             }, {passive: true});
 
-            function cardList(h) {
-              return Array.prototype.slice.call(h.children).filter(
-                function(c){ return c.id !== '__db_snap_t'; });
-            }
-            function cardAt(h, box) {
-              var mid = (box.clientHeight || window.innerHeight || 0) / 2;
-              var list = cardList(h);
-              for (var i = 0; i < list.length; i++) {
-                var r = list[i].getBoundingClientRect();
-                if (r.top < mid && r.bottom > mid) return list[i];
-              }
-              return null;
-            }
-            // Waits for the scroller to stop moving (native fling and
-            // snap settle asynchronously after touchend) before reading
-            // its final resting position.
+            // Waits for native fling/snap to stop moving the scroller
+            // before correcting the rest position - correcting mid-fling
+            // would just be fought by the browser's own settle.
             function settleAfter(fn) {
               var box = scroller();
               if (!box) { setTimeout(fn, 400); return; }
@@ -868,8 +873,8 @@ object PageAssembly {
                   stable = 0;
                   last = now;
                 }
-              }, 100);
-              var fallback = setTimeout(finish, 1200);
+              }, 80);
+              var fallback = setTimeout(finish, 900);
             }
           }
         })();
