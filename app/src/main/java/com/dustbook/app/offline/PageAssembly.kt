@@ -477,7 +477,7 @@ object PageAssembly {
         val it = SectionVault.JUNK_TAB_LABEL.findAll(slice).iterator()
         while (it.hasNext()) {
             it.next()
-            if (++labels >= 2) return MOVE_TAB
+            if (++labels >= 2) return LEAVE
         }
         if (POST_LINK.containsMatchIn(slice)) return STOP
         return MOVE
