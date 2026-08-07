@@ -456,3 +456,73 @@ an oversized legacy store comes down within one sync.
 - `kotlinc` over the tree: identical diagnostic classes to the baseline.
 
 > Session: 2026-08-07 | Tag: v5.2.7 | Tests: 989 passed, 0 failed (10 suites)
+
+# Round 8 - v5.2.8: the stale screen above the header, "53 of 50", reels stuck at 4, and parallel downloads
+
+Reported with two screenshots: (1) offline home showed the BOTTOM of a
+previously visited post above the facebook bar, with no tab row and no
+composer below it; (2) settings read "Posts: 53 of 50" while "Reels: 4
+of 30" would not move, and posts and reels were seen downloading at the
+same time twice. Verbatim: "tumi ei problem ta ebar serious naw ...
+serial by serial download chara possible hobe na."
+
+## 1. v5.2.7's layout reset forgot the screen STACK
+
+The v5.2.7 reset un-clipped every MScreen in the document. Real captures
+are stacks: Facebook keeps previously visited screens in one DOM for
+back-navigation (`data-screen-keys="57,56,55"`), so un-clipping floated
+a stale post screen above the home header - the screenshot, exactly. And
+the tab row is not part of the header on this device at all: it floats
+INSIDE the vscroller as a badge-carrying unit, so hiding the scroller
+removed navigation itself (the missing buttons). **Fix:** compose v2 -
+the screen that owns the scroller is retagged `data-db-active` at build
+time, every other MScreen and every vscroller hides whole by name, the
+tab-row unit is classified MOVE_TAB and leads the moved chrome (ahead of
+composer and stories tray, because navigation goes first), margins
+stripped only from moved units, header offset stolen as before. Proven
+in jsdom against a device-shape fixture with hostile CSS: the stale
+screen computes display:none, the kept screen computes
+overflow:visible/position:static, and the on-page order reads
+header → tab row → composer → tray → saved cards → hidden scroller.
+Contrast-proven against the v5.2.7 algorithm on the same document.
+
+## 2. "53 of 50" was a race between two bridges
+
+Both capture paths (background WebView + the user's own scrolling)
+computed "remaining" OUTSIDE any lock and both squeezed through. **Fix:**
+the vault decides room inside its own lock (`hardCap - existing.size`),
+atomically. One exception keeps a partial store healable: a re-capture of
+an id the store already holds is a replacement, not an addition, so it
+spends no room - refusing it is what made partial stores permanent.
+
+## 3. Reels "4 of 30" forever was knownIds
+
+knownIds covered EVERY stored id, complete or not. A reel whose signed
+URL expired in the queue kept its slot AND its skip status, so every
+later pass skipped the fresh copy as "known" and the dead URL stayed.
+**Fix:** knownIds now reports COMPLETE items only, so unfinished entries
+resurface for re-capture with fresh URLs; the reels step reloads the
+screen for fresh signed URLs when the real playable count is short,
+bounded at three passes, then moves on.
+
+## 4. Parallel downloads are now structurally impossible
+
+Three vaults with three independent workers meant whatever had queued
+bytes fetched at the same time. **Fix:** a serial download slot in
+OfflineVaults - exactly one vault may fetch, the worker re-checks the
+slot before every file, the slot releases the moment its queue stands
+empty, and the pipeline declares the active section per step (posts →
+reels → posts → stories), so during the reels phase not one feed photo
+moves. A vault parked by a network-policy flip releases instead of
+spinning, so no deadlock. Simulated to death: phase order strict, a
+foreground enqueue during the reels phase waits, at no instant more than
+one vault fetching.
+
+## Proof battery
+
+- 10/10 suites green locally (1057 assertions: 366 pipeline incl. the
+  device-shape parity proofs, scheduler simulation, cap-race and
+  healing proofs, 79 offline UI).
+- `kotlinc` over the tree: identical diagnostic classes to the baseline.
+
+> Session: 2026-08-07 | Tag: v5.2.8 | Tests: 1057 passed, 0 failed (10 suites)

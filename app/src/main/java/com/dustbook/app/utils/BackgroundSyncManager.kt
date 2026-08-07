@@ -29,6 +29,12 @@ import android.os.Looper
  * exactly the number that plays offline - never a markup count while the
  * photos are still in flight.
  *
+ * Downloads are serial BY CONSTRUCTION: OfflineVaults hands a single fetch
+ * slot to exactly one vault, and each step below names its own section as
+ * the priority, so not one byte of a later phase downloads while an
+ * earlier phase is active. "Posts and reels at the same time" is no
+ * longer a race to prevent but a state that cannot exist.
+ *
  * Everything runs silently on background threads. No user action needed.
  */
 object BackgroundSyncManager {
@@ -149,8 +155,15 @@ object BackgroundSyncManager {
 
     // -------------------------------------------------------- steps
 
+    /** Reels passes per cycle, counting the first one. Bounded, always. */
+    private const val MAX_REEL_PASSES = 3
+
     private fun step1FirstPosts(context: Context, p: Prefs) {
         currentStep = "posts-first"
+        // This step owns the serial download slot: no reel moves while
+        // the starter posts are landing.
+        com.dustbook.app.offline.OfflineVaults.setPrioritySection(
+            OfflineFeed.SECTION_FEED)
         // min(10, the chosen count): a fast, immediately usable starter
         // set. The phase total is exact so fetching stops here and reels
         // can start - and a user who set 10 posts is already done here.
@@ -161,17 +174,36 @@ object BackgroundSyncManager {
         }
     }
 
-    private fun step2Reels(context: Context, p: Prefs) {
+    private fun step2Reels(context: Context, p: Prefs, pass: Int = 1) {
         currentStep = "reels"
+        // The serial slot serves reels only for this whole step.
+        com.dustbook.app.offline.OfflineVaults.setPrioritySection(
+            OfflineFeed.SECTION_REELS)
         val target = p.offlineReelTarget.coerceAtLeast(30)
         OfflineSync.run(context, OfflineFeed.SECTION_REELS, target,
             includeVideo = true, force = true, exactTotal = target) {
-            awaitThen(OfflineFeed.SECTION_REELS) { step3MorePosts(context, p) }
+            awaitThen(OfflineFeed.SECTION_REELS) {
+                // A pass fills the STORE on time; some videos still miss
+                // when a signed URL expires before its turn in the queue.
+                // Those entries sit stored but unplayable, and re-capture
+                // is now allowed to replace them (same id, fresh URL) -
+                // so load the reels screen afresh and take another pass.
+                // Bounded, so a dead connection moves the pipeline on.
+                val have = OfflineFeed.realPlayableCount(
+                    OfflineFeed.SECTION_REELS)
+                if (have < target && pass < MAX_REEL_PASSES) {
+                    step2Reels(context, p, pass + 1)
+                } else {
+                    step3MorePosts(context, p)
+                }
+            }
         }
     }
 
     private fun step3MorePosts(context: Context, p: Prefs) {
         currentStep = "posts-full"
+        com.dustbook.app.offline.OfflineVaults.setPrioritySection(
+            OfflineFeed.SECTION_FEED)
         // Continue FROM the starter set up to the user's chosen count:
         // the phase total counts what the store already holds, so this
         // fills exactly the gap - and stops. Gone is the hardcoded 300
@@ -185,12 +217,17 @@ object BackgroundSyncManager {
 
     private fun step4Stories(context: Context, p: Prefs) {
         currentStep = "stories"
+        com.dustbook.app.offline.OfflineVaults.setPrioritySection(
+            OfflineFeed.SECTION_STORIES)
         // Stories: save ALL, not just unwatched.
         OfflineSync.run(context, OfflineFeed.SECTION_STORIES, 200,
             includeVideo = true, force = true) {
             awaitThen(OfflineFeed.SECTION_STORIES) {
                 currentStep = "done"
                 isRunning = false
+                // Free-for-all again: anything queued outside the phases
+                // (an item the user scrolled past) drains in its turn.
+                com.dustbook.app.offline.OfflineVaults.setPrioritySection(null)
             }
         }
     }

@@ -93,12 +93,21 @@ object OfflineFeed {
 
     // ------------------------------------------------------------- store
 
-    /** Merge newly captured items into the section's own store. */
-    fun addItems(section: String, incoming: List<Item>, limit: Int) {
+    /**
+     * Merge newly captured items into the section's own store.
+     *
+     * @param hardCap the user's chosen total for this section, when a
+     *                caller knows it. Enforced INSIDE the vault's lock,
+     *                so two paths calling at the same moment still can
+     *                never push the store past it.
+     */
+    fun addItems(section: String, incoming: List<Item>, limit: Int,
+                 hardCap: Int? = null) {
         if (!SECTIONS.contains(section)) return
         vault(section)?.addItems(
             incoming.map { SectionVault.Entry(it.id, it.html, it.media) },
-            limit
+            limit,
+            hardCap
         )
     }
 

@@ -134,12 +134,31 @@ open class SectionVault(
      * trimmed to maxOf(limit, keepFloor). Written atomically: a truncated
      * store is worse than a stale one.
      */
-    fun addItems(incoming: List<Entry>, limit: Int) {
+    fun addItems(incoming: List<Entry>, limit: Int, hardCap: Int? = null) {
         if (!enabled || !writeEnabled || incoming.isEmpty()) return
         val f = itemsFile() ?: return
         synchronized(this) {
             val existing = load()
             val seen = HashSet<String>()
+
+            // The user's chosen total, and it is absolute for NEW entries.
+            // Checking the room INSIDE this lock is what makes the cap
+            // race-proof: the background pipeline and the main-page capture
+            // used to both compute "remaining" outside any lock and both
+            // squeeze through - that is precisely how "50" quietly became
+            // "53 of 50".
+            //
+            // One exception, and it is what keeps a partial store healable:
+            // a re-capture of an entry the store ALREADY holds (same id).
+            // It replaces the old copy - fresh media URLs included - rather
+            // than adding alongside it, so it spends no room. Refusing it
+            // because the store was full is exactly how "reels 4/30"
+            // became permanent: the known ids are complete-only now, so
+            // every incomplete id comes back through this door.
+            val existingIds = HashSet<String>()
+            for (e in existing) if (e.id.isNotBlank()) existingIds.add(e.id)
+            var room = if (hardCap != null) hardCap - existing.size
+                else Int.MAX_VALUE
 
             val filtered = incoming
                 .filter { !isJunk(it.html) }
@@ -148,6 +167,11 @@ open class SectionVault(
                         list.filter { it.media.any { u -> isVideoUrl(u) } }
                     } else list
                 }
+                .filter {
+                    if (it.id.isNotBlank() && it.id in existingIds) true
+                    else if (room > 0) { room--; true } else false
+                }
+            if (filtered.isEmpty()) return
 
             val keep = maxOf(limit, keepFloor)
             val merged = ArrayList<Entry>(keep)
@@ -193,9 +217,23 @@ open class SectionVault(
         }
     }
 
-    /** Identities already stored, handed to capture so it can skip them. */
+    /**
+     * Identities whose media is REALLY on disk, handed to capture so it can
+     * skip them.
+     *
+     * This used to be every stored id, complete or not - and it is why a
+     * section could jam at a partial count forever ("reels 4/30 ar hote
+     * chai na"). A reel whose signed URL expired before its video landed
+     * stayed in items.json with a dead URL, and every later capture pass
+     * skipped the FRESH copy as "already known", so the fresh URL never
+     * replaced the dead one. Complete items keep their skip (the point of
+     * knownIds); incomplete ones are deliberately NOT known, so the next
+     * pass re-stores them - and because [addItems] merges incoming FIRST,
+     * the replacement with a live URL wins over the dead entry with the
+     * same id rather than duplicating it.
+     */
     fun knownIds(): List<String> =
-        load().map { it.id }.filter { it.isNotBlank() }
+        completeItems().map { it.id }.filter { it.isNotBlank() }
 
     /** Every stored entry, whether or not its media has finished arriving. */
     fun load(): List<Entry> {
@@ -343,7 +381,9 @@ open class SectionVault(
                 if (queued.add(u)) queue.add(u)
             }
         }
-        drain()
+        // Never start a worker directly: the serial scheduler in
+        // OfflineVaults decides which single vault may fetch right now.
+        OfflineVaults.pump()
     }
 
     /**
@@ -355,8 +395,17 @@ open class SectionVault(
         return NetworkPolicy.canDownload(c, Prefs(c))
     }
 
-    /** One worker drains the queue; further calls just add to it. */
-    private fun drain() {
+    /**
+     * One worker drains the queue; further calls just add to it.
+     *
+     * Runs only while THIS vault holds the serial download slot: the
+     * pipeline downloads posts, THEN reels, THEN stories, and the user's
+     * "eksathe download na hote pare" is guaranteed structurally - two
+     * vaults can never be fetching at once, whoever enqueued what.
+     * Granted by OfflineVaults.pump(); released the moment the queue is
+     * empty so the next section's turn begins.
+     */
+    internal fun startDrain() {
         if (!busy.compareAndSet(false, true)) return
         pool.execute {
             var stored = 0
@@ -365,6 +414,7 @@ open class SectionVault(
                     // Re-checked per file: walking out of Wi-Fi range must
                     // not keep pulling video over mobile data.
                     if (!downloadAllowed()) break
+                    if (!OfflineVaults.slotGrantedFor(this)) break
                     val u = synchronized(queue) {
                         if (queue.isEmpty()) null else queue.removeAt(0)
                     } ?: break
@@ -385,7 +435,19 @@ open class SectionVault(
                 if (stored > 0) OfflineDocs.invalidate()
                 busy.set(false)
                 val more = synchronized(queue) { queue.isNotEmpty() }
-                if (more && enabled && writeEnabled) drain()
+                if (more && enabled && writeEnabled && downloadAllowed() &&
+                    OfflineVaults.slotGrantedFor(this)) {
+                    // The queue still has work and it is still our turn.
+                    startDrain()
+                } else {
+                    // Queue empty, or the network policy just turned
+                    // against us: either way the turn is over. Holding the
+                    // slot while unable to fetch would starve the other
+                    // sections, and re-arming would spin a thread on a
+                    // policy check. The next enqueue or phase change
+                    // re-pumps the scheduler.
+                    OfflineVaults.releaseSlot(this)
+                }
             }
         }
     }

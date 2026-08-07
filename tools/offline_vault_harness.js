@@ -80,6 +80,7 @@ const RX = {
   VSCROLLER: kotlinRegex(assembly, 'VSCROLLER'),
   VSCROLLER_TAG: kotlinRegex(assembly, 'VSCROLLER_TAG'),
   SCREEN_ROOT: kotlinRegex(assembly, 'SCREEN_ROOT'),
+  MSCREEN_TAG: kotlinRegex(assembly, 'MSCREEN_TAG'),
   BODY: kotlinRegex(assembly, 'BODY'),
   TOKEN: kotlinRegex(assembly, 'TOKEN'),
   DIV_OPEN: kotlinRegex(assembly, 'DIV_OPEN'),
@@ -90,15 +91,16 @@ const RX = {
   POST_SIG: kotlinRegex(assembly, 'POST_SIG'),
 };
 const HIDE_OLD = kotlinConst(assembly, 'HIDE_OLD');
-const HIDE_SCROLLER = kotlinConstJoined(assembly, 'HIDE_SCROLLER');
+const HIDE_SCREEN_ROOT = kotlinConstJoined(assembly, 'HIDE_SCREEN_ROOT');
 const RESET_SCREEN_ROOT = kotlinConstJoined(assembly, 'RESET_SCREEN_ROOT');
 const RESET_GENERAL = kotlinConstJoined(assembly, 'RESET_GENERAL');
 
-/** Integer const vals, matched as source text (kotlinConst reads strings). */
+/** Integer const vals, matched as source text (kotlinConst reads strings).
+ *  Evaluates the simple `N * M` products Kotlin allows in const vals. */
 function kotlinInt(src, name) {
-  const m = src.match(new RegExp(name + ' =\\s*(\\d+)'));
+  const m = src.match(new RegExp(name + ' =\\s*(\\d+)(?:\\s*\\*\\s*(\\d+))?'));
   if (!m) throw new Error(name + ' int const not found');
-  return parseInt(m[1], 10);
+  return parseInt(m[1], 10) * (m[2] ? parseInt(m[2], 10) : 1);
 }
 const MAX_CHROME_UNITS = kotlinInt(assembly, 'MAX_CHROME_UNITS');
 const MAX_CHROME_BYTES = kotlinInt(assembly, 'MAX_CHROME_BYTES');
@@ -143,18 +145,21 @@ function topLevelChildren(doc, from) {
   return out;
 }
 
-const MOVE = 0, LEAVE = 1, STOP = 2;
+const MOVE = 0, LEAVE = 1, STOP = 2, MOVE_TAB = 3;
 
 /** Mirror of PageAssembly.classify(), using the vault's own signatures. */
 function classify(slice) {
   if (slice.toLowerCase().includes(JUNK.AD_TAG.toLowerCase())) return LEAVE;
+  // The floating tab row is CHROME on this device - it moves out (before
+  // the composer and tray, navigation first) rather than hiding with the
+  // scroller. The vault's own filter against saving it as a card stays.
   const hasStoryLink = test0(JUNK.STORY_LINK, slice);
   let labels = 0;
   JUNK.TAB_LABEL.lastIndex = 0;
   while (JUNK.TAB_LABEL.exec(slice) !== null) {
     if (++labels >= 2) break;
   }
-  if (labels >= 2 && !hasStoryLink) return LEAVE;
+  if (labels >= 2 && !hasStoryLink) return MOVE_TAB;
   if (test0(RX.POST_SIG, slice)) return STOP;
   return MOVE;
 }
@@ -169,11 +174,23 @@ function stripVirtualMargin(slice) {
 }
 
 /** Mirror of PageAssembly.stolenOffset(). */
-function stolenOffset(slice) {
-  const tag = exec0(RX.FIRST_TAG, slice);
-  if (!tag) return null;
-  const m = exec0(RX.MARGIN, tag[0]);
-  return m ? parseInt(m[1], 10) : null;
+function stolenOffset(doc, children) {
+  for (let i = 0; i < children.length && i < 3; i++) {
+    const slice = doc.slice(children[i].start, children[i].end);
+    const tag = exec0(RX.FIRST_TAG, slice);
+    if (!tag) continue;
+    const m = exec0(RX.MARGIN, tag[0]);
+    if (m) return parseInt(m[1], 10);
+  }
+  return null;
+}
+
+/** Mirror of PageAssembly.lastScreenTagBefore(). */
+function lastScreenTagBefore(doc, pos) {
+  RX.MSCREEN_TAG.lastIndex = 0;
+  let last = null, m;
+  while ((m = RX.MSCREEN_TAG.exec(doc)) !== null && m.index < pos) last = m;
+  return last;
 }
 
 /**
@@ -194,38 +211,48 @@ function compose(doc, cards) {
       const vsStart = at + vs.index;
       const vsOpenEnd = at + vs.index + vs[0].length;
 
-      const children = topLevelChildren(doc, vsOpenEnd);
-      const moved = [];
-      let offset = null, bytes = 0;
-      if (children.length) {
-        offset = stolenOffset(doc.slice(children[0].start, children[0].end));
+      let base = doc;
+      const tagM = lastScreenTagBefore(doc, vsStart);
+      if (tagM) {
+        const tag = tagM[0], pos = tagM.index;
+        base = doc.slice(0, pos) + tag.slice(0, -1) + ' data-db-active="1">' +
+               doc.slice(pos + tag.length);
       }
-      let cursor = vsOpenEnd;
+      const shift = base.length - doc.length;
+      const vsStartB = vsStart + shift, vsOpenEndB = vsOpenEnd + shift;
+
+      const children = topLevelChildren(base, vsOpenEndB);
+      const moved = [], tabs = [];
+      const offset = children.length ? stolenOffset(base, children) : null;
+      let bytes = 0;
+      let cursor = vsOpenEndB;
       let inner = '';
       for (let i = 0; i < children.length; i++) {
-        if (moved.length >= MAX_CHROME_UNITS || bytes >= MAX_CHROME_BYTES) break;
+        if (moved.length + tabs.length >= MAX_CHROME_UNITS ||
+            bytes >= MAX_CHROME_BYTES) break;
         const c = children[i];
-        const slice = doc.slice(c.start, c.end);
+        const slice = base.slice(c.start, c.end);
         const kind = classify(slice);
         if (kind === STOP) break;
-        if (kind === MOVE) {
-          inner += doc.slice(cursor, c.start);
+        if (kind === MOVE || kind === MOVE_TAB) {
+          inner += base.slice(cursor, c.start);
           cursor = c.end;
-          moved.push(stripVirtualMargin(slice));
+          (kind === MOVE_TAB ? tabs : moved).push(stripVirtualMargin(slice));
           bytes += slice.length;
         }
       }
       const pad = offset != null && offset > 0 ? offset + 'px' : null;
       const padCss = '<style id="__db_top_pad">' +
-        (moved.length ? '#__db_chrome' : '#__db_cards') +
+        (moved.length + tabs.length ? '#__db_chrome' : '#__db_cards') +
         '{padding-top:' + (pad || '0') + '!important}</style>';
-      const chrome = !moved.length ? '' :
+      const chromeBody = tabs.concat(moved).join('\n');
+      const chrome = !chromeBody ? '' :
         '<div id="__db_chrome"' + (pad ? ' style="padding-top:' + pad + '"' : '') +
-        '>' + moved.join('\n') + '</div>';
-      return doc.slice(0, vsStart) +
-        RESET_SCREEN_ROOT + HIDE_SCROLLER + (pad ? padCss : '') +
+        '>' + chromeBody + '</div>';
+      return base.slice(0, vsStartB) +
+        RESET_SCREEN_ROOT + HIDE_SCREEN_ROOT + (pad ? padCss : '') +
         chrome + holder +
-        doc.slice(vsStart, vsOpenEnd) + inner + doc.slice(cursor);
+        base.slice(vsStartB, vsOpenEndB) + inner + base.slice(cursor);
     }
     return doc.slice(0, at) + RESET_GENERAL + HIDE_OLD + holder + doc.slice(at);
   }
@@ -236,6 +263,11 @@ function compose(doc, cards) {
   }
   return doc + RESET_GENERAL + holder;
 }
+
+/** The v5.2.6 hide rule, kept for the legacy contrast mirror only. */
+const LEGACY_HIDE_SCROLLER =
+  '<style id="__db_hide_old">#__db_cards~[data-type="vscroller"]' +
+  '{display:none!important}</style>';
 
 /**
  * The v5.2.6 compose body, kept ONLY for contrast tests: it must still
@@ -250,7 +282,7 @@ function composeLegacy(doc, cards) {
     const at = m.index + m[0].length;
     const joinedScreenRoot =
       test0(RX.SCREEN_ROOT, m[0]) && test0(RX.VSCROLLER, doc.slice(at));
-    const hide = joinedScreenRoot ? HIDE_SCROLLER : HIDE_OLD;
+    const hide = joinedScreenRoot ? LEGACY_HIDE_SCROLLER : HIDE_OLD;
     return doc.slice(0, at) + hide + holder + doc.slice(at);
   }
   m = exec0(RX.BODY, doc);
@@ -340,14 +372,28 @@ function isComplete(media, has) {
   return Object.values(groups).every((vs) => vs.some(has));
 }
 
-/** Mirror of SectionVault.addItems() merge: newest first, deduped, floored. */
-function addItems(existing, incoming, limit, floor) {
+/**
+ * Mirror of SectionVault.addItems() merge: newest first, deduped, floored.
+ * With a hardCap, a re-capture of a stored id passes for free (it replaces
+ * rather than adds) while a brand-new id spends one unit of room, decided
+ * in one pass - exactly the production lock's rule.
+ */
+function addItems(existing, incoming, limit, floor, hardCap) {
   const keep = Math.max(limit, floor);
+  const existingIds = new Set(
+    existing.map((e) => e.id).filter((x) => x && x.length));
+  let room = (hardCap == null) ? Number.MAX_SAFE_INTEGER :
+    hardCap - existing.length;
+  const allowed = incoming.filter((it) => {
+    if (it.id && it.id.length && existingIds.has(it.id)) return true;
+    if (room > 0) { room--; return true; }
+    return false;
+  });
   const seen = new Set();
   const merged = [];
   const keyFor = (it) => it.id && it.id.length ? it.id :
     ((it.media[0] || '') + '|' + it.html.slice(0, 180));
-  for (const it of [...incoming, ...existing]) {
+  for (const it of [...allowed, ...existing]) {
     const k = keyFor(it);
     if (seen.has(k)) continue;
     seen.add(k);
@@ -360,7 +406,7 @@ function addItems(existing, incoming, limit, floor) {
 module.exports = {
   ROOT, KT, SRC,
   unescapeKotlin, kotlinRegex, kotlinConst, kotlinConstJoined,
-  RX, HIDE_OLD, HIDE_SCROLLER, RESET_SCREEN_ROOT, RESET_GENERAL,
+  RX, HIDE_OLD, HIDE_SCREEN_ROOT, RESET_SCREEN_ROOT, RESET_GENERAL,
   sanitize, holderHtml, compose, composeLegacy,
   classify, stripVirtualMargin, stolenOffset, topLevelChildren,
   photoKey, isVideoUrl, isAvatar, isChrome, isComplete, addItems,

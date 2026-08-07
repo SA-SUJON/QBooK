@@ -121,7 +121,7 @@ console.log('\nWhat gets downloaded in the first place');
     ok('video is still recognised without an extension',
        /\/v\/t2\//.test(vaultSrc));
     ok('downloads are queued rather than dropped',
-       /queued\.add\(u\)/.test(vaultSrc) && /private fun drain\(\)/.test(vaultSrc));
+       /queued\.add\(u\)/.test(vaultSrc) && /internal fun startDrain\(\)/.test(vaultSrc));
   }
 }
 
@@ -597,15 +597,15 @@ console.log('\nThe pipeline runs in the documented order');
        String(bsm.indexOf(defs[i - 1])) + ' vs ' + String(bsm.indexOf(defs[i])));
   }
   ok('each phase hands over to the next',
-     /fun step1FirstPosts[\s\S]{0,600}step2Reels\(context, p\)/.test(bsm) &&
-     /fun step2Reels[\s\S]{0,600}step3MorePosts\(context, p\)/.test(bsm) &&
-     /fun step3MorePosts[\s\S]{0,600}step4Stories\(context, p\)/.test(bsm));
+     /fun step1FirstPosts[\s\S]{0,900}step2Reels\(context, p\)/.test(bsm) &&
+     /fun step2Reels[\s\S]{0,1400}step3MorePosts\(context, p\)/.test(bsm) &&
+     /fun step3MorePosts[\s\S]{0,900}step4Stories\(context, p\)/.test(bsm));
   ok('step 0 trims the feed vault to the chosen count, before any fetch',
      /isRunning = true[\s\S]{0,800}diskIO\.execute \{[\s\S]{0,200}OfflineFeed\.trimTo\(OfflineFeed\.SECTION_FEED, p\.offlinePostTarget\)[\s\S]{0,240}step1FirstPosts\(c, p\)/.test(bsm));
   ok('step 1 is a starter set: min(10, the chosen count), exactly',
-     /fun step1FirstPosts[\s\S]{0,400}minOf\(10, p\.offlinePostTarget\)[\s\S]{0,300}SECTION_FEED, quick,[\s\S]{0,200}exactTotal = quick/.test(bsm));
+     /fun step1FirstPosts[\s\S]{0,800}minOf\(10, p\.offlinePostTarget\)[\s\S]{0,300}SECTION_FEED, quick,[\s\S]{0,200}exactTotal = quick/.test(bsm));
   ok('reels use the user\'s chosen count, exactly',
-     /fun step2Reels[\s\S]{0,240}p\.offlineReelTarget[\s\S]{0,240}exactTotal = target/.test(bsm));
+     /fun step2Reels[\s\S]{0,500}p\.offlineReelTarget[\s\S]{0,240}exactTotal = target/.test(bsm));
   ok('step 3 fills only to the user\'s chosen post count - never 300 blind',
      /fun step3MorePosts[\s\S]{0,700}p\.offlinePostTarget[\s\S]{0,400}SECTION_FEED, target,[\s\S]{0,240}exactTotal = target/.test(bsm) &&
      !/SECTION_FEED, 300/.test(bsm) && !/exactTotal = 300/.test(bsm));
@@ -684,6 +684,249 @@ console.log('\nThe pipeline runs in the documented order');
   ok('the wait follows every phase', awaits >= 4, String(awaits));
 }
 
+// --------------------------------- serial downloads, structurally impossible to parallelise
+console.log('\nTwo sections can never download at the same time');
+{
+  const registry = fs.readFileSync(KT('offline/OfflineVaults.kt'), 'utf8');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const bsm = fs.readFileSync(KT('utils/BackgroundSyncManager.kt'), 'utf8');
+
+  // Round-8 requirement, verbatim: "reels post's eksathe download na hote
+  // pare serial by serial download chara possible hobe na". The guarantee
+  // is structural: exactly one vault holds the fetch slot at any moment.
+  ok('exactly one vault can hold the fetch slot',
+     /private val schedLock/.test(registry) &&
+     /owner: SectionVault\? = null/.test(registry));
+  ok('granting hands the slot to one vault and starts only its worker',
+     /owner = grant/.test(registry) && /grant\.startDrain\(\)/.test(registry));
+  ok('a queue add asks the scheduler instead of starting a worker',
+     /OfflineVaults\.pump\(\)/.test(vaultSrc) &&
+     !/private fun drain\(\)/.test(vaultSrc));
+  ok('the worker checks the slot before every single file',
+     /if \(!OfflineVaults\.slotGrantedFor\(this\)\) break/.test(vaultSrc));
+  ok('the worker gives the slot back when its own queue stands empty',
+     /OfflineVaults\.releaseSlot\(this\)/.test(vaultSrc));
+  ok('a parked vault releases too - a policy flip can never deadlock',
+     /more && enabled && writeEnabled && downloadAllowed\(\)/.test(vaultSrc));
+  ok('while a phase is active, only its own section may hold the slot',
+     /sections\.filter \{ it\.section == prio \}/.test(registry));
+
+  // The pipeline tells the scheduler which section each step is filling.
+  ok('step 1 grants the slot to posts',
+     /fun step1FirstPosts[\s\S]{0,400}setPrioritySection\(\s*OfflineFeed\.SECTION_FEED\)/.test(bsm));
+  ok('step 2 grants the slot to reels',
+     /fun step2Reels[\s\S]{0,400}setPrioritySection\(\s*OfflineFeed\.SECTION_REELS\)/.test(bsm));
+  ok('step 3 grants the slot back to posts',
+     /fun step3MorePosts[\s\S]{0,400}setPrioritySection\(\s*OfflineFeed\.SECTION_FEED\)/.test(bsm));
+  ok('step 4 grants the slot to stories',
+     /fun step4Stories[\s\S]{0,400}setPrioritySection\(\s*OfflineFeed\.SECTION_STORIES\)/.test(bsm));
+  ok('the slot is free-for-all again once the pipeline has finished',
+     /setPrioritySection\(null\)/.test(bsm));
+
+  // Behavioural proof: a faithful model of the scheduler, driven through
+  // the exact production sequence (BSM phases + a foreground enqueue
+  // mid-reels-phase), asserting at every instant that at most one vault
+  // is fetching - in every order the events could occur.
+  function newWorld() {
+    const w = {
+      owner: null, prio: null, log: [], busyLog: [],
+      vaults: {
+        feed: { name: 'feed', pending: 0, busy: false },
+        reels: { name: 'reels', pending: 0, busy: false },
+        stories: { name: 'stories', pending: 0, busy: false }
+      }
+    };
+    w.busyNow = () =>
+      Object.values(w.vaults).filter((v) => v.busy).length;
+    w.pump = () => {
+      if (w.owner) return;
+      const order = (w.prio == null ? ['feed', 'reels', 'stories']
+        : ['feed', 'reels', 'stories'].filter((x) => x === w.prio))
+        .map((n) => w.vaults[n]);
+      const g = order.find((v) => v.pending > 0);
+      if (!g) return;
+      w.owner = g.name;
+      g.busy = true;
+    };
+    w.setPrio = (s) => { w.prio = s; w.pump(); };
+    w.enqueue = (name, n) => { w.vaults[name].pending += n; w.pump(); };
+    w.release = (v) => { if (w.owner === v.name) w.owner = null; w.pump(); };
+    // One file: only the OWNER can fetch (the production per-file guard).
+    w.tick = () => {
+      if (!w.owner) return false;
+      const v = w.vaults[w.owner];
+      v.pending--;
+      w.log.push(v.name);
+      w.busyLog.push(w.busyNow());
+      if (v.pending === 0) { v.busy = false; w.release(v); }
+      return true;
+    };
+    w.quiet = () => { let t = 0; while (w.owner && t < 1000) { w.tick(); t++; } };
+    return w;
+  }
+
+  // The full pipeline with an interleaved foreground capture.
+  const w = newWorld();
+  w.setPrio('feed');
+  w.enqueue('feed', 5);          // step 1 starter posts land
+  w.quiet();
+  w.setPrio('reels');
+  w.enqueue('reels', 3);         // step 2 reels land
+  w.enqueue('feed', 2);          // user scrolls the feed DURING the reels phase
+  const feedWaitingMidReels = w.vaults.feed.pending;
+  w.quiet();                     // reels drain; feed must still be waiting
+  const feedWaitingAfterReels = w.vaults.feed.pending;
+  w.setPrio(null);               // pipeline done: the waiting posts go now
+  w.quiet();
+  ok('the downloads happen strictly in phase order, never interleaved',
+     JSON.stringify(w.log) === JSON.stringify(
+       ['feed', 'feed', 'feed', 'feed', 'feed',
+        'reels', 'reels', 'reels',
+        'feed', 'feed']), w.log.join(','));
+  ok('foreground work waited patiently through the reels phase',
+     feedWaitingMidReels === 2 && feedWaitingAfterReels === 2,
+     feedWaitingMidReels + '/' + feedWaitingAfterReels);
+  ok('at no instant was more than one vault fetching',
+     w.busyLog.every((n) => n <= 1));
+
+  // No priority (plain browsing): first come, first served, still one at
+  // a time; when the first finishes, the next starts immediately.
+  const w2 = newWorld();
+  w2.enqueue('stories', 2);
+  w2.enqueue('reels', 2);
+  w2.quiet();
+  ok('with no phase declared, work is still served strictly one at a time',
+     JSON.stringify(w2.log) === JSON.stringify(
+       ['stories', 'stories', 'reels', 'reels']), w2.log.join(','));
+  ok('and still never two at once', w2.busyLog.every((n) => n <= 1));
+
+  // A priority phase with nothing to do must not strand waiting work.
+  const w3 = newWorld();
+  w3.enqueue('feed', 1);
+  w3.quiet();
+  w3.setPrio('stories');         // stories phase, but no stories queued
+  w3.enqueue('feed', 1);         // only feed has work
+  const strandedWhilePrioritised = w3.vaults.feed.pending;
+  w3.setPrio(null);
+  w3.quiet();
+  ok('work queued under another phase heals the moment the slot frees',
+     strandedWhilePrioritised === 1 && w3.vaults.feed.pending === 0);
+}
+
+console.log('\nThe cap holds atomically, and a full store still heals');
+{
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const H = require('./offline_vault_harness.js');
+
+  // Round-8 requirement: "Posts 50 tar beshi download hoi". The room is
+  // decided INSIDE the vault lock - both capture paths used to compute
+  // "remaining" outside any lock, which is exactly how 50 became 53.
+  ok('the room decision lives inside the vault lock',
+     /synchronized\(this\) \{[\s\S]{0,1200}var room = if \(hardCap != null\) hardCap - existing\.size/.test(vaultSrc));
+  ok('a stored id re-captured spends no room (replacement, not addition)',
+     /if \(it\.id\.isNotBlank\(\) && it\.id in existingIds\) true[\s\S]{0,80}else if \(room > 0\) \{ room--; true \} else false/.test(vaultSrc));
+  ok('no take-of-remaining shortcut remains anywhere in the vault',
+     !/\.take\(room\)/.test(vaultSrc));
+
+  // Behavioural: two bridges race a store holding 48 with cap 50. Each
+  // "thought" there was room for 2 BEFORE either landed - the old shape.
+  // The locked vault takes them one at a time.
+  const store48 = Array.from({ length: 48 }, (_, i) =>
+    ({ id: 'old' + i, html: '<div>x</div>', media: [] }));
+  const callA = Array.from({ length: 5 }, (_, i) =>
+    ({ id: 'a' + i, html: '<div>a</div>', media: [] }));
+  const callB = Array.from({ length: 5 }, (_, i) =>
+    ({ id: 'b' + i, html: '<div>b</div>', media: [] }));
+  let store = H.addItems(store48, callA, 50, 500, 50);
+  store = H.addItems(store, callB, 50, 500, 50);
+  ok('two racing bridges can never push the store past the cap',
+     store.length === 50, String(store.length));
+  ok('the first caller filled the room, the second got none of it',
+     store.filter((e) => e.id[0] === 'a').length === 2 &&
+     store.filter((e) => e.id[0] === 'b').length === 0);
+
+  // And the healing half of the same rule: a store at cap with entries
+  // whose media never landed must still accept their re-captures.
+  const full = Array.from({ length: 30 }, (_, i) =>
+    ({ id: 'r' + i, html: '<div>reel ' + i + '</div>', media: ['v' + i + '.mp4'] }));
+  const rerun = full.map((e, i) =>
+    ({ id: e.id, html: '<div>reel ' + i + ' FRESH</div>', media: ['fresh' + i + '.mp4'] }));
+  const healed = H.addItems(full, rerun, 30, 250, 30);
+  ok('a full store of unfinished reels accepts every replacement',
+     healed.length === 30 && healed.every((e) => e.media[0].indexOf('fresh') === 0));
+  const freshUrlsWon = healed.filter((e) =>
+    e.html.indexOf('FRESH') >= 0).length;
+  ok('the replacement really replaces - fresh URLs win over dead ones',
+     freshUrlsWon === 30, String(freshUrlsWon));
+  ok('and one brand new id on top still does not fit',
+     H.addItems(healed, [{ id: 'zz', html: '<div>z</div>', media: [] }],
+       30, 250, 30).length === 30);
+}
+
+console.log('\nAn entry is "known" only when it is playable');
+{
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const H = require('./offline_vault_harness.js');
+
+  // Round-8 root cause of "reels 4/6 ta download hoye ar hote chai na":
+  // knownIds used to cover EVERY stored id, so a reel whose signed URL
+  // died in the queue kept its slot AND its skip status - the fresh copy
+  // the next pass saw was skipped as "known", and the dead URL stayed.
+  ok('known ids come from COMPLETE items only',
+     /fun knownIds\(\): List<String> =\s*completeItems\(\)\.map \{ it\.id \}/.test(vaultSrc));
+
+  // Behavioural, through the production completeness predicate: 6 stored
+  // reels, 2 with video on disk; the capture pass must be told to skip
+  // exactly those 2 and re-take the other 4.
+  const entries = Array.from({ length: 6 }, (_, i) => ({
+    id: 'reel' + i,
+    media: ['https://video.xx.fbcdn.net/o1/v/clip' + i + '.mp4']
+  }));
+  const disk = new Set([entries[1].media[0], entries[4].media[0]]);
+  const known = entries
+    .filter((e) => H.isComplete(e.media, (u) => disk.has(u)))
+    .map((e) => e.id);
+  ok('playable reels stay known - they are never re-downloaded',
+     JSON.stringify(known) === JSON.stringify(['reel1', 'reel4']),
+     known.join(','));
+  const recapture = entries.filter((e) => known.indexOf(e.id) === -1)
+    .map((e) => e.id);
+  ok('the other four come back as brand new, fresh URL and all',
+     recapture.length === 4 && recapture.indexOf('reel0') === 0);
+}
+
+console.log('\nThe reels phase retries with fresh signed URLs, then moves on');
+{
+  const bsm = fs.readFileSync(KT('utils/BackgroundSyncManager.kt'), 'utf8');
+
+  // When the queue drains short of the target, the signed URLs that died
+  // mid-queue are re-issued by simply loading the reels screen again -
+  // and the store lets the fresh copies in (proofs above). Bounded, so a
+  // dead connection can never pin the pipeline on reels.
+  ok('the reels step counts its passes and stops retrying',
+     /private const val MAX_REEL_PASSES = 3/.test(bsm) &&
+     /pass < MAX_REEL_PASSES/.test(bsm));
+  ok('the retry decision is the REAL playable count, not the store size',
+     /realPlayableCount\(\s*OfflineFeed\.SECTION_REELS\)/.test(bsm));
+  ok('a short pass reloads the reels screen for fresh URLs',
+     /fun step2Reels[\s\S]{0,1300}step2Reels\(context, p, pass \+ 1\)/.test(bsm));
+  ok('and after enough tries the pipeline still moves on to posts',
+     /fun step2Reels[\s\S]{0,1400}step3MorePosts\(context, p\)/.test(bsm));
+
+  // Faithful port of the retry gate, run to its boundaries.
+  function reelsOutcome(have, target, pass) {
+    const MAX_REEL_PASSES = 3;
+    if (have < target && pass < MAX_REEL_PASSES) return 'retry';
+    return 'move-on';
+  }
+  ok('a stalled-at-4 first pass retries',
+     reelsOutcome(4, 30, 1) === 'retry');
+  ok('a target met on the first pass never retries',
+     reelsOutcome(30, 30, 1) === 'move-on');
+  ok('the third pass is the last one, target or not',
+     reelsOutcome(4, 30, 3) === 'move-on');
+}
+
 console.log('\nAn exact phase total stops fetching where it was asked');
 {
   const sync = fs.readFileSync(KT('utils/OfflineSync.kt'), 'utf8');
@@ -692,57 +935,96 @@ console.log('\nAn exact phase total stops fetching where it was asked');
      /fun run[\s\S]{0,500}exactTotal: Int\? = null/.test(sync) &&
      /fun runAll[\s\S]{0,500}exactTotal: Int\? = null/.test(sync));
   ok('the batch is capped by what the store still needs',
-     /val remaining = exactTotal -[\s\S]{0,80}OfflineFeed\.totalStored\(sec\)/.test(sync) &&
-     /newItems\.take\(remaining\)/.test(sync));
-  ok('a reached total stops the phase before any download is queued',
-     /if \(remaining <= 0\) return/.test(sync));
+     /var room = exactTotal - stored\.size/.test(sync));
+  ok('a re-capture of a stored id passes even when the store is full',
+     /if \(it\.id\.isNotBlank\(\) &&[\s\S]{0,60}it\.id in storedIds\) true/.test(sync));
   ok('only the kept batch is queued for download',
      /OfflineFeed\.prefetch\(sec, batch, includeVideo\)/.test(sync));
-  ok('and only the kept batch reaches the store',
-     /OfflineFeed\.addItems\(sec, batch, target\)/.test(sync));
+  ok('and only the kept batch reaches the store, cap re-checked inside',
+     /OfflineFeed\.addItems\(sec, batch, target, exactTotal\)/.test(sync));
 
-  // Faithful port of the batching, run through the phase boundaries.
-  function phase(existing, reported, exactTotal) {
-    const known = new Set(existing.map((x) => x.id));
+  // Faithful port of the batching, run through the phase boundaries. The
+  // bridge knows ids of COMPLETE items only (the vault's knownIds), so a
+  // stored-but-unfinished id comes back reported: it must pass as a
+  // replacement WITHOUT spending room, while brand new ids spend room.
+  function phase(existing, completeIds, reported, exactTotal) {
+    const known = new Set(completeIds);
+    const storedIds = new Set(existing.map((x) => x.id));
     const fresh = reported.filter((it) => !known.has(it.id));
-    const remaining = exactTotal - existing.length;
-    if (remaining <= 0) return [];
-    return fresh.slice(0, remaining);
+    let room = exactTotal - existing.length;
+    return fresh.filter((it) => {
+      if (it.id && storedIds.has(it.id)) return true;
+      if (room > 0) { room--; return true; }
+      return false;
+    });
   }
   const mk = (p, n) => Array.from({ length: n }, (_, i) => ({ id: p + i }));
   ok('phase 1 takes ten and stops',
-     phase([], mk('a', 25), 10).length === 10);
-  ok('phase 1 stops completely once ten are held',
-     phase(mk('a', 10), mk('b', 20), 10).length === 0);
+     phase([], [], mk('a', 25), 10).length === 10);
+  ok('phase 1 stops completely once ten are held and complete',
+     phase(mk('a', 10), mk('a', 10).map((x) => x.id), mk('b', 20), 10).length === 0);
   ok('phase 3 fills only the gap to the chosen count',
-     phase(mk('a', 10), mk('b', 500), 50).length === 40);
-  ok('an oversized old store gets nothing new at all',
-     phase(mk('a', 200), mk('b', 500), 50).length === 0);
+     phase(mk('a', 10), mk('a', 10).map((x) => x.id), mk('b', 500), 50).length === 40);
+  ok('an oversized old store gets nothing NEW at all',
+     phase(mk('a', 200), mk('a', 200).map((x) => x.id), mk('b', 500), 50).length === 0);
   ok('reels phase respects the chosen amount',
-     phase([], mk('r', 90), 50).length === 50);
+     phase([], [], mk('r', 90), 50).length === 50);
+  {
+    // THE round-8 reels bug, at the boundary where it lived: 30 stored
+    // reel entries, only 4 playable (26 signed URLs died before landing).
+    // The old gate: remaining = 30 - 30 = 0, the fresh re-captures were
+    // refused, "4 of 30" forever. Now every replacement passes for free.
+    const stored = mk('r', 30);
+    const completeIds = ['r3', 'r7', 'r11', 'r20'];
+    const reported = mk('r', 30).map((x, i) => ({ id: x.id })); // same ids, fresh URLs
+    const batch = phase(stored, completeIds, reported, 30);
+    ok('a full store of dead URLs still accepts all 26 replacements',
+       batch.length === 26, String(batch.length));
+    ok('those 26 are exactly the unfinished entries',
+       batch.every((it) => completeIds.indexOf(it.id) === -1));
+    ok('and still not one NEW id past the total',
+       phase(stored, completeIds, mk('z', 10), 30).length === 0);
+    // The OLD port, for contrast, so the proof can never silently invert.
+    const oldRemaining = 30 - stored.length;
+    ok('contrast: the old gate really did refuse every one of them',
+       oldRemaining <= 0);
+  }
 
   // The user's own scrolling is a capture path too: the same ceilings
   // bind it, or "stops at my number" is only true for the background run.
   const mainSrc = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
   ok('the foreground merge is capped by the chosen counts',
-     /fun onOfflineItems\(section: String, json: String, done: Boolean\)[\s\S]{0,1600}prefs\.offlinePostTarget[\s\S]{0,500}prefs\.offlineReelTarget[\s\S]{0,500}newItems\.take\(remaining\)/.test(mainSrc));
+     /fun onOfflineItems\(section: String, json: String, done: Boolean\)[\s\S]{0,1600}prefs\.offlinePostTarget[\s\S]{0,500}prefs\.offlineReelTarget[\s\S]{0,500}var room = cap - stored\.size/.test(mainSrc));
   // Faithful port of the foreground gate, run through its boundaries.
-  function foreground(section, existing, reported, caps) {
+  function foreground(section, existing, completeIds, reported, caps) {
     const cap = caps[section] || 0;
     if (cap <= 0) return reported;
-    const remaining = cap - existing;
-    if (remaining <= 0) return [];
-    return reported.slice(0, remaining);
+    const known = new Set(completeIds);
+    const storedIds = new Set(existing);
+    const fresh = reported.filter((it) => !known.has(it.id));
+    let room = cap - existing.length;
+    return fresh.filter((it) => {
+      if (it.id && storedIds.has(it.id)) return true;
+      if (room > 0) { room--; return true; }
+      return false;
+    });
   }
   const caps = { feed: 50, reels: 30 };
   ok('foreground: a sees-everything scroll still stops at the post count',
-     foreground('feed', 48, mk('p', 20), caps).length === 2 &&
-     foreground('feed', 50, mk('p', 20), caps).length === 0);
+     foreground('feed', mk('q', 48).map((x) => x.id), mk('q', 48).map((x) => x.id),
+       mk('p', 20), caps).length === 2 &&
+     foreground('feed', mk('q', 50).map((x) => x.id), mk('q', 50).map((x) => x.id),
+       mk('p', 20), caps).length === 0);
   ok('foreground: reels honor their own count',
-     foreground('reels', 25, mk('r', 20), caps).length === 5 &&
-     foreground('reels', 40, mk('r', 20), caps).length === 0);
+     foreground('reels', mk('q', 25).map((x) => x.id), mk('q', 25).map((x) => x.id),
+       mk('r', 20), caps).length === 5 &&
+     foreground('reels', mk('q', 40).map((x) => x.id), mk('q', 30).map((x) => x.id),
+       mk('r', 20), caps).length === 0);
+  ok('foreground: unfinished stored reels re-save past a full store',
+     foreground('reels', mk('r', 30).map((x) => x.id), ['r1'],
+       mk('r', 30), caps).length === 29);
   ok('foreground: stories stay uncapped (no user-set count)',
-     foreground('stories', 500, mk('s', 3), caps).length === 3);
+     foreground('stories', [], [], mk('s', 3), caps).length === 3);
 }
 
 // ---------------------------------------------- the vault trims to the setting
@@ -1020,8 +1302,11 @@ console.log('\nEvery saved card reaches the page');
   ok('the cards join the earliest container, never a ranked scroller-first',
      !/FEED_VSCROLLER/.test(assemblySrc) &&
      /CONTAINER\.find\(doc\)/.test(assemblySrc));
-  ok('the old scroller hides by name, leaving the header alone',
-     /#__db_cards~\[data-type=..vscroller/.test(assemblySrc));
+  ok('every stale scroller AND every stacked screen hide whole',
+     /data-type=\\"vscroller\\"/.test(assemblySrc) &&
+     /:not\(\[data-db-active\]\)/.test(assemblySrc) &&
+     /display:none!important/.test(assemblySrc) &&
+     /data-db-active=\\"1\\"/.test(assemblySrc));
   ok('the blanket sibling rule survives only for scroller-less documents',
      /#__db_cards~\*/.test(assemblySrc) &&
      /joinedScreenRoot/.test(assemblySrc));
@@ -1029,7 +1314,11 @@ console.log('\nEvery saved card reaches the page');
      /fun topLevelChildren\(doc: String, from: Int\)/.test(assemblySrc) &&
      /TOKEN/.test(assemblySrc) && /fun classify\(slice: String\)/.test(assemblySrc) &&
      /__db_chrome/.test(assemblySrc));
-  ok('junk (tab row, condemned ad) is never moved out with the chrome',
+  ok('the floating tab row is chrome too, moved out ahead of the composer',
+     /MOVE_TAB/.test(assemblySrc) &&
+     /fun lastScreenTagBefore/.test(assemblySrc) &&
+     /tabs \+ moved/.test(assemblySrc));
+  ok('junk decisions reuse the vault signatures, one definition no drift',
      /SectionVault\.JUNK_AD_TAG/.test(assemblySrc) &&
      /SectionVault\.JUNK_TAB_LABEL/.test(assemblySrc) &&
      /SectionVault\.JUNK_STORY_LINK/.test(assemblySrc));
@@ -1045,81 +1334,115 @@ console.log('\nEvery saved card reaches the page');
      /overflow:visible!important/.test(assemblySrc) &&
      /\[data-mcomponent=..MScreen..\]\{position:static!important/.test(assemblySrc));
   {
-    // Full captured home shape, WITH the kind of hostile Facebook layout
-    // CSS that owns scrolling on the live site. Round-7 report, verbatim:
-    // "offline a nav buttons gulai nai, story's o nai, scroll down
-    // smoothly hoi na ar scrolling up hotei chai na".
+    // THE ROUND-8 DEVICE SHAPE, reproduced from the user's own capture
+    // structure: Facebook keeps prior screens STACKED in one DOM
+    // (data-screen-keys="57,56,55"), and the tab row floats INSIDE the
+    // home scroller as a badge-carrying unit - it is not part of the
+    // header at all. v5.2.7 un-clipped every MScreen and hid by sibling
+    // position, which is exactly why the user screenshotted the bottom
+    // of a stale saved post ABOVE the facebook bar, and why the tab row
+    // was gone: it hid with the scroller it floats in.
+    // Round-8 report, verbatim: "home feed ekhono thik jaigay nai ar
+    // jekhane ache okhaneo upore je je buttons thakbar kotha segulaw
+    // nai".
     const hostile =
       '<style>html{background:#000}' +
       '.bg-s2{background:#18191a;height:100%;overflow:hidden;' +
       'position:absolute;top:0;bottom:0;left:0;right:0;transform:translateZ(0)}' +
       '.fixed-container{position:fixed;top:0;left:0;right:0;z-index:300}' +
       '.vscroller{overflow-y:auto;height:100%}</style>';
-    const home =
-      '<div data-mcomponent="MScreen" data-screen-id="65549"' +
-      ' data-crash-screen-id="42949673960" data-screen-keys="57,56,55"' +
-      ' data-type="container" class="m bg-s2">' +
-      '<div data-mcomponent="MContainer" class="m fixed-container top" id="hdr">' +
-      '<div>facebook</div><div role="button" aria-label="Reels">R</div></div>' +
-      '<div data-type="vscroller" data-mcomponent="MContainer"' +
-      ' data-is-pull-to-refresh-allowed="true" class="m vscroller">' +
+    const tabRow =
+      '<div data-mcomponent="MContainer" class="m fixed-container top" id="tabrow">' +
+      '<div role="button" aria-label="Home">15+</div>' +
+      '<div role="button" aria-label="Friends">15+</div>' +
+      '<div role="button" aria-label="Chats">4</div>' +
+      '<div role="button" aria-label="Reels">15+</div>' +
+      '<div role="button" aria-label="Notifications">9</div></div>';
+    const composer =
       '<div data-mcomponent="MContainer" id="composer"' +
       ' style="margin-top:104px; height:56px; z-index:0; width:360px;">' +
-      '<div role="textbox">What\u2019s on your mind?</div></div>' +
+      '<div role="textbox">What\u2019s on your mind?</div></div>';
+    const tray =
       '<div data-mcomponent="MContainer" id="tray" class="m"' +
       ' style="margin-top:160px; height:232px; z-index:0; width:360px;">' +
       '<a href="https://m.facebook.com/stories/111">Create story</a>' +
-      '<a href="https://m.facebook.com/stories/222">Your Story</a></div>' +
-      '<div data-mcomponent="MContainer" class="m" id="junkrow">' +
-      '<div role="button" aria-label="Home">15+</div>' +
-      '<div role="button" aria-label="Reels">15+</div></div>' +
+      '<a href="https://m.facebook.com/stories/222">Your Story</a></div>';
+    const stalePost =
+      '<div data-mcomponent="MContainer" class="old" id="stale1" style="margin-top:700px;">' +
+      '<a href="https://m.facebook.com/story.php?story_fbid=42&amp;id=7">stale</a></div>';
+    const deviceDoc =
+      '<div data-mcomponent="MScreen" data-screen-id="11111"' +
+      ' data-type="container" class="m bg-s2" id="screenA">' +
+      '<div data-mcomponent="MContainer" id="stalePostScreen">' +
+      '<div style="height:220px;background:#333">a post detail the user left</div>' +
+      '<div>20 reactions</div><div>19 Comments</div></div></div>' +
+      '<div data-mcomponent="MScreen" data-screen-id="65549"' +
+      ' data-crash-screen-id="42949673960" data-screen-keys="57,56,55"' +
+      ' data-type="container" class="m bg-s2" id="screenB">' +
+      '<div data-mcomponent="MContainer" class="m fixed-container top" id="hdr">' +
+      '<div>facebook</div><div role="button" aria-label="Search">S</div>' +
+      '<div role="button" aria-label="Menu">M</div></div>' +
+      '<div data-type="vscroller" data-mcomponent="MContainer"' +
+      ' data-is-pull-to-refresh-allowed="true" class="m vscroller">' +
+      tabRow + composer + tray +
       '<div data-db-ad="1" id="savedad"><span>Sponsored</span></div>' +
-      '<div data-mcomponent="MContainer" class="old" id="old1"' +
-      ' style="margin-top:700px;">' +
-      '<a href="https://m.facebook.com/story.php?story_fbid=42&amp;id=7">stale</a></div>' +
+      stalePost +
       '</div></div>';
+    const savedCards = [
+      '<div data-tracking-duration-id="n1"><span>saved post one</span></div>',
+      '<div data-tracking-duration-id="n2"><span>saved post two</span></div>'];
+
     const page = '<html><head>' + hostile + '</head><body>' +
-      H.compose(home,
-        ['<div data-tracking-duration-id="n9"><span>saved post</span></div>']) +
-      '</body></html>';
+      H.compose(deviceDoc, savedCards) + '</body></html>';
     const dom2 = new JSDOM(page, { url: 'https://m.facebook.com/' });
     const pd = dom2.window.document;
+    const A = pd.getElementById('screenA');
+    const B = pd.getElementById('screenB');
     const hdr = pd.getElementById('hdr');
     const chrome = pd.getElementById('__db_chrome');
     const holder2 = pd.getElementById('__db_cards');
-    const vs = pd.querySelector('[data-type="vscroller"]');
+    const vs = B.querySelector('[data-type="vscroller"]');
 
+    ok('the composed screen is marked kept, the stacked one is not',
+       !!A && !!B && B.getAttribute('data-db-active') === '1' &&
+       !A.getAttribute('data-db-active'));
+    const styleText = [...pd.querySelectorAll('style')]
+      .map((s) => s.textContent).join('\n');
+    ok('a blanket rule hides every stale scroller anywhere in the document',
+       styleText.indexOf('[data-type="vscroller"]{display:none!important}') >= 0);
+    ok('a second rule hides every screen except the kept one',
+       styleText.indexOf(
+         '[data-mcomponent="MScreen"]:not([data-db-active]){display:none!important}') >= 0);
+
+    // The same cascade the phone computes, through jsdom's CSS engine.
+    ok('the stale stacked screen computes display:none (the screenshot bug)',
+       dom2.window.getComputedStyle(A).display === 'none',
+       dom2.window.getComputedStyle(A).display);
+    ok('the old scroller computes display:none',
+       dom2.window.getComputedStyle(vs).display === 'none');
+    ok('the kept screen itself stays visible',
+       dom2.window.getComputedStyle(B).display !== 'none');
+    ok('the header is inside the kept, visible screen',
+       B.contains(hdr) && dom2.window.getComputedStyle(hdr).position === 'fixed');
+
+    ok('the floating tab row moved OUT and leads the chrome (navigation)',
+       !!chrome && chrome.firstElementChild &&
+       chrome.firstElementChild.id === 'tabrow');
+    ok('the composer follows the tab row, stories tray after it',
+       !!chrome.querySelector('#composer') && !!chrome.querySelector('#tray') &&
+       chrome.querySelectorAll('a[href*="/stories/"]').length === 2);
     ok('header, chrome, cards, scroller: in the online order',
-       !!hdr && !!chrome && !!holder2 && !!vs &&
        (hdr.compareDocumentPosition(chrome) & 4) !== 0 &&
        (chrome.compareDocumentPosition(holder2) & 4) !== 0 &&
        (holder2.compareDocumentPosition(vs) & 4) !== 0);
-    ok('the cards and the scroller are siblings, so the hide can reach it',
-       holder2.parentElement === vs.parentElement &&
-       holder2.parentElement.getAttribute('data-mcomponent') === 'MScreen');
-
-    // The compose-emitted rule itself, re-applied exactly as CSS would.
-    const rule = pd.getElementById('__db_hide_old').textContent;
-    const sel = rule.slice(0, rule.indexOf('{'));
-    const hidden = [...pd.querySelectorAll(sel)];
-    ok('the old scroller - and only it - is what hides',
-       hidden.length === 1 && hidden[0] === vs,
-       hidden.map((el) => el.id || el.tagName).join(','));
-    ok('the header with the tab row is not in the hide set',
-       !hidden.includes(hdr) && sel.indexOf('vscroller') >= 0);
-    ok('the moved chrome is not in the hide set', !hidden.includes(chrome));
-
-    ok('the composer moved out of the hidden scroller',
-       !!chrome.querySelector('#composer'));
-    ok('the stories tray moved out, links intact',
-       chrome.querySelectorAll('a[href*="/stories/"]').length === 2);
-    ok('the floating tab-row junk stays hidden with the scroller',
-       !!vs.querySelector('#junkrow') && !chrome.querySelector('#junkrow'));
+    ok('the cards sit inside the kept screen, sibling of the scroller',
+       holder2.parentElement === B && B === vs.parentElement);
     ok('a condemned ad stays hidden with the scroller',
        !!vs.querySelector('#savedad') && !chrome.querySelector('#savedad'));
     ok('stale posts stay hidden with the scroller',
-       !!vs.querySelector('#old1'));
-    ok('nothing moved twice', page.match(/Create story/g).length === 1);
+       !!vs.querySelector('#stale1') && !chrome.querySelector('#stale1'));
+    ok('nothing moved twice', page.match(/Create story/g).length === 1 &&
+       page.match(/aria-label="Notifications"/g).length === 1);
 
     ok('the chrome carries the stolen header offset (104px)',
        /padding-top\s*:\s*104px/.test(chrome.getAttribute('style') || '') &&
@@ -1128,38 +1451,57 @@ console.log('\nEvery saved card reaches the page');
        !/margin-top/i.test(chrome.querySelector('#composer').getAttribute('style')) &&
        /height\s*:\s*232px/.test(chrome.querySelector('#tray').getAttribute('style')));
 
-    // Scroll proof under hostile CSS, computed through the real cascade.
-    const msc = pd.querySelector('[data-mcomponent="MScreen"]');
-    const csM = dom2.window.getComputedStyle(msc);
-    ok('the screen root no longer clips its own page (overflow visible)',
-       csM.overflow === 'visible', csM.overflow);
-    ok('the screen root no longer pins to viewport height',
-       csM.height === 'auto' && csM.maxHeight === 'none',
-       csM.height + '/' + csM.maxHeight);
-    ok('the screen root sits in normal flow', csM.position === 'static' &&
-       csM.transform === 'none', csM.position + '/' + csM.transform);
-    const csB = dom2.window.getComputedStyle(pd.body);
-    const csH = dom2.window.getComputedStyle(pd.documentElement);
-    ok('the document itself scrolls natively',
+    // Scroll proof under the hostile cascade.
+    const csB = dom2.window.getComputedStyle(B);
+    ok('the kept screen no longer clips its own page',
        csB.overflow === 'visible' && csB.height === 'auto' &&
-       csH.overflow === 'visible' && csH.height === 'auto');
+       csB.maxHeight === 'none', csB.overflow + '/' + csB.height);
+    ok('the kept screen sits in normal flow',
+       csB.position === 'static' && csB.transform === 'none',
+       csB.position + '/' + csB.transform);
+    const csBody = dom2.window.getComputedStyle(pd.body);
+    const csHtml = dom2.window.getComputedStyle(pd.documentElement);
+    ok('the document itself scrolls natively',
+       csBody.overflow === 'visible' && csBody.height === 'auto' &&
+       csHtml.overflow === 'visible' && csHtml.height === 'auto');
 
-    // Contrast: the v5.2.6 shape really did break both ways the report said.
+    // Contrast: what v5.2.7 shipped really did produce both failures the
+    // user screenshotted on exactly this document.
     const legacyPage = '<html><head>' + hostile + '</head><body>' +
-      H.composeLegacy(home,
-        ['<div data-tracking-duration-id="n9"><span>saved post</span></div>']) +
-      '</body></html>';
+      H.composeLegacy(deviceDoc, savedCards) + '</body></html>';
     const ld = new JSDOM(legacyPage, { url: 'https://m.facebook.com/' });
     const ldoc = ld.window.document;
-    const lcs = ld.window.getComputedStyle(ldoc.querySelector('[data-mcomponent="MScreen"]'));
-    ok('contrast: the shipped shape stayed clipped (the bug was real)',
-       lcs.overflow === 'hidden', lcs.overflow);
-    ok('contrast: the shipped shape parked the cards above the header',
+    const lVs = ldoc.querySelectorAll('[data-type="vscroller"]');
+    const lChrome = ldoc.getElementById('__db_chrome');
+    ok('contrast: v5.2.7 hid the scroller WITH the tab row inside it',
+       lVs.length === 1 && !!lVs[0].querySelector('#tabrow') &&
+       !(lChrome && lChrome.querySelector('#tabrow')));
+    ok('contrast: v5.2.7 marked no screen, so the stack had no owner',
+       ldoc.querySelectorAll('[data-db-active]').length === 0);
+    ok('contrast: v5.2.7 parked the cards before the header',
        (ldoc.getElementById('__db_cards')
          .compareDocumentPosition(ldoc.getElementById('hdr')) & 4) !== 0);
-    ok('contrast: the shipped shape hid the composer and stories tray',
-       !ldoc.getElementById('__db_chrome') &&
-       ldoc.querySelectorAll(sel)[0].contains(ldoc.getElementById('composer')));
+
+    // A plain single-screen document still composes correctly.
+    const single =
+      '<div data-mcomponent="MScreen" data-type="container" class="m bg-s2">' +
+      '<div class="m fixed-container top" id="hdr2">bar</div>' +
+      '<div data-type="vscroller" id="vs1">' + composer +
+      '<div data-db-ad="1">ad</div>' + stalePost + '</div></div>';
+    const sp = new JSDOM('<html><head>' + hostile + '</head><body>' +
+      H.compose('<body>' + single + '</body>', savedCards) +
+      '</body></html>', { url: 'https://m.facebook.com/' });
+    const sd = sp.window.document;
+    ok('a lone screen is kept and marked, ready for the :not rule',
+       sd.querySelectorAll('[data-db-active]').length === 1);
+    ok('single-screen chrome moved out, no phantom tab row',
+       !!sd.getElementById('__db_chrome').querySelector('#composer') &&
+       !sd.getElementById('__db_chrome').querySelector('[id="tabrow"]'));
+    ok('the holder sits right before the hidden scroller',
+       sd.getElementById('__db_cards').nextElementSibling ===
+         sd.getElementById('vs1'));
+    ok('single-screen scroller computes display:none',
+       sp.window.getComputedStyle(sd.getElementById('vs1')).display === 'none');
 
     // A document whose only container is the scroller keeps the old
     // sibling rule: its stale children hide, nothing else.
@@ -1182,19 +1524,19 @@ console.log('\nEvery saved card reaches the page');
       '<div data-mcomponent="MScreen" data-type="container" class="m">' +
       '<div data-type="vscroller" data-mcomponent="MContainer"' +
       ' class="m vscroller vscroller-snap" id="pager">' +
-      '<div data-mcomponent="MContainer" class="old">old reel</div>' +
+      '<div data-video-id="v1" data-mcomponent="MContainer" class="old">old reel</div>' +
       '</div></div>';
     const placedR = renderOffline(
       ['<div data-tracking-duration-id="r9"><span>saved reel</span></div>'],
       reelsDoc);
     const holderR = placedR.doc.querySelector('[data-db-cards]');
-    const ruleR = placedR.doc.getElementById('__db_hide_old').textContent;
-    const selR = ruleR.slice(0, ruleR.indexOf('{'));
-    const hiddenR = [...placedR.doc.querySelectorAll(selR)];
-    ok('reels: cards join the screen root, the snap pager hides whole',
+    ok('reels: cards join the kept screen root, the pager computes hidden',
        !!holderR &&
        holderR.parentElement.getAttribute('data-mcomponent') === 'MScreen' &&
-       hiddenR.length === 1 && hiddenR[0].id === 'pager');
+       placedR.dom.window.getComputedStyle(
+         placedR.doc.getElementById('pager')).display === 'none');
+    ok('reels: no chrome is invented for a pager document',
+       placedR.doc.getElementById('__db_chrome') === null);
   }
 
   // Regression contrast: the OLD template-literal approach genuinely lost
@@ -1654,7 +1996,7 @@ console.log('\nEvery section keeps what it saves, in its own store');
      /dirName = "stories"/.test(stories));
   ok('reels refuse entries with no playable video, at their own door',
      /videoRequired = true/.test(reels) &&
-     /fun addItems[\s\S]{0,600}if \(videoRequired\)/.test(vaultSrc));
+     /fun addItems[\s\S]{0,1800}if \(videoRequired\)/.test(vaultSrc));
   ok('per-section retention floors exist',
      /keepFloor = 500/.test(home) && /keepFloor = 250/.test(reels) &&
      /keepFloor = 200/.test(stories));

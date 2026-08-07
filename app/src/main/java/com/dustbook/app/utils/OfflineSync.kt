@@ -231,15 +231,33 @@ object OfflineSync {
                         // Only what will actually be kept is queued for
                         // download, so a "first 10 posts" phase downloads ten
                         // posts and stops - nothing queued beyond it.
+                        //
+                        // A store AT its total still accepts one kind of
+                        // item: a re-capture of an entry it already holds
+                        // (same id), which replaces the stored copy - fresh
+                        // media URLs included - instead of adding a new one.
+                        // The known ids above are complete-only now, so
+                        // every stored-but-unfinished id arrives here in
+                        // newItems; dropping it because "remaining" hit zero
+                        // is exactly how a full store of expired signed URLs
+                        // stayed stuck at "reels 4 of 30" forever.
                         val batch = if (exactTotal != null) {
-                            val remaining = exactTotal -
-                                OfflineFeed.totalStored(sec)
-                            if (remaining <= 0) return
-                            newItems.take(remaining)
+                            val stored = OfflineFeed.loadItems(sec)
+                            val storedIds = stored
+                                .mapTo(HashSet()) { it.id }
+                            var room = exactTotal - stored.size
+                            newItems.filter {
+                                if (it.id.isNotBlank() &&
+                                    it.id in storedIds) true
+                                else if (room > 0) { room--; true } else false
+                            }
                         } else newItems
                         if (batch.isEmpty()) return
 
-                        OfflineFeed.addItems(sec, batch, target)
+                        // The vault re-checks this exact total inside its
+                        // own lock too, so the cap holds even if another
+                        // capture path is adding at the same moment.
+                        OfflineFeed.addItems(sec, batch, target, exactTotal)
                         OfflineFeed.prefetch(sec, batch, includeVideo)
                     }
 

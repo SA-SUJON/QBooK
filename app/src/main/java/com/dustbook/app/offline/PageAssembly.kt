@@ -65,6 +65,18 @@ package com.dustbook.app.offline
  *    row effectively did not exist, and the cards still sat inside the
  *    container whose CSS owned scrolling. The user report: "nav buttons
  *    gulai nai, story's o nai, scroll up hotei chai na".
+ *
+ * v5.2.7's reset then taught us the rest of the lesson, from the user's
+ * own screenshot: captured documents are STACKS of screens - Facebook
+ * keeps previously visited screens in the same DOM (the capture carries
+ * `data-screen-keys="57,56,55"`), and un-clipping them all floated a
+ * stale post screen above the home header. And the tab row is not part
+ * of the header on this device at all: it floats INSIDE the scroller as
+ * a badge-carrying unit - hiding the scroller therefore hid navigation.
+ * So now: the screen that owns the scroller is marked and kept, every
+ * OTHER screen and every stale scroller hides whole, and a tab-row unit
+ * found in the scroller is moved out with the composer and stories tray -
+ * before them, because navigation goes first.
  */
 object PageAssembly {
 
@@ -90,12 +102,19 @@ object PageAssembly {
             .replace(BASE_TAG, "")
 
     /**
-     * The old scroller, hidden whole. Its only remaining contents - stale
-     * posts and what must never resurface - vanish with it while the
-     * header, the moved chrome and the saved cards keep their places.
+     * Every stale scroller anywhere in the document, and every stacked
+     * screen except the one we composed into - hidden whole. Captured
+     * home documents can carry MORE than one screen (Facebook keeps prior
+     * screens in one DOM for back-navigation); before they were excluded
+     * by name, a stale post screen simply rendered above the home header,
+     * which is exactly what the user screenshotted. The kept screen is
+     * marked `data-db-active` at compose time, so the rule needs no
+     * modern selector support.
      */
-    private const val HIDE_SCROLLER =
-        "<style id=\"__db_hide_old\">#__db_cards~[data-type=\"vscroller\"]" +
+    private const val HIDE_SCREEN_ROOT =
+        "<style id=\"__db_hide_old\">[data-type=\"vscroller\"]" +
+            "{display:none!important}" +
+            "[data-mcomponent=\"MScreen\"]:not([data-db-active])" +
             "{display:none!important}</style>"
 
     /**
@@ -160,6 +179,12 @@ object PageAssembly {
 
     private val SCREEN_ROOT = Regex(
         "data-mcomponent=[\"']MScreen[\"']",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** A screen's own opening tag - the last one before the scroller is ITS screen. */
+    private val MSCREEN_TAG = Regex(
+        "<div\\b[^>]*data-mcomponent=[\"']MScreen[\"'][^>]*>",
         RegexOption.IGNORE_CASE
     )
 
@@ -250,11 +275,11 @@ object PageAssembly {
         return out
     }
 
-    /** Whether one scroller child moves out (chrome), stays hidden (junk), */
-    /** or ends the move (the first real post). */
+    /** What one scroller child is, for the move. */
     private const val MOVE = 0
     private const val LEAVE = 1
     private const val STOP = 2
+    private const val MOVE_TAB = 3
 
     private fun classify(slice: String): Int {
         // A card an ad blocker had already condemned when the capture read
@@ -263,9 +288,13 @@ object PageAssembly {
         if (slice.contains(SectionVault.JUNK_AD_TAG, ignoreCase = true)) {
             return LEAVE
         }
-        // Facebook's floating tab row, caught mid-scroller offline before.
-        // Several tab-labelled buttons and no story link - SectionVault's
-        // exact signature, so the page and the store agree on what it is.
+        // Facebook's floating tab row. On this device the tab row is not
+        // part of the header at all - it floats INSIDE the scroller as a
+        // badge-carrying unit, which is why hiding the scroller removed
+        // navigation itself. It is chrome, and it moves out with the rest;
+        // the signature is SectionVault's own so page and store cannot
+        // disagree on what the row is. (The row must still never be saved
+        // as a CARD - that filter stays in the vault, unchanged.)
         val hasStoryLink = SectionVault.JUNK_STORY_LINK.containsMatchIn(slice)
         var labels = 0
         val it = SectionVault.JUNK_TAB_LABEL.findAll(slice).iterator()
@@ -273,7 +302,7 @@ object PageAssembly {
             it.next()
             if (++labels >= 2) break
         }
-        if (labels >= 2 && !hasStoryLink) return LEAVE
+        if (labels >= 2 && !hasStoryLink) return MOVE_TAB
         if (POST_SIG.containsMatchIn(slice)) return STOP
         return MOVE
     }
@@ -290,11 +319,31 @@ object PageAssembly {
         return stripped + slice.substring(tag.value.length)
     }
 
-    /** The header offset Facebook itself used on its first scroller child. */
-    private fun stolenOffset(slice: String): Int? {
-        val tag = FIRST_TAG.find(slice) ?: return null
-        val m = MARGIN.find(tag.value) ?: return null
-        return m.groupValues[1].toIntOrNull()
+    /**
+     * The header offset Facebook itself stamped on a scroller child. The
+     * fixed tab row can lead the scroller without one (it is out of flow),
+     * so the offset comes from the first child that actually carries the
+     * virtual-list margin.
+     */
+    private fun stolenOffset(doc: String, children: List<Child>): Int? {
+        for (i in 0 until minOf(children.size, 3)) {
+            val slice = doc.substring(children[i].start, children[i].end)
+            val tag = FIRST_TAG.find(slice) ?: continue
+            val m = MARGIN.find(tag.value) ?: continue
+            return m.groupValues[1].toIntOrNull()
+        }
+        return null
+    }
+
+    /** The last screen opening tag before [pos] - the screen [pos] sits in. */
+    private fun lastScreenTagBefore(doc: String, pos: Int): MatchResult? {
+        var last: MatchResult? = null
+        var m = MSCREEN_TAG.find(doc)
+        while (m != null && m.range.first < pos) {
+            last = m
+            m = m.next()
+        }
+        return last
     }
 
     /**
@@ -322,54 +371,71 @@ object PageAssembly {
                 val vsStart = at + vs.range.first
                 val vsOpenEnd = at + vs.range.last + 1
 
-                val children = topLevelChildren(doc, vsOpenEnd)
-                val moved = ArrayList<String>()
-                var offset: Int? = null
-                var bytes = 0
-                if (children.isNotEmpty()) {
-                    offset = stolenOffset(
-                        doc.substring(children[0].start, children[0].end))
+                // Mark the screen this scroller belongs to as the one to
+                // keep; every other stacked screen (a stale post detail
+                // view, say) hides whole. String surgery on the tag we
+                // already matched, so nothing has to run on the page.
+                var base = doc
+                val tagM = lastScreenTagBefore(doc, vsStart)
+                if (tagM != null) {
+                    val tag = tagM.value
+                    val pos = tagM.range.first
+                    base = doc.substring(0, pos) +
+                        tag.dropLast(1) + " data-db-active=\"1\">" +
+                        doc.substring(pos + tag.length)
                 }
+                val shift = base.length - doc.length
+                val vsStartB = vsStart + shift
+                val vsOpenEndB = vsOpenEnd + shift
 
-                // Rebuild the scroller with the moved units excised. Junk
-                // (a floating tab row, a condemned ad) and everything from
-                // the first real post onward stay exactly where they were,
-                // hidden with the scroller.
-                var cursor = vsOpenEnd
+                val children = topLevelChildren(base, vsOpenEndB)
+                val moved = ArrayList<String>()
+                val tabs = ArrayList<String>()
+                val offset: Int? = stolenOffset(base, children)
+                var bytes = 0
+
+                // Rebuild the scroller with the moved units excised. A
+                // condemned ad, and everything from the first real post
+                // onward, stays exactly where it was, hidden with the
+                // scroller.
+                var cursor = vsOpenEndB
                 var inner = ""
                 for (c in children) {
-                    if (moved.size >= MAX_CHROME_UNITS ||
+                    if (moved.size + tabs.size >= MAX_CHROME_UNITS ||
                         bytes >= MAX_CHROME_BYTES) break
-                    val slice = doc.substring(c.start, c.end)
+                    val slice = base.substring(c.start, c.end)
                     val kind = classify(slice)
                     if (kind == STOP) break
-                    if (kind == MOVE) {
-                        inner += doc.substring(cursor, c.start)
+                    if (kind == MOVE || kind == MOVE_TAB) {
+                        inner += base.substring(cursor, c.start)
                         cursor = c.end
-                        moved.add(stripVirtualMargin(slice))
+                        val stripped = stripVirtualMargin(slice)
+                        if (kind == MOVE_TAB) tabs.add(stripped)
+                        else moved.add(stripped)
                         bytes += slice.length
                     }
-                    // LEAVE: junk stays exactly where it was, hidden with
-                    // the scroller it belongs to.
+                    // LEAVE: junk stays hidden with the scroller it belongs to.
                 }
 
                 val pad = if (offset != null && offset > 0) "${offset}px" else null
                 val padCss = "<style id=\"__db_top_pad\">" +
-                    (if (moved.isNotEmpty()) "#__db_chrome" else "#__db_cards") +
+                    (if (moved.isNotEmpty() || tabs.isNotEmpty()) "#__db_chrome" else "#__db_cards") +
                     "{padding-top:" + (pad ?: "0") + "!important}</style>"
+                // The tab row is navigation: before the composer and tray.
+                val chromeBody = (tabs + moved).joinToString("\n")
                 val chrome =
-                    if (moved.isEmpty()) ""
+                    if (chromeBody.isEmpty()) ""
                     else "<div id=\"__db_chrome\"" +
                         (pad?.let { " style=\"padding-top:$it\"" } ?: "") + ">" +
-                        moved.joinToString("\n") +
+                        chromeBody +
                         "</div>"
 
-                return doc.substring(0, vsStart) +
-                    RESET_SCREEN_ROOT + HIDE_SCROLLER +
+                return base.substring(0, vsStartB) +
+                    RESET_SCREEN_ROOT + HIDE_SCREEN_ROOT +
                     (if (pad != null) padCss else "") +
                     chrome + holder +
-                    doc.substring(vsStart, vsOpenEnd) + inner +
-                    doc.substring(cursor)
+                    base.substring(vsStartB, vsOpenEndB) + inner +
+                    base.substring(cursor)
             }
 
             // Bare scroller: the historical sibling rule, plus the general

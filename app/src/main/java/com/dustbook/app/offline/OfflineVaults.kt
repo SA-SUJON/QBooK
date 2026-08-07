@@ -49,6 +49,57 @@ object OfflineVaults {
     fun forSection(section: String): SectionVault? =
         sections.firstOrNull { it.section == section }
 
+    // ------------------------------------------- serial download slot
+    //
+    // Three vaults with three workers meant whatever had queued bytes
+    // fetched them at the same time - the user's screenshots showed posts
+    // and reels downloading together twice. Parallel is now structurally
+    // impossible: exactly one vault holds the slot, and it keeps it until
+    // its own queue is empty. The pipeline tells us which section is in
+    // its active phase, so work enqueued for a LATER phase (a photo the
+    // user scrolled past while the reels pass is running) simply waits
+    // for its turn instead of competing.
+    private val schedLock = Any()
+    @Volatile private var owner: SectionVault? = null
+    @Volatile private var prioritySection: String? = null
+
+    /** Which section the pipeline is filling now; null between runs. */
+    fun setPrioritySection(section: String?) {
+        synchronized(schedLock) { prioritySection = section }
+        pump()
+    }
+
+    /** True for the vault currently allowed to fetch. */
+    fun slotGrantedFor(v: SectionVault): Boolean =
+        synchronized(schedLock) { owner === v }
+
+    /**
+     * Called when a vault's queue is empty. The next waiting section -
+     * in pipeline order - is granted immediately.
+     */
+    fun releaseSlot(v: SectionVault) {
+        synchronized(schedLock) { if (owner === v) owner = null }
+        pump()
+    }
+
+    /**
+     * Grant the slot to the next vault with work, if nobody holds it.
+     * With a priority section set, ONLY that section may hold the slot:
+     * during the reels phase not even one feed photo downloads.
+     */
+    fun pump() {
+        val grant: SectionVault
+        synchronized(schedLock) {
+            if (owner != null) return
+            val prio = prioritySection
+            val order = if (prio == null) sections
+                else sections.filter { it.section == prio }
+            grant = order.firstOrNull { it.pending() > 0 } ?: return
+            owner = grant
+        }
+        grant.startDrain()
+    }
+
     /** True when any section holds at least one complete, countable item. */
     fun hasAnything(): Boolean = sections.any { it.count() > 0 }
 

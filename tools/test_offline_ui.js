@@ -381,10 +381,10 @@ console.log('\nDownloading does not wait for the user');
   const vault = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
   ok('media requests are queued, never dropped',
      /queued\.add\(u\)/.test(vault) && /queue\.add\(u\)/.test(vault));
-  ok('a single worker drains the queue',
-     /private fun drain\(\)/.test(vault));
-  ok('work added late is not stranded',
-     /if \(more && enabled && writeEnabled\) drain\(\)/.test(vault));
+  ok('a single worker drains the queue, through the serial scheduler',
+     /internal fun startDrain\(\)/.test(vault));
+  ok('work added late is not stranded while the slot is still held',
+     /if \(more && enabled && writeEnabled && downloadAllowed\(\) &&[\s\S]{0,250}startDrain\(\)/.test(vault));
 }
 
 console.log('\nOffline never shows the browser error page');

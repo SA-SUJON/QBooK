@@ -2246,12 +2246,25 @@ class MainActivity : AppCompatActivity() {
                 else -> 0
             }
             if (cap > 0) {
-                val remaining = cap - OfflineFeed.totalStored(section)
-                if (remaining <= 0) return
-                newItems = newItems.take(remaining)
+                // Full store: only re-captures of entries already held
+                // (same id - a stored-but-unfinished item whose media
+                // needs its fresh URL to land) still pass; they replace
+                // rather than add. Brand-new ids spend the room left.
+                val stored = OfflineFeed.loadItems(section)
+                val storedIds = stored.mapTo(HashSet()) { it.id }
+                var room = cap - stored.size
+                newItems = newItems.filter {
+                    if (it.id.isNotBlank() && it.id in storedIds) true
+                    else if (room > 0) { room--; true } else false
+                }
+                if (newItems.isEmpty()) return
             }
 
-            OfflineFeed.addItems(section, newItems, target)
+            // Same ceiling here, re-checked atomically inside the vault:
+            // this bridge and the background WebView's bridge can fire on
+            // different threads within the same second.
+            OfflineFeed.addItems(section, newItems, target,
+                if (cap > 0) cap else null)
             OfflineFeed.prefetch(section, newItems, includeVideo = prefs.offlineVideo)
         }
 
