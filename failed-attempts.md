@@ -949,3 +949,46 @@ user's own report and received no change.
   17efca1 baseline.
 
 > Session: 2026-08-08 | Tag: v5.2.15 | Tests: 1118 passed, 0 failed (10 suites)
+
+# Round 16 - v5.2.16 (126) | 2026-08-08
+
+## The reels pager - user-consented, built the way the real apps are
+
+After the v5.2.14 verdicts (stop:always inert) and the honest physics
+check (mandatory aligns the REST but can never cap a FLING), the user
+was offered three roads and chose this one: a real touch pager. Their
+condition: the rejected thing was a POST-HOC corrector, not a pager -
+so the design contract, proven property by property on the verbatim
+template in jsdom (pipeline section "One gesture, one reel"):
+  - drag follows the finger 1:1 from a 7px lock (direct manipulation)
+  - the drag's reach is CAPPED at one card in either direction, with a
+    0.25 rubber-band at the edge - the anti-skip is structural: the
+    page can never even be dragged a second reel away, so no long
+    "auto ferot" slide back can ever exist
+  - release commits once: flick (>0.45px/ms) or drag >15% of the card
+    commits one card; a smaller drag lands back where it began; the
+    commit animation is one ease-out cubic, 260ms, uninterrupted
+  - taps (under 7px) are never eaten - the play/pause bridge keeps them
+  - horizontal-dominant gestures are handed straight to the browser
+  - snap CSS is read for its bar offset and then removed at init, so
+    the browser's snapper cannot fight the pager; if JS ever fails to
+    run, the snap style stays on as the no-JS fallback
+  - SEC gate: the pager exists on reels only; home is untouched code (the
+    user confirmed home scroll is fine) - proven with the same gesture
+    storm: identical input, zero effect
+Snap CSS in Kotlin stays mandatory+stop:always as the citation of the
+CSS dead-end, and the v5.2.15 commit (mandatory trial) was never
+pushed alone - it ships folded into this round as the fallback style.
+
+## Proof battery
+
+- jsdom pager proof, verbatim template: 10/10 (tap safety, horizontal
+  pass-through, 1:1 track, sub-15% snap-back, 30% commit with pad,
+  violent-fling never displays two away + commits exactly one, flick
+  velocity rule, feed untouched).
+- 10/10 suites green (1129 assertions; pipeline 457 incl. the 10 pager
+  assertions plus the two rewritten touch-code pins).
+- kotlinc over the tree: identical normalized diagnostic set to the
+  53912a6 baseline.
+
+> Session: 2026-08-08 | Tag: v5.2.16 | Tests: 1129 passed, 0 failed (10 suites)

@@ -824,6 +824,187 @@ object PageAssembly {
             });
           }
 
+          // ---------------------------------------------------------------
+          // The reels pager (round 15, user-consented custom pager).
+          //
+          // What CSS could not do on this WebView: cap a fling to one
+          // reel. scroll-snap-stop is inert (v5.2.14 device verdict,
+          // scrolled fine, still skipped 2/3), and mandatory only aligns
+          // the rest position - it never limits how many areas a single
+          // gesture crosses. So the gesture itself is handled here, the
+          // same way the real reels apps do it:
+          //
+          //   - while the finger moves, the page follows it 1:1 (real
+          //     direct-manipulation drag, native momentum OFF for reels)
+          //   - on release there is exactly ONE commit: the nearest card,
+          //     or one card in the flick direction, but NEVER more than
+          //     one away from where the gesture began
+          //
+          // A tap moves less than the lock distance and is never eaten:
+          // the play/pause tap bridge keeps its clicks. A horizontal-
+          // dominant gesture is handed straight back to the native path.
+          // snap CSS is removed at init so the browser cannot fight the
+          // animation - but only AFTER its margin offset is read, and if
+          // this script ever fails to run, the snap CSS stays as the
+          // no-JS fallback. No post-hoc correction exists anywhere: the
+          // commit animation is the gesture's own last half.
+          if (SEC === 'reels') {
+            var PAD = 0;
+            var snapStyle = document.getElementById('__db_reels_snap');
+            if (snapStyle) {
+              var mp = /scroll-snap-margin-top:(\d+)px/.exec(
+                snapStyle.textContent || '');
+              if (mp) PAD = parseInt(mp[1], 10) || 0;
+              try { snapStyle.parentNode.removeChild(snapStyle); } catch (e) {}
+            }
+
+            var ANIM_MS = 260;    // commit animation; one per gesture
+            var DRAG_LOCK = 7;    // px before a touch counts as a drag
+            var DIST_FRAC = 0.15; // of card height commits on release
+            var FLING_V = 0.45;   // px/ms finger speed that always commits
+
+            var active = false, locked = false;
+            var startY = 0, startX = 0, startTop = 0, startIdx = 0;
+            var loTop = 0, hiTop = -1;  // drag boundaries, -1 = no cap yet
+            var lastDy = 0;             // finger travel since the lock
+            var trail = [];       // recent [time, y] for velocity
+            var raf = 0;
+
+            function reelCards() {
+              var h = holder(); if (!h) return [];
+              var out = [], kids = h.children;
+              for (var i = 0; i < kids.length; i++) {
+                if (kids[i].id !== '__db_snap_t') out.push(kids[i]);
+              }
+              return out;
+            }
+            function nearestIndex() {
+              var list = reelCards(), box = scroller();
+              if (!box) return 0;
+              var st = box.scrollTop, best = 0, bestD = Infinity;
+              for (var i = 0; i < list.length; i++) {
+                var top = st + list[i].getBoundingClientRect().top - PAD;
+                var d = Math.abs(top - st);
+                if (d < bestD) { bestD = d; best = i; }
+              }
+              return best;
+            }
+            function targetTop(i) {
+              var list = reelCards(), box = scroller();
+              if (!list[i] || !box) return null;
+              var t = box.scrollTop +
+                      list[i].getBoundingClientRect().top - PAD;
+              return Math.max(0, Math.min(t,
+                Math.max(0, box.scrollHeight - (box.clientHeight || 0)) - 1));
+            }
+            function cancelAnim() {
+              if (raf) { cancelAnimationFrame(raf); raf = 0; }
+            }
+            function commitTo(i) {
+              var t = targetTop(i); if (t == null) return;
+              var box = scroller(); if (!box) return;
+              cancelAnim();
+              var from = box.scrollTop, d = t - from;
+              if (Math.abs(d) < 2) { box.scrollTop = t; return; }
+              var t0 = Date.now();
+              var step = function() {
+                var k = Math.min(1, (Date.now() - t0) / ANIM_MS);
+                var e = 1 - Math.pow(1 - k, 3);  // ease-out cubic
+                box.scrollTop = Math.round(from + d * e);
+                if (k < 1) raf = requestAnimationFrame(step);
+                else raf = 0;
+              };
+              raf = requestAnimationFrame(step);
+            }
+
+            document.addEventListener('touchstart', function(ev) {
+              if (!ev.touches || ev.touches.length !== 1) return;
+              if (!(ev.target && ev.target.closest &&
+                    ev.target.closest('[data-db-cards]'))) return;
+              cancelAnim();
+              active = true; locked = false;
+              var box = scroller();
+              startTop = box ? box.scrollTop : 0;
+              startIdx = nearestIndex();
+              startY = ev.touches[0].clientY;
+              startX = ev.touches[0].clientX;
+              trail = [[Date.now(), startY]];
+            }, {passive: true});
+
+            document.addEventListener('touchmove', function(ev) {
+              if (!active || !ev.touches || ev.touches.length !== 1) return;
+              var y = ev.touches[0].clientY, x = ev.touches[0].clientX;
+              var dy = y - startY, dx = x - startX;
+              var box = scroller(); if (!box) { active = false; return; }
+              if (!locked) {
+                if (Math.abs(dy) < DRAG_LOCK && Math.abs(dx) < DRAG_LOCK) {
+                  return;
+                }
+                if (Math.abs(dx) > Math.abs(dy)) { active = false; return; }
+                locked = true;
+                startTop = box.scrollTop;
+                startY = y;
+                dy = 0;
+                // Cap the drag's reach to ONE card in either direction,
+                // with light rubber-band at the edge. This is the actual
+                // anti-skip: the page can never be dragged a second reel
+                // away, so release can never need a long slide home - the
+                // "2/3 scroll hoye jacche abar auto ferot" feeling is
+                // structurally impossible, not merely corrected after.
+                var list0 = reelCards();
+                loTop = startIdx > 0 ? startTop +
+                  list0[startIdx - 1].getBoundingClientRect().top - PAD : 0;
+                hiTop = startIdx < list0.length - 1 ? startTop +
+                  list0[startIdx + 1].getBoundingClientRect().top - PAD : -1;
+              }
+              ev.preventDefault();
+              lastDy = y - startY;
+              var nat = startTop - lastDy, capped = nat;
+              if (hiTop >= 0 && nat > hiTop) {
+                capped = hiTop + (nat - hiTop) * 0.25;
+              } else if (nat < loTop) {
+                capped = loTop + (nat - loTop) * 0.25;
+              }
+              box.scrollTop = Math.max(0, capped);
+              var now = Date.now();
+              trail.push([now, y]);
+              while (trail.length > 1 && now - trail[0][0] > 140) {
+                trail.shift();
+              }
+            }, {passive: false});
+
+            document.addEventListener('touchend', function(ev) {
+              if (!active) return;
+              var wasDrag = locked;
+              active = false; locked = false;
+              if (!wasDrag) return;   // a tap: nothing here is ours
+              var list = reelCards(); if (!list.length) return;
+              var box = scroller(); if (!box) return;
+              // The decision, exactly the real apps' rule: a flick (fast
+              // finger, any distance) commits one card in its direction;
+              // a drag past DIST_FRAC of the card commits one card; a
+              // smaller drag lands back where it began. Clamped, so no
+              // gesture can ever travel more than one card - ever.
+              var v = 0;
+              if (trail.length > 1) {
+                var a = trail[0], b = trail[trail.length - 1];
+                if (b[0] > a[0]) v = (a[1] - b[1]) / (b[0] - a[0]);
+              }
+              trail = [];
+              var cardH = list[startIdx] ?
+                list[startIdx].getBoundingClientRect().height : 0;
+              var travel = -lastDy;   // finger up (content advance) is +
+              var intent = startIdx;
+              if (v > FLING_V) intent++;
+              else if (v < -FLING_V) intent--;
+              else if (cardH > 0 && travel > cardH * DIST_FRAC) intent++;
+              else if (cardH > 0 && travel < -cardH * DIST_FRAC) intent--;
+              if (intent < 0) intent = 0;
+              if (intent > list.length - 1) intent = list.length - 1;
+              commitTo(intent);
+            }, {passive: true});
+          }
+
         })();
         """.trimIndent()
 

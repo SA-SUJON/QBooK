@@ -176,15 +176,23 @@ console.log('\nHome opens at the very top, every time');
   ok('reportPosition knows the\u00a0story key on the Kotlin side',
      /"stories", "story" ->/.test(
        fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8')));
-  // Round-14: the user rejected every JS gesture correction as
-  // artificial ("full scroll na korleo auto scroll hoye jacche").
-  // The resume script must contain NO touch handling at all - the pin
-  // is scoped to the extracted template because the Kotlin file's
-  // comments legitimately mention touchstart in their round history.
+  // Rounds 14->16, the full trail: v5.2.14 removed the post-hoc JS
+  // corrector the user rejected twice ("no JS rides the gesture"),
+  // v5.2.15's mandatory retrial could align landings but never cap a
+  // fling, and the user then EXPLICITLY chose a real touch pager over
+  // accepting that. So touch listeners are back - but this time they
+  // ARE the scroll: no settle-then-correct anywhere. The pin is scoped
+  // to the extracted template because the Kotlin file's comments
+  // legitimately mention touchstart in their round history.
   const tpl = asm2.slice(asm2.indexOf('val main = """'),
                          asm2.indexOf('""".trimIndent()', asm2.indexOf('val main = """')));
-  ok('no JS ever rides the gesture again: no touch listener remains',
-     !/touchstart|touchend|settleAfter/.test(tpl));
+  ok('the reels touch code is the pager, not a post-hoc corrector',
+     /SEC === 'reels'/.test(tpl) &&
+     /DRAG_LOCK/.test(tpl) && /FLING_V/.test(tpl) &&
+     /commitTo/.test(tpl) && !/settleAfter/.test(tpl));
+  ok('\u2026and it can never fight the browser: snap style leaves at init',
+     /getElementById\('__db_reels_snap'\)/.test(tpl) &&
+     /removeChild\(snapStyle\)/.test(tpl));
   ok('only the reels screen asks compose for one-card-per-gesture snap',
      /compose\(docText, cards, snap = screen == "reels"\)/.test(docs));
 }
@@ -2747,5 +2755,162 @@ console.log('\nSaved media answers from its section, before the chrome cache');
      /206/.test(vaultSrc) && /Content-Range/.test(vaultSrc) &&
      /Accept-Ranges/.test(vaultSrc));
 }
+console.log('\nOne gesture, one reel - the pager, proven on the verbatim script');
+{
+  // Round-16 (user-consented custom pager): CSS could not cap a fling
+  // on this WebView (stop:always inert per the v5.2.14 device verdict,
+  // mandatory only aligns the rest), so the reels gesture is handled
+  // the way the real apps do it: drag follows the finger 1:1, release
+  // commits exactly one card. These assertions run the VERBATIM
+  // production template from PageAssembly.resumeScript in jsdom with
+  // simulated touch storms and a controllable clock/frame pump, and
+  // pin the whole contract: taps pass through, horizontal stays native,
+  // small drags snap back, past-15% commits one, a violent fling STILL
+  // commits only one, the snap CSS is removed at init so the browser
+  // can never fight the animation, and feed carries no pager at all.
+  const asm4 = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
+  const tpl2 = asm4.slice(asm4.indexOf('val main = """') + 14,
+                         asm4.indexOf('""".trimIndent()',
+                           asm4.indexOf('val main = """')));
+
+  function pagerWorld(sec, cardCount) {
+    let html = '<style id="__db_reels_snap">' +
+      'html,body{scroll-snap-type:y mandatory!important}' +
+      '#__db_cards>*{scroll-snap-align:start!important;' +
+      'scroll-snap-margin-top:128px!important}</style>' +
+      '<div data-type="vscroller"><div data-db-cards>';
+    for (let i = 0; i < cardCount; i++) {
+      html += '<div class="rc" data-video-id="r' + i + '"></div>';
+    }
+    html += '<div id="__db_snap_t" style="height:0"></div></div></div>';
+    const dom = new JSDOM(html, { url: 'https://m.facebook.com/',
+      runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    // controllable clock + frame pump: the whole test stays synchronous
+    let now = 1000; const rafQ = [];
+    w.Date.now = () => now;
+    w.requestAnimationFrame = (cb) => { rafQ.push(cb); return rafQ.length; };
+    w.cancelAnimationFrame = (id) => { if (rafQ[id - 1]) rafQ[id - 1] = null; };
+    const box = w.document.querySelector('[data-type="vscroller"]');
+    Object.defineProperty(box, 'clientHeight', { value: 1000 });
+    Object.defineProperty(box, 'scrollHeight', { value: cardCount * 1000 });
+    w.document.querySelectorAll('.rc').forEach((c, i) => {
+      c.getBoundingClientRect = () => ({
+        top: i * 1000 - box.scrollTop,
+        bottom: (i + 1) * 1000 - box.scrollTop,
+        left: 0, right: 300, width: 300, height: 1000 });
+    });
+    w.FBPro = { reportPosition: () => {} };
+    w.eval(tpl2.split('__SEC__').join(sec));
+
+    function ev(type, x, y, dt) {
+      if (dt) now += dt;
+      const e = new w.Event(type, { bubbles: true, cancelable: true });
+      e.touches = type === 'touchend' ? [] : [{ clientX: x, clientY: y }];
+      e.changedTouches = type === 'touchend' ? [{ clientX: x, clientY: y }] : [];
+      w.document.querySelector('.rc').dispatchEvent(e);
+      return e;
+    }
+    function pump() {
+      let guard = 0;
+      while (rafQ.length && guard++ < 400) {
+        now += 20;
+        const batch = rafQ.splice(0, rafQ.length);
+        for (const cb of batch) if (cb) cb();
+      }
+    }
+    return { w, box, ev, pump,
+      snapGone: () => !w.document.getElementById('__db_reels_snap') };
+  }
+
+  // 1. init removes the snap style so no browser/JS fight is possible
+  {
+    const P = pagerWorld('reels', 3);
+    ok('pager init removes the reels snap CSS (no fight possible)',
+       P.snapGone());
+  }
+  // 2. a tap is a tap: never eaten, never a scroll, never a commit
+  {
+    const P = pagerWorld('reels', 3);
+    P.ev('touchstart', 100, 500);
+    const end = P.ev('touchend', 100, 503);
+    P.pump();
+    ok('a 3px tap is never eaten: no preventDefault, no scroll, no commit',
+       !end.defaultPrevented && P.box.scrollTop === 0, '' + P.box.scrollTop);
+  }
+  // 3. horizontal-dominant gesture is handed straight to the browser
+  {
+    const P = pagerWorld('reels', 3);
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 170, 490);
+    P.ev('touchend', 175, 490);
+    P.pump();
+    ok('a horizontal gesture poses no commit (native keeps it)',
+       P.box.scrollTop === 0, '' + P.box.scrollTop);
+  }
+  // 4. drag follows the finger 1:1; release under 15% lands back on start
+  {
+    const P = pagerWorld('reels', 3);
+    P.ev('touchstart', 100, 800);
+    P.ev('touchmove', 100, 790, 200);     // crosses the 7px lock here
+    P.ev('touchmove', 100, 730, 200);     // slow drag, 200ms a move
+    P.ev('touchmove', 100, 680, 200);     // 120px total = 12% of the card
+    const mid = P.box.scrollTop;
+    P.ev('touchend', 100, 680, 200);
+    P.pump();
+    // Notes: the 10px lock distance is re-anchored (device moves are a
+    // few px each, so the re-anchor is invisible), hence 110 not 120.
+    ok('mid-drag the page stands exactly where the finger put it',
+       mid === 110, 'mid=' + mid);
+    ok('a slow sub-15% drag lands back on the same reel (snap-back)',
+       P.box.scrollTop === 0, 'final=' + P.box.scrollTop);
+  }
+  // 5. past-15% commits exactly the next reel, below the bar offset
+  {
+    const P = pagerWorld('reels', 3);
+    P.ev('touchstart', 100, 800);
+    P.ev('touchmove', 100, 710, 200);     // locks here
+    P.ev('touchmove', 100, 620, 200);
+    P.ev('touchmove', 100, 500, 200);     // slow 30% drag
+    P.ev('touchend', 100, 500, 200);
+    P.pump();
+    ok('a slow 30% drag commits to the next reel, below the bar offset',
+       P.box.scrollTop === 1000 - 128, 'final=' + P.box.scrollTop);
+  }
+  // 6. THE CAP - structural, not a correction: a violent multi-page
+  //    fling can never even DISPLAY a reel two away, let alone land it
+  {
+    const P = pagerWorld('reels', 3);
+    P.ev('touchstart', 100, 800);
+    for (let k = 1; k <= 8; k++) P.ev('touchmove', 100, 800 - k * 500, 12);
+    const mid = P.box.scrollTop;
+    P.ev('touchend', 100, -3200, 12);     // finger crossed ~4 screens
+    P.pump();
+    ok('mid-fling it never reached even the SECOND reel away',
+       mid < (2 * 1000 - 128), 'mid=' + mid);
+    ok('a violent fling commits exactly ONE reel - never 2/3',
+       P.box.scrollTop === 1000 - 128, 'final=' + P.box.scrollTop);
+  }
+  // 7. tiny-but-fast flick also commits one (velocity rule, real-app feel)
+  {
+    const P = pagerWorld('reels', 3);
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 100, 460, 30);      // 40px, but over 30ms -> 1.33px/ms
+    P.ev('touchend', 100, 460, 30);
+    P.pump();
+    ok('a tiny fast flick commits the next reel (velocity rule)',
+       P.box.scrollTop === 1000 - 128, 'final=' + P.box.scrollTop);
+  }
+  // 8. feed never carries the pager; its snap CSS survives too
+  {
+    const P = pagerWorld('feed', 3);
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 100, 300, 16);
+    P.ev('touchend', 100, 300, 16);
+    ok('on home the identical gesture is untouched (no pager, no snap cut)',
+       !P.snapGone() && P.box.scrollTop === 0, '' + P.box.scrollTop);
+  }
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
