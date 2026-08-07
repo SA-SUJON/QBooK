@@ -226,10 +226,8 @@ object PageAssembly {
     private const val RESET_GENERAL =
         "<style id=\"__db_layout_reset\">" +
             "html,body{height:auto!important;min-height:0!important;" +
-            "overflow:visible!important;scroll-snap-type:none!important;" +
-            "touch-action:manipulation!important}" +
-            "#__db_cards *{scroll-snap-align:none!important;" +
-            "touch-action:manipulation!important}</style>"
+            "overflow:visible!important;touch-action:manipulation!important}" +
+            "#__db_cards *{touch-action:manipulation!important}</style>"
 
     /** Screen root / feed container in m.facebook.com markup, by earliest match. */
     private val CONTAINER = Regex(
