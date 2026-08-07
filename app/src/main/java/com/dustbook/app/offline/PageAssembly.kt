@@ -205,6 +205,12 @@ object PageAssembly {
      *    cannot be run in jsdom and this device has falsified two
      *    armchair snap theories already.
      *
+     *  Round 16: a fast fling still skips two or three reels ("scroll
+     *    korle 2/3 ta reels scroll hoye jai") now that #screen-root no
+     *    longer clips the page to one viewport height. snap-stop is NOT
+     *    the fix, per the round-13 finding above; a velocity cap belongs
+     *    on the gesture, in resumeScript's territory, not in this CSS.
+     *
      * As before: every saved card is one snap area aligned to its start,
      * card descendants keep snap-align:none from the reset, and
      * snap-margin-top carries the offset Facebook stamped for its own
@@ -776,6 +782,95 @@ object PageAssembly {
               if (window.__dbResumeTimer) clearTimeout(window.__dbResumeTimer);
               window.__dbResumeTimer = setTimeout(reportCurrent, 600);
             });
+          }
+
+          // Reels only: a fast fling can carry proximity snap past more
+          // than one reel in a single gesture ("scroll korle 2/3 ta
+          // reels scroll hoye jai", round-16). scroll-snap-stop was
+          // tried for this exact symptom before and made the page
+          // un-scrollable outright (round-13) - CSS is off the table.
+          // This instead watches where a touch gesture STARTS and ENDS;
+          // once the finger lifts and native scrolling settles, if the
+          // gesture landed more than one reel away from where it began,
+          // it steps back to the very next one. Nothing here touches
+          // the gesture itself - no preventDefault, no mid-drag code -
+          // so the drag always feels exactly as free as it does now,
+          // and a normal single-reel flick never triggers this at all.
+          if (SEC === 'reels') {
+            var startTop = 0, startCard = null, dragging = false;
+            document.addEventListener('touchstart', function(ev){
+              var box = scroller();
+              if (!box) return;
+              dragging = true;
+              startTop = box.scrollTop;
+              var h = holder();
+              startCard = h ? cardAt(h, box) : null;
+            }, {passive: true});
+
+            document.addEventListener('touchend', function(){
+              if (!dragging) return;
+              dragging = false;
+              if (!startCard) return;
+              var landed = startCard;
+              settleAfter(function(){
+                var box = scroller();
+                var h = holder();
+                if (!box || !h) return;
+                var list = cardList(h);
+                var fromIdx = list.indexOf(startCard);
+                var curIdx = -1;
+                var cur = cardAt(h, box);
+                if (cur) curIdx = list.indexOf(cur);
+                if (fromIdx < 0 || curIdx < 0) return;
+                var delta = curIdx - fromIdx;
+                if (Math.abs(delta) <= 1) return;
+                var target = list[fromIdx + (delta > 0 ? 1 : -1)];
+                if (target && target.scrollIntoView) {
+                  target.scrollIntoView({block: 'start', behavior: 'smooth'});
+                }
+              });
+            }, {passive: true});
+
+            function cardList(h) {
+              return Array.prototype.slice.call(h.children).filter(
+                function(c){ return c.id !== '__db_snap_t'; });
+            }
+            function cardAt(h, box) {
+              var mid = (box.clientHeight || window.innerHeight || 0) / 2;
+              var list = cardList(h);
+              for (var i = 0; i < list.length; i++) {
+                var r = list[i].getBoundingClientRect();
+                if (r.top < mid && r.bottom > mid) return list[i];
+              }
+              return null;
+            }
+            // Waits for the scroller to stop moving (native fling and
+            // snap settle asynchronously after touchend) before reading
+            // its final resting position.
+            function settleAfter(fn) {
+              var box = scroller();
+              if (!box) { setTimeout(fn, 400); return; }
+              var done = false;
+              function finish() {
+                if (done) return;
+                done = true;
+                clearInterval(iv);
+                clearTimeout(fallback);
+                fn();
+              }
+              var last = box.scrollTop, stable = 0;
+              var iv = setInterval(function(){
+                var now = box.scrollTop;
+                if (now === last) {
+                  stable++;
+                  if (stable >= 2) finish();
+                } else {
+                  stable = 0;
+                  last = now;
+                }
+              }, 100);
+              var fallback = setTimeout(finish, 1200);
+            }
           }
         })();
         """.trimIndent()
