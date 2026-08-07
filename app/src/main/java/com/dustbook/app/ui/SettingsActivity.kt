@@ -471,8 +471,9 @@ class SettingsActivity : AppCompatActivity() {
             val rc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_REELS)
             val fc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_FEED)
             val sc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_STORIES)
-            val statusLine = "Posts: " + fc + "  •  Reels: " + rc +
-                " of " + p.offlineReelTarget + "  •  Stories: " + sc +
+            val statusLine = "Posts: " + fc + " of " + p.offlinePostTarget +
+                "  •  Reels: " + rc + " of " + p.offlineReelTarget +
+                "  •  Stories: " + sc +
                 "  •  " + "%.0f".format(mb) + " MB  •  " + lastSyncText(p)
             findPreference<Preference>("offline_status")?.summary =
                 (if (working || OfflineManager.isPreparingOffline()) prefix else "") + statusLine

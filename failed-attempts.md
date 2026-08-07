@@ -400,3 +400,59 @@ it; adblock passes still cannot condemn the holder.
 - `kotlinc` over the tree: no new diagnostics.
 
 > Session: 2026-08-07 | Tag: v5.2.6 | Tests: 948 passed, 0 failed (10 suites)
+
+---
+
+# Round 7 — "offline a nav buttons gulai nai, story's o nai, scroll hoi na" + "posts 10 e stop hoi na"
+
+Device report (v5.2.6, with side-by-side online/offline screenshots): the
+offline home feed showed no header tab row, no stories tray, jerky scroll
+that would not go back up; and the posts counter kept climbing past the
+promised 10 (a hardcoded 300-post backlog phase the user never asked for).
+
+## 1. Cards were parked ABOVE Facebook's own header
+
+v5.2.6 put the holder as the screen root's FIRST child. The header
+survived - after every saved card. A tab row at the bottom of 300 posts
+is a tab row that does not exist. **Fix:** the holder now goes right
+BEFORE the old scroller's opening tag, which makes it the scroller's
+sibling by construction; the composer and stories tray are MOVED OUT of
+the hidden scroller into normal flow (depth-counted walk, scripts and
+comments consumed whole so a stray tag cannot bend the count); junk
+(floating tab row, condemned ad) is left hidden using SectionVault's own
+signatures verbatim; the walk stops at the first real post (permalink or
+capture-identity attribute), bounded to 6 units / 300 KB.
+
+## 2. The screen root owned scrolling, and we fought its CSS
+
+On live m.facebook.com the screen root is viewport-sized, clipped, and
+the scroller inside it owns scroll JS-side. A static block inside cannot
+scroll natively - the device report exactly. **Fix:** an offline layout
+reset (html/body/MScreen: height auto, overflow visible, position
+static, transform none, all !important) is composed into the page; the
+fixed header keeps its place via the offset Facebook itself stamped on
+its first scroller child, stolen verbatim. Contrast-proven in jsdom
+under hostile CSS: the shipped shape computed overflow:hidden and cards
+above the header; the new shape computes overflow:visible everywhere and
+the online order (header → chrome → cards → hidden scroller).
+
+## 3. "Posts stop at 10" was a promise only one phase kept
+
+Step 3 chased a hardcoded 300 regardless, and the user's own scrolling
+merged items with no ceiling at all. **Fix:** "Posts to download" is a
+setting exactly like the reels count (10/30/50/100/200/300, default 50,
+clamped 10..300). Step 1 saves min(10, the setting); step 3 fills to the
+setting and stops; the foreground merge refuses past the setting (the
+pipeline gate and the foreground gate are now the same arithmetic, both
+ported and simulated in tests); and the pipeline trims the feed vault to
+the setting once per cycle, newest first, .part files never touched, so
+an oversized legacy store comes down within one sync.
+
+## Proof battery
+
+- 10/10 suites green locally (989 assertions: 317 pipeline incl. 30+
+  parity assertions against the verbatim mirror, trim/gate simulations,
+  79 offline UI with the 8th settings key pinned).
+- `kotlinc` over the tree: identical diagnostic classes to the baseline.
+
+> Session: 2026-08-07 | Tag: v5.2.7 | Tests: 989 passed, 0 failed (10 suites)

@@ -48,13 +48,14 @@ ok('Keep Reels defaults on',  /KEY_OFFLINE_REELS, true/.test(prefs));
 ok('Keep Stories defaults on',/KEY_OFFLINE_STORIES, true/.test(prefs));
 {
   // This screen had grown to nine entries reporting the same thing in
-  // different words, so the count is pinned. The seventh is the network
-  // choice, which controls whether saving may use mobile data at all --
-  // named explicitly so an unrelated addition still fails here.
+  // different words, so the count is pinned. The user then asked for the
+  // posts count to be a setting exactly like the reels count, so the
+  // eighth entry is that one - every name is still listed here, so an
+  // unrelated addition still fails this test.
   const keys = [...xml.matchAll(/android:key="([^"]+)"/g)].map((m) => m[1]);
   const allowed = ['offline_reels', 'offline_feed', 'offline_stories',
-                   'offline_reel_count', 'offline_network', 'offline_status',
-                   'clear_offline'];
+                   'offline_reel_count', 'offline_post_count',
+                   'offline_network', 'offline_status', 'clear_offline'];
   ok('the settings screen is not redesigned',
      keys.length === allowed.length && keys.every((k) => allowed.includes(k)),
      keys.join(','));

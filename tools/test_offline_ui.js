@@ -121,8 +121,9 @@ console.log('\nSaved content is IN the page, and cannot duplicate');
      d.querySelectorAll('.dbcard').length === 1);
   ok('inside the real feed container', !!box && box.contains(holder));
   ok('ahead of what the server left behind',
+     // two styles precede it now: the layout reset and the hide rule
      !!holder && holder.parentElement === box &&
-     [...box.children].indexOf(holder) === 1);
+     [...box.children].indexOf(holder) === 2);
   ok('the server leftovers are only hidden, by one stylesheet',
      d.querySelectorAll('.skeleton').length === 2 &&
      d.getElementById('__db_hide_old') !== null);
@@ -299,16 +300,35 @@ console.log('\nThe settings screen is the six things asked for');
   ok('keep home feed', keys.includes('offline_feed'));
   ok('keep stories', keys.includes('offline_stories'));
   ok('how many reels to download', keys.includes('offline_reel_count'));
+  ok('how many posts to download', keys.includes('offline_post_count'));
   ok('a count of what is saved', keys.includes('offline_status'));
   ok('clear saved content', keys.includes('clear_offline'));
   ok('which networks may be used', keys.includes('offline_network'));
-  ok('and nothing else', keys.length === 7, keys.join(','));
+  ok('and nothing else', keys.length === 8, keys.join(','));
   ok('the reel count follows the reels switch',
      /offline_reel_count[\s\S]{0,400}dependency="offline_reels"/.test(xml));
+  ok('the post count follows the feed switch',
+     /offline_post_count[\s\S]{0,400}dependency="offline_feed"/.test(xml));
+
+  const strings = fs.readFileSync(
+    path.join(ROOT, 'app/src/main/res/values/strings.xml'), 'utf8');
+  ok('the post count offers real choices with its default among them',
+     /<string-array name="post_count_labels">/.test(strings) &&
+     /<string-array name="post_count_values">/.test(strings) &&
+     /<item>50<\/item>/.test(strings.slice(
+       strings.indexOf('post_count_values'))));
+
+  const prefsSrc = fs.readFileSync(KT('utils/Prefs.kt'), 'utf8');
+  ok('the post target is clamped and defaults to 50',
+     /KEY_OFFLINE_POST_COUNT, null\) \?: return 50/.test(prefsSrc) &&
+     /coerceIn\(10, 300\) \?: 50/.test(prefsSrc));
 
   const settings = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
   ok('reels are counted against the target',
      /offlineReelTarget/.test(settings));
+  ok('posts are counted against their own target now',
+     /offlinePostTarget/.test(settings) &&
+     /Posts: " \+ fc \+ " of " \+ p\.offlinePostTarget/.test(settings));
   ok('posts and stories are counted too',
      /SECTION_FEED/.test(settings) && /SECTION_STORIES/.test(settings));
 }

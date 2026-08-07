@@ -9,10 +9,15 @@ import android.os.Looper
  *
  * Lifecycle:
  *   App opens online → start()
- *     Step 1: Save the first 10 feed posts - a quick starter set the user
- *             can open offline almost immediately, then posts STOP for now
+ *     Step 0: Trim the feed vault to the user's chosen post count, so a
+ *             store made oversized by an older build (or a lowered
+ *             setting) matches the setting within this cycle
+ *     Step 1: Save the first few feed posts - min(10, the chosen count),
+ *             a quick starter set usable offline almost immediately,
+ *             then posts STOP for now
  *     Step 2: Save the user's chosen number of reels, video included
- *     Step 3: Continue the feed backlog from those 10 up to 300 posts
+ *     Step 3: Continue the feed up to the user's chosen post count -
+ *             the same hard ceiling as everywhere else, never past it
  *     Step 4: Once posts are complete, save the stories of the user's
  *             followed friends (watched + unwatched)
  *   User browses online → seen content tracked via bridge + store
@@ -59,6 +64,16 @@ object BackgroundSyncManager {
         if (!NetworkPolicy.canDownload(c, p)) return
 
         isRunning = true
+        // Hard-ceiling bookkeeping BEFORE any fetching: the feed vault
+        // may still hold the hundreds an older build raced to (its step 3
+        // chased 300 no matter what), or more than a setting the user has
+        // since lowered. Trimming once per cycle is what makes "stops at
+        // my number" true on disk, not just a promise about new adds.
+        // Fire and forget: the newest entries survive, and the first
+        // phase below adds nothing while the store is still oversized.
+        AppExecutors.diskIO.execute {
+            OfflineFeed.trimTo(OfflineFeed.SECTION_FEED, p.offlinePostTarget)
+        }
         step1FirstPosts(c, p)
     }
 
@@ -135,11 +150,13 @@ object BackgroundSyncManager {
     // -------------------------------------------------------- steps
 
     private fun step1FirstPosts(context: Context, p: Prefs) {
-        currentStep = "posts-10"
-        // Exactly ten: a fast, immediately usable starter set. The phase
-        // total is exact so fetching stops here and reels can start.
-        OfflineSync.run(context, OfflineFeed.SECTION_FEED, 10,
-            includeVideo = true, force = true, exactTotal = 10) {
+        currentStep = "posts-first"
+        // min(10, the chosen count): a fast, immediately usable starter
+        // set. The phase total is exact so fetching stops here and reels
+        // can start - and a user who set 10 posts is already done here.
+        val quick = minOf(10, p.offlinePostTarget)
+        OfflineSync.run(context, OfflineFeed.SECTION_FEED, quick,
+            includeVideo = true, force = true, exactTotal = quick) {
             awaitThen(OfflineFeed.SECTION_FEED) { step2Reels(context, p) }
         }
     }
@@ -154,11 +171,14 @@ object BackgroundSyncManager {
     }
 
     private fun step3MorePosts(context: Context, p: Prefs) {
-        currentStep = "posts-300"
-        // Continue FROM the 10 already saved up to 300 total: the phase
-        // total counts what the store already holds, so this fills the gap.
-        OfflineSync.run(context, OfflineFeed.SECTION_FEED, 300,
-            includeVideo = true, force = true, exactTotal = 300) {
+        currentStep = "posts-full"
+        // Continue FROM the starter set up to the user's chosen count:
+        // the phase total counts what the store already holds, so this
+        // fills exactly the gap - and stops. Gone is the hardcoded 300
+        // that kept climbing no matter what the first phase promised.
+        val target = p.offlinePostTarget
+        OfflineSync.run(context, OfflineFeed.SECTION_FEED, target,
+            includeVideo = true, force = true, exactTotal = target) {
             awaitThen(OfflineFeed.SECTION_FEED) { step4Stories(context, p) }
         }
     }

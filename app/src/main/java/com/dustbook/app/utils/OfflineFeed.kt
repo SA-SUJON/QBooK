@@ -112,6 +112,15 @@ object OfflineFeed {
 
     fun totalStored(section: String): Int = vault(section)?.totalStored() ?: 0
 
+    /**
+     * Bring a section down to the user's chosen total. The capture gates
+     * refuse to add beyond it, but a store made oversized by an older build
+     * only ever shrinks when someone explicitly trims it. Runs on a caller
+     * thread; the pipeline calls it once when a sync starts.
+     */
+    fun trimTo(section: String, maxEntries: Int): Int =
+        vault(section)?.trimTo(maxEntries) ?: 0
+
     /** Cheap "is there anything here at all" test; never parses. */
     fun storedCount(section: String): Int = vault(section)?.storedCountCheap() ?: 0
 

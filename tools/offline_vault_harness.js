@@ -78,11 +78,30 @@ const RX = {
   BASE_TAG: kotlinRegex(assembly, 'BASE_TAG'),
   CONTAINER: kotlinRegex(assembly, 'CONTAINER'),
   VSCROLLER: kotlinRegex(assembly, 'VSCROLLER'),
+  VSCROLLER_TAG: kotlinRegex(assembly, 'VSCROLLER_TAG'),
   SCREEN_ROOT: kotlinRegex(assembly, 'SCREEN_ROOT'),
   BODY: kotlinRegex(assembly, 'BODY'),
+  TOKEN: kotlinRegex(assembly, 'TOKEN'),
+  DIV_OPEN: kotlinRegex(assembly, 'DIV_OPEN'),
+  DIV_CLOSE: kotlinRegex(assembly, 'DIV_CLOSE'),
+  FIRST_TAG: kotlinRegex(assembly, 'FIRST_TAG'),
+  MARGIN: kotlinRegex(assembly, 'MARGIN'),
+  MARGIN_STRIP: kotlinRegex(assembly, 'MARGIN_STRIP'),
+  POST_SIG: kotlinRegex(assembly, 'POST_SIG'),
 };
 const HIDE_OLD = kotlinConst(assembly, 'HIDE_OLD');
 const HIDE_SCROLLER = kotlinConstJoined(assembly, 'HIDE_SCROLLER');
+const RESET_SCREEN_ROOT = kotlinConstJoined(assembly, 'RESET_SCREEN_ROOT');
+const RESET_GENERAL = kotlinConstJoined(assembly, 'RESET_GENERAL');
+
+/** Integer const vals, matched as source text (kotlinConst reads strings). */
+function kotlinInt(src, name) {
+  const m = src.match(new RegExp(name + ' =\\s*(\\d+)'));
+  if (!m) throw new Error(name + ' int const not found');
+  return parseInt(m[1], 10);
+}
+const MAX_CHROME_UNITS = kotlinInt(assembly, 'MAX_CHROME_UNITS');
+const MAX_CHROME_BYTES = kotlinInt(assembly, 'MAX_CHROME_BYTES');
 
 /** Mirror of PageAssembly.sanitize(). */
 function sanitize(card) {
@@ -97,29 +116,144 @@ function holderHtml(cards) {
   return '<div id="__db_cards" data-db-cards="1">\n' + body + '\n</div>';
 }
 
+/** Reset a global regex before a one-shot exec/test on an input. */
+function exec0(re, s) { re.lastIndex = 0; return re.exec(s); }
+function test0(re, s) { re.lastIndex = 0; return re.test(s); }
+
+/** Mirror of PageAssembly.topLevelChildren(). */
+function topLevelChildren(doc, from) {
+  const out = [];
+  RX.TOKEN.lastIndex = from;
+  let depth = 0, childStart = -1, m;
+  while ((m = RX.TOKEN.exec(doc)) !== null) {
+    const t = m[0];
+    if (test0(RX.DIV_CLOSE, t)) {
+      if (depth === 0) return out;
+      depth--;
+      if (depth === 0 && childStart >= 0) {
+        out.push({ start: childStart, end: m.index + t.length });
+        childStart = -1;
+      }
+    } else if (test0(RX.DIV_OPEN, t)) {
+      if (depth === 0) childStart = m.index;
+      depth++;
+    }
+    // comments and scripts match TOKEN first and are skipped
+  }
+  return out;
+}
+
+const MOVE = 0, LEAVE = 1, STOP = 2;
+
+/** Mirror of PageAssembly.classify(), using the vault's own signatures. */
+function classify(slice) {
+  if (slice.toLowerCase().includes(JUNK.AD_TAG.toLowerCase())) return LEAVE;
+  const hasStoryLink = test0(JUNK.STORY_LINK, slice);
+  let labels = 0;
+  JUNK.TAB_LABEL.lastIndex = 0;
+  while (JUNK.TAB_LABEL.exec(slice) !== null) {
+    if (++labels >= 2) break;
+  }
+  if (labels >= 2 && !hasStoryLink) return LEAVE;
+  if (test0(RX.POST_SIG, slice)) return STOP;
+  return MOVE;
+}
+
+/** Mirror of PageAssembly.stripVirtualMargin(). */
+function stripVirtualMargin(slice) {
+  const tag = exec0(RX.FIRST_TAG, slice);
+  if (!tag) return slice;
+  RX.MARGIN_STRIP.lastIndex = 0;
+  const stripped = tag[0].replace(RX.MARGIN_STRIP, '');
+  return stripped + slice.slice(tag[0].length);
+}
+
+/** Mirror of PageAssembly.stolenOffset(). */
+function stolenOffset(slice) {
+  const tag = exec0(RX.FIRST_TAG, slice);
+  if (!tag) return null;
+  const m = exec0(RX.MARGIN, tag[0]);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 /**
- * Mirror of PageAssembly.compose(), branch for branch:
- * container match -> HIDE_OLD + holder as first child; else after <body>;
- * else appended. Kotlin's m.range.last + 1 is index + match length.
+ * Mirror of PageAssembly.compose(), branch for branch. Kotlin's
+ * m.range.last + 1 is index + match length.
  */
 function compose(doc, cards) {
   if (!cards.length) return doc;
   const holder = holderHtml(cards);
-  RX.CONTAINER.lastIndex = 0;
-  let m = RX.CONTAINER.exec(doc);
+  let m = exec0(RX.CONTAINER, doc);
   if (m) {
     const at = m.index + m[0].length;
-    RX.SCREEN_ROOT.lastIndex = 0;
-    RX.VSCROLLER.lastIndex = 0;
     const joinedScreenRoot =
-      RX.SCREEN_ROOT.test(m[0]) && RX.VSCROLLER.test(doc.slice(at));
-    // Screen root with its own scroller: hide the scroller alone, so the
-    // pinned header stays. Everything else keeps the sibling rule.
+      test0(RX.SCREEN_ROOT, m[0]) && test0(RX.VSCROLLER, doc.slice(at));
+    if (joinedScreenRoot) {
+      const rest = doc.slice(at);
+      const vs = exec0(RX.VSCROLLER_TAG, rest);
+      const vsStart = at + vs.index;
+      const vsOpenEnd = at + vs.index + vs[0].length;
+
+      const children = topLevelChildren(doc, vsOpenEnd);
+      const moved = [];
+      let offset = null, bytes = 0;
+      if (children.length) {
+        offset = stolenOffset(doc.slice(children[0].start, children[0].end));
+      }
+      let cursor = vsOpenEnd;
+      let inner = '';
+      for (let i = 0; i < children.length; i++) {
+        if (moved.length >= MAX_CHROME_UNITS || bytes >= MAX_CHROME_BYTES) break;
+        const c = children[i];
+        const slice = doc.slice(c.start, c.end);
+        const kind = classify(slice);
+        if (kind === STOP) break;
+        if (kind === MOVE) {
+          inner += doc.slice(cursor, c.start);
+          cursor = c.end;
+          moved.push(stripVirtualMargin(slice));
+          bytes += slice.length;
+        }
+      }
+      const pad = offset != null && offset > 0 ? offset + 'px' : null;
+      const padCss = '<style id="__db_top_pad">' +
+        (moved.length ? '#__db_chrome' : '#__db_cards') +
+        '{padding-top:' + (pad || '0') + '!important}</style>';
+      const chrome = !moved.length ? '' :
+        '<div id="__db_chrome"' + (pad ? ' style="padding-top:' + pad + '"' : '') +
+        '>' + moved.join('\n') + '</div>';
+      return doc.slice(0, vsStart) +
+        RESET_SCREEN_ROOT + HIDE_SCROLLER + (pad ? padCss : '') +
+        chrome + holder +
+        doc.slice(vsStart, vsOpenEnd) + inner + doc.slice(cursor);
+    }
+    return doc.slice(0, at) + RESET_GENERAL + HIDE_OLD + holder + doc.slice(at);
+  }
+  m = exec0(RX.BODY, doc);
+  if (m) {
+    const at = m.index + m[0].length;
+    return doc.slice(0, at) + RESET_GENERAL + holder + doc.slice(at);
+  }
+  return doc + RESET_GENERAL + holder;
+}
+
+/**
+ * The v5.2.6 compose body, kept ONLY for contrast tests: it must still
+ * demonstrate the faults that this round fixes (cards above the header,
+ * chrome hidden with the scroller), or the new shape is fixing nothing.
+ */
+function composeLegacy(doc, cards) {
+  if (!cards.length) return doc;
+  const holder = holderHtml(cards);
+  let m = exec0(RX.CONTAINER, doc);
+  if (m) {
+    const at = m.index + m[0].length;
+    const joinedScreenRoot =
+      test0(RX.SCREEN_ROOT, m[0]) && test0(RX.VSCROLLER, doc.slice(at));
     const hide = joinedScreenRoot ? HIDE_SCROLLER : HIDE_OLD;
     return doc.slice(0, at) + hide + holder + doc.slice(at);
   }
-  RX.BODY.lastIndex = 0;
-  m = RX.BODY.exec(doc);
+  m = exec0(RX.BODY, doc);
   if (m) {
     const at = m.index + m[0].length;
     return doc.slice(0, at) + holder + doc.slice(at);
@@ -226,7 +360,9 @@ function addItems(existing, incoming, limit, floor) {
 module.exports = {
   ROOT, KT, SRC,
   unescapeKotlin, kotlinRegex, kotlinConst, kotlinConstJoined,
-  RX, HIDE_OLD, HIDE_SCROLLER, sanitize, holderHtml, compose,
+  RX, HIDE_OLD, HIDE_SCROLLER, RESET_SCREEN_ROOT, RESET_GENERAL,
+  sanitize, holderHtml, compose, composeLegacy,
+  classify, stripVirtualMargin, stolenOffset, topLevelChildren,
   photoKey, isVideoUrl, isAvatar, isChrome, isComplete, addItems,
   JUNK, isJunk,
   sources: { assembly, vault, docs, docsFeed },

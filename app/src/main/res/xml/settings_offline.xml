@@ -34,6 +34,17 @@
             android:dependency="offline_reels"
             app:iconSpaceReserved="false" />
 
+        <!-- Same control for the home feed: how many posts are kept,
+             after which every capture path stops adding. -->
+        <ListPreference android:key="offline_post_count"
+            android:title="@string/pref_offline_post_count"
+            android:entries="@array/post_count_labels"
+            android:entryValues="@array/post_count_values"
+            android:defaultValue="50"
+            android:summary="%s"
+            android:dependency="offline_feed"
+            app:iconSpaceReserved="false" />
+
         <!-- Which connections may be used. Defaults to Wi-Fi only: a full
              pass is hundreds of megabytes and should not quietly consume a
              mobile allowance. -->

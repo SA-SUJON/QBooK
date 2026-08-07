@@ -19,40 +19,52 @@ package com.dustbook.app.offline
  * only restores the scroll position and reports it back - a nicety whose
  * failure costs nothing.
  *
- * Placement is deterministic and deliberately simple:
+ * Placement, against the captured structure
  *
- *  1. the first element carrying a container marker
- *     (`data-mcomponent="MScreen"`, else `data-type="vscroller"` - the
- *     elements the m.facebook.com captures show) gets the cards as its
- *     FIRST child;
- *  2. if some stored document has no such container, the cards go right
- *     after <body> and nothing is hidden - content is guaranteed either
- *     way;
- *  3. a document with neither receives the cards at its end.
+ *     MScreen (screen root)
+ *       +-- header  (fixed-container top: logo bar + tab row)
+ *       +-- vscroller (Facebook's JS-driven virtual list:
+ *             composer, stories tray, then stale server-rendered posts)
  *
- * What is hidden is scoped just as carefully:
+ *  1. the composer and the stories tray are MOVED OUT of the old scroller
+ *     into the normal document flow, right after the header, so the
+ *     offline home screen has the same pieces the online one has - proven
+ *     against the user's own side-by-side screenshots, where both were
+ *     missing because the whole scroller had to hide;
+ *  2. the saved cards go in right after them, as the scroller's previous
+ *     sibling - the same parent BY CONSTRUCTION, so the sibling rule that
+ *     hides the stale scroller can never miss it;
+ *  3. the old scroller - now just stale posts plus any junk that must not
+ *     resurface (a floating tab row, a condemned ad) - hides whole, by
+ *     name;
+ *  4. an offline layout reset un-clips the screen root: on the live site
+ *     scrolling belongs to the scroller, whose CSS keeps the screen root
+ *     at viewport height with overflow hidden, so a static block inside
+ *     that container scrolls jerkily or not at all (the user's "scroll
+ *     down smoothly hoi na, scrolling up hotei chai na"). With the
+ *     scroller hidden and the content in normal flow, html/body/MScreen
+ *     must behave like an ordinary page - and they do, by !important, no
+ *     matter what rules the stored stylesheet carries;
+ *  5. the fixed header stays fixed, exactly as online. Facebook offsets
+ *     its first scroller child by the header's own height (the margin
+ *     every capture shows); that same number pads our first in-flow
+ *     block, so nothing slips underneath it.
  *
- *  - when the cards joined the screen root (the ordinary case: the
- *    captures open MScreen first, and it contains both the pinned header
- *    and the feed scroller), ONLY the scroller hides, by name. The old
- *    stories vanish while the header and tab bar keep their place, which
- *    is exactly why the offline page looks like the online one;
- *  - when the cards joined a bare scroller (a document with no screen
- *    root at all), the scroller's own later children hide, as they always
- *    did;
- *  - a body/end fallback hides nothing.
+ * The junk decisions in step 3 reuse SectionVault's own signatures
+ * verbatim (ad mark, tab-row labels, story links) - one definition, no
+ * drift.
  *
  * Two placements were tried in front of users and are recorded here so
  * they are never retried:
  *
- *  - an ALTERNATING regex over both markers matched the screen root and
- *    then hid EVERY following sibling - Facebook's own header was simply
- *    gone offline and the tab row's only copy was a stray saved card;
- *  - inserting the cards into the feed scroller instead spared the
- *    header, but the scroller is Facebook's JS-driven virtual list: a
- *    static block inside it broke scrolling intermittently on device
- *    ("majhe majhe scroll hoi na"), a regression that shipped in v5.2.5
- *    and is reverted here.
+ *  - an ALTERNATING regex over both container markers matched the screen
+ *    root and then hid EVERY following sibling - Facebook's own header
+ *    was simply gone offline;
+ *  - inserting the cards as the screen root's FIRST child (v5.2.6) kept
+ *    the header alive but parked it after every saved card, so the tab
+ *    row effectively did not exist, and the cards still sat inside the
+ *    container whose CSS owned scrolling. The user report: "nav buttons
+ *    gulai nai, story's o nai, scroll up hotei chai na".
  */
 object PageAssembly {
 
@@ -78,10 +90,9 @@ object PageAssembly {
             .replace(BASE_TAG, "")
 
     /**
-     * The old scroller next to the cards, hidden whole. Used when the
-     * holder sits in the screen root: the scroller's stale stories are
-     * the only thing that must vanish, and aiming at them by name is
-     * what keeps Facebook's own header and tab bar on screen.
+     * The old scroller, hidden whole. Its only remaining contents - stale
+     * posts and what must never resurface - vanish with it while the
+     * header, the moved chrome and the saved cards keep their places.
      */
     private const val HIDE_SCROLLER =
         "<style id=\"__db_hide_old\">#__db_cards~[data-type=\"vscroller\"]" +
@@ -95,6 +106,39 @@ object PageAssembly {
     private const val HIDE_OLD =
         "<style id=\"__db_hide_old\">#__db_cards~*{display:none!important}</style>"
 
+    /**
+     * The offline layout reset, screen-root branch.
+     *
+     * On the live m.facebook.com the screen root is viewport-sized with
+     * clipped overflow and the scroller inside it owns scrolling. A static
+     * block inside that container cannot scroll natively - which offline
+     * read as jerky half-scrolls that would not go back up. Content now
+     * sits in normal document flow, so the ancestors on its path must be
+     * ordinary: heights auto, overflow visible, positioning static. Every
+     * declaration is !important so it wins against whatever the stored
+     * stylesheet says about these elements; failing open would mean a page
+     * that shows only its first screenful of saved posts.
+     */
+    private const val RESET_SCREEN_ROOT =
+        "<style id=\"__db_layout_reset\">" +
+            "html,body{height:auto!important;min-height:0!important;" +
+            "overflow:visible!important}" +
+            "[data-mcomponent=\"MScreen\"]{position:static!important;" +
+            "top:auto!important;right:auto!important;bottom:auto!important;" +
+            "left:auto!important;width:auto!important;height:auto!important;" +
+            "min-height:0!important;max-height:none!important;" +
+            "overflow:visible!important;transform:none!important}</style>"
+
+    /**
+     * The tame half of the reset, for the fallback branches: letting the
+     * document itself scroll never hurts, and it is all those branches
+     * can safely assume.
+     */
+    private const val RESET_GENERAL =
+        "<style id=\"__db_layout_reset\">" +
+            "html,body{height:auto!important;min-height:0!important;" +
+            "overflow:visible!important}</style>"
+
     /** Screen root / feed container in m.facebook.com markup, by earliest match. */
     private val CONTAINER = Regex(
         "<div\\b[^>]*(?:data-type=[\"']vscroller[\"']" +
@@ -102,9 +146,15 @@ object PageAssembly {
         RegexOption.IGNORE_CASE
     )
 
-    /** Just the scroller test, for choosing which stylesheet applies. */
+    /** Just the scroller test, for choosing which branch applies. */
     private val VSCROLLER = Regex(
         "data-type=[\"']vscroller[\"']",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** The scroller's own opening tag, for locating it exactly. */
+    private val VSCROLLER_TAG = Regex(
+        "<div\\b[^>]*data-type=[\"']vscroller[\"'][^>]*>",
         RegexOption.IGNORE_CASE
     )
 
@@ -115,10 +165,136 @@ object PageAssembly {
 
     private val BODY = Regex("<body\\b[^>]*>", RegexOption.IGNORE_CASE)
 
+    /**
+     * Top-level scanner for the scroller's children: real <div> open and
+     * close tags, with comments and whole <script> blocks consumed first so
+     * a stray tag inside one of them can never bend the depth count either
+     * way. This is the same counting idea OfflineCapture.removeTag relies
+     * on: a lazy match would stop at the first nested </div> and split a
+     * unit in half.
+     */
+    private val TOKEN = Regex(
+        "<!--[\\s\\S]*?-->|<script\\b[^>]*>[\\s\\S]*?</script\\s*>" +
+            "|<div\\b[^>]*>|</div\\s*>",
+        RegexOption.IGNORE_CASE
+    )
+    private val DIV_OPEN = Regex("^<div\\b", RegexOption.IGNORE_CASE)
+    private val DIV_CLOSE = Regex("^</div\\b", RegexOption.IGNORE_CASE)
+
+    /** A scroller child's own opening tag, anchored at the child's start. */
+    private val FIRST_TAG = Regex("^<div\\b[^>]*>", RegexOption.IGNORE_CASE)
+
+    /**
+     * The virtual-list offset Facebook stamps on each scroller child. The
+     * first child's value equals the pinned header's height: content below
+     * a fixed element has to start that far down.
+     */
+    private val MARGIN = Regex("margin-top\\s*:\\s*(\\d+)px", RegexOption.IGNORE_CASE)
+    private val MARGIN_STRIP =
+        Regex("margin-top\\s*:\\s*\\d+px;?\\s*", RegexOption.IGNORE_CASE)
+
+    /**
+     * What makes a scroller child a post, not chrome: a permalink or one of
+     * the identity attributes OfflineCapture.idOf() reads. Anything without
+     * one - the composer, the stories tray - is chrome worth moving out.
+     */
+    private val POST_SIG = Regex(
+        "story_fbid|/posts/|/videos/|/reel/|data-tracking-duration-id" +
+            "|data-video-id|data-successful-render-id|data-comp-id",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Sanity bounds: chrome moves are the first few units, never the feed. */
+    private const val MAX_CHROME_UNITS = 6
+    private const val MAX_CHROME_BYTES = 300 * 1024
+
     /** The saved cards as one block, ready to sit inside the document. */
     fun holderHtml(cards: List<String>): String {
         val body = cards.joinToString("\n") { sanitize(it) }
         return "<div id=\"__db_cards\" data-db-cards=\"1\">\n$body\n</div>"
+    }
+
+    /** One scroller child as (start, end) offsets of its outer element. */
+    private data class Child(val start: Int, val end: Int)
+
+    /**
+     * The scroller's direct <div> children, located from just past its
+     * opening tag. Depth counting, so nested divs inside a unit are never
+     * mistaken for siblings; script and comment regions are consumed whole
+     * by the tokenizer first.
+     */
+    private fun topLevelChildren(doc: String, from: Int): List<Child> {
+        val out = ArrayList<Child>()
+        var depth = 0
+        var childStart = -1
+        var m = TOKEN.find(doc, from)
+        while (m != null) {
+            val t = m.value
+            when {
+                DIV_CLOSE.containsMatchIn(t) -> {
+                    if (depth == 0) return out      // the scroller's own close
+                    depth--
+                    if (depth == 0 && childStart >= 0) {
+                        out.add(Child(childStart, m.range.last + 1))
+                        childStart = -1
+                    }
+                }
+                DIV_OPEN.containsMatchIn(t) -> {
+                    if (depth == 0) childStart = m.range.first
+                    depth++
+                }
+                // comments and scripts match TOKEN first and are skipped
+            }
+            m = m.next()
+        }
+        return out
+    }
+
+    /** Whether one scroller child moves out (chrome), stays hidden (junk), */
+    /** or ends the move (the first real post). */
+    private const val MOVE = 0
+    private const val LEAVE = 1
+    private const val STOP = 2
+
+    private fun classify(slice: String): Int {
+        // A card an ad blocker had already condemned when the capture read
+        // it: the mark is part of the saved outerHTML, so it stays hidden
+        // with the scroller rather than resurfacing between real posts.
+        if (slice.contains(SectionVault.JUNK_AD_TAG, ignoreCase = true)) {
+            return LEAVE
+        }
+        // Facebook's floating tab row, caught mid-scroller offline before.
+        // Several tab-labelled buttons and no story link - SectionVault's
+        // exact signature, so the page and the store agree on what it is.
+        val hasStoryLink = SectionVault.JUNK_STORY_LINK.containsMatchIn(slice)
+        var labels = 0
+        val it = SectionVault.JUNK_TAB_LABEL.findAll(slice).iterator()
+        while (it.hasNext()) {
+            it.next()
+            if (++labels >= 2) break
+        }
+        if (labels >= 2 && !hasStoryLink) return LEAVE
+        if (POST_SIG.containsMatchIn(slice)) return STOP
+        return MOVE
+    }
+
+    /**
+     * The virtual-list margin lives only on a child's own opening tag, so
+     * that is the only place it is stripped: a moved unit rejoins normal
+     * flow without its old absolute offset, while everything it contains
+     * keeps Facebook's styling untouched.
+     */
+    private fun stripVirtualMargin(slice: String): String {
+        val tag = FIRST_TAG.find(slice) ?: return slice
+        val stripped = tag.value.replace(MARGIN_STRIP, "")
+        return stripped + slice.substring(tag.value.length)
+    }
+
+    /** The header offset Facebook itself used on its first scroller child. */
+    private fun stolenOffset(slice: String): Int? {
+        val tag = FIRST_TAG.find(slice) ?: return null
+        val m = MARGIN.find(tag.value) ?: return null
+        return m.groupValues[1].toIntOrNull()
     }
 
     /**
@@ -135,18 +311,78 @@ object PageAssembly {
             val joinedScreenRoot =
                 SCREEN_ROOT.containsMatchIn(m.value) &&
                     VSCROLLER.containsMatchIn(doc.substring(at))
-            // Screen root with its own scroller inside: hide the scroller
-            // alone and leave the header untouched. Everything else keeps
-            // the historical sibling rule (a bare scroller's stale
-            // children) or hides nothing (body/end fallback below).
-            val hide = if (joinedScreenRoot) HIDE_SCROLLER else HIDE_OLD
-            return doc.substring(0, at) + hide + holder + doc.substring(at)
+
+            if (joinedScreenRoot) {
+                // Home shape: header, then the scroller with chrome on top
+                // and stale posts below. Reels documents reach the same
+                // branch and simply have nothing to move, because their
+                // first scroller child is already a post.
+                val rest = doc.substring(at)
+                val vs = VSCROLLER_TAG.find(rest) ?: return@let
+                val vsStart = at + vs.range.first
+                val vsOpenEnd = at + vs.range.last + 1
+
+                val children = topLevelChildren(doc, vsOpenEnd)
+                val moved = ArrayList<String>()
+                var offset: Int? = null
+                var bytes = 0
+                if (children.isNotEmpty()) {
+                    offset = stolenOffset(
+                        doc.substring(children[0].start, children[0].end))
+                }
+
+                // Rebuild the scroller with the moved units excised. Junk
+                // (a floating tab row, a condemned ad) and everything from
+                // the first real post onward stay exactly where they were,
+                // hidden with the scroller.
+                var cursor = vsOpenEnd
+                var inner = ""
+                for (c in children) {
+                    if (moved.size >= MAX_CHROME_UNITS ||
+                        bytes >= MAX_CHROME_BYTES) break
+                    val slice = doc.substring(c.start, c.end)
+                    val kind = classify(slice)
+                    if (kind == STOP) break
+                    if (kind == MOVE) {
+                        inner += doc.substring(cursor, c.start)
+                        cursor = c.end
+                        moved.add(stripVirtualMargin(slice))
+                        bytes += slice.length
+                    }
+                    // LEAVE: junk stays exactly where it was, hidden with
+                    // the scroller it belongs to.
+                }
+
+                val pad = if (offset != null && offset > 0) "${offset}px" else null
+                val padCss = "<style id=\"__db_top_pad\">" +
+                    (if (moved.isNotEmpty()) "#__db_chrome" else "#__db_cards") +
+                    "{padding-top:" + (pad ?: "0") + "!important}</style>"
+                val chrome =
+                    if (moved.isEmpty()) ""
+                    else "<div id=\"__db_chrome\"" +
+                        (pad?.let { " style=\"padding-top:$it\"" } ?: "") + ">" +
+                        moved.joinToString("\n") +
+                        "</div>"
+
+                return doc.substring(0, vsStart) +
+                    RESET_SCREEN_ROOT + HIDE_SCROLLER +
+                    (if (pad != null) padCss else "") +
+                    chrome + holder +
+                    doc.substring(vsStart, vsOpenEnd) + inner +
+                    doc.substring(cursor)
+            }
+
+            // Bare scroller: the historical sibling rule, plus the general
+            // reset - the only safe assumption without a screen root.
+            return doc.substring(0, at) + RESET_GENERAL + HIDE_OLD + holder +
+                doc.substring(at)
         }
         BODY.find(doc)?.let { m ->
             val at = m.range.last + 1
-            return doc.substring(0, at) + holder + doc.substring(at)
+            return doc.substring(0, at) + RESET_GENERAL + holder +
+                doc.substring(at)
         }
-        return doc + holder
+        return doc + RESET_GENERAL + holder
     }
 
     /**

@@ -49,6 +49,7 @@ class Prefs(context: Context) {
         const val KEY_OFFLINE_STORIES = "offline_stories"
         const val KEY_OFFLINE_LAST_SYNC = "offline_last_sync"
         const val KEY_OFFLINE_REEL_COUNT = "offline_reel_count"
+        const val KEY_OFFLINE_POST_COUNT = "offline_post_count"
         const val KEY_OFFLINE_WIFI_ONLY = "offline_network"
         const val KEY_OFFLINE_RESUME_REEL = "offline_resume_reel"
         const val KEY_OFFLINE_RESUME_FEED = "offline_resume_feed"
@@ -197,6 +198,22 @@ class Prefs(context: Context) {
         get() {
             val raw = sp.getString(KEY_OFFLINE_REEL_COUNT, null) ?: return 30
             return raw.toIntOrNull()?.coerceIn(30, 250) ?: 30
+        }
+
+    /**
+     * How many feed posts to hold, user-chosen exactly like the reel
+     * count. This number is the hard ceiling for every capture path: the
+     * pipeline's exact totals and the foreground merge both refuse to add
+     * past it, and the vault trims down to it when a sync starts - the
+     * days of "10 bolchilam, 134 holo keno" die here.
+     *
+     * Must stay in step with post_count_values in strings.xml and the
+     * defaultValue in settings_offline.xml.
+     */
+    val offlinePostTarget: Int
+        get() {
+            val raw = sp.getString(KEY_OFFLINE_POST_COUNT, null) ?: return 50
+            return raw.toIntOrNull()?.coerceIn(10, 300) ?: 50
         }
     val inAppMessaging: Boolean get() = sp.getBoolean(KEY_INAPP_MESSAGING, false)
     /**

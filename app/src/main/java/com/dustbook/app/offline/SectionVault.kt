@@ -599,6 +599,73 @@ open class SectionVault(
         }
     }
 
+    /**
+     * Trim this vault down to at most [maxEntries] entries, newest first.
+     *
+     * The capture gates refuse to ADD beyond the user's chosen total, but a
+     * store written while an older build chased a larger one (the 300-post
+     * backlog phase, or a setting the user has since lowered) stays large
+     * forever: nothing added, nothing removed, the count permanently above
+     * the number on the settings screen. Trimming once when the pipeline
+     * starts makes the on-disk library match the chosen total within that
+     * cycle, honestly - the kept entries are untouched, and every media file
+     * only the dropped entries referenced is deleted.
+     *
+     * `.part` files are never touched: they belong to transfers in flight
+     * and deleting one mid-write is how a half file becomes a "complete"
+     * one. Atomic rewrite, same as [addItems]: a truncated store is worse
+     * than a stale one.
+     *
+     * @return how many entries were dropped (0 when already within bounds).
+     */
+    fun trimTo(maxEntries: Int): Int {
+        if (maxEntries <= 0) return 0
+        val f = itemsFile() ?: return 0
+        synchronized(this) {
+            val items = load()
+            if (items.size <= maxEntries) return 0
+            val keep = items.take(maxEntries)
+
+            val arr = JSONArray()
+            for (it in keep) {
+                val m = JSONArray()
+                for (u in it.media) m.put(u)
+                arr.put(
+                    JSONObject()
+                        .put("id", it.id)
+                        .put("h", it.html)
+                        .put("m", m)
+                )
+            }
+            val renamed = try {
+                val tmp = File(f.parentFile, f.name + ".part")
+                tmp.writeText(arr.toString())
+                tmp.renameTo(f).also { ok -> if (!ok) tmp.delete() }
+            } catch (e: Exception) {
+                false
+            }
+            if (!renamed) return 0
+
+            // Media only the dropped entries referenced is now unreachable.
+            val keepNames = HashSet<String>()
+            for (e in keep) for (u in e.media) keepNames.add(hashFor(u))
+            val dir = media
+            if (dir != null) {
+                try {
+                    for (file in dir.listFiles() ?: emptyArray()) {
+                        val n = file.name
+                        if (n.endsWith(".part")) continue
+                        val base = if (n.endsWith(".mime"))
+                            n.removeSuffix(".mime") else n
+                        if (!keepNames.contains(base)) file.delete()
+                    }
+                } catch (e: Exception) {}
+            }
+            OfflineDocs.invalidate()
+            return items.size - keep.size
+        }
+    }
+
     /** Wipe this section - items and media - and nothing else. */
     fun clear() {
         synchronized(queue) {
@@ -618,12 +685,15 @@ open class SectionVault(
         private const val MAX_ENTRY_BYTES = 60L * 1024 * 1024   // 60 MB
 
         // Junk signatures for isJunk(), above. Kept as constants so the
-        // test suite can extract them verbatim.
-        private const val JUNK_AD_TAG = "data-db-ad="
-        private const val SECTION_FEED_ID = "feed"
-        private val JUNK_STORY_LINK = Regex(
+        // test suite can extract them verbatim. Internal rather than
+        // private: PageAssembly reuses the very same signatures to decide
+        // which captured scroller children are chrome worth keeping and
+        // which are junk to leave hidden - one definition, no drift.
+        internal const val JUNK_AD_TAG = "data-db-ad="
+        internal const val SECTION_FEED_ID = "feed"
+        internal val JUNK_STORY_LINK = Regex(
             "story_fbid|/posts/|/videos/|/reel/", RegexOption.IGNORE_CASE)
-        private val JUNK_TAB_LABEL = Regex(
+        internal val JUNK_TAB_LABEL = Regex(
             "aria-label=[\"'](?:home|reels|watch|notifications|marketplace|" +
                 "menu|profile|friends|groups|gaming|messages|messenger|" +
                 "chats|search|create)[\"']",

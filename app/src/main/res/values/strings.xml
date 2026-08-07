@@ -148,6 +148,7 @@
     <string name="pref_offline_network_any_sum">Wi-Fi and mobile data · uses your data allowance</string>
     <string name="offline_paused_metered">Saving paused — waiting for Wi-Fi</string>
     <string name="pref_offline_reel_count">Reels to download</string>
+    <string name="pref_offline_post_count">Posts to download</string>
     <!--
       These must stay in step with Prefs.offlineReelTarget, which clamps to
       30..250, and with the defaultValue in settings_offline.xml. A default
@@ -169,6 +170,27 @@
         <item>150</item>
         <item>200</item>
         <item>250</item>
+    </string-array>
+    <!--
+      Same pairing rule as the reel arrays: these must stay in step with
+      Prefs.offlinePostTarget (clamps to 10..300) and with the defaultValue
+      in settings_offline.xml ("50", present here).
+    -->
+    <string-array name="post_count_labels">
+        <item>10 posts</item>
+        <item>30 posts</item>
+        <item>50 posts</item>
+        <item>100 posts</item>
+        <item>200 posts</item>
+        <item>300 posts</item>
+    </string-array>
+    <string-array name="post_count_values">
+        <item>10</item>
+        <item>30</item>
+        <item>50</item>
+        <item>100</item>
+        <item>200</item>
+        <item>300</item>
     </string-array>
     <string name="pref_offline_size">Saved content</string>
     <string name="offline_size_fmt">%1$d items · %2$.1f MB</string>

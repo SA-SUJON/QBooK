@@ -2230,10 +2230,26 @@ class MainActivity : AppCompatActivity() {
             // Only save genuinely NEW content — skip everything we already
             // hold so viewed reels are never re-saved and served offline.
             val existingIds = OfflineFeed.knownIds(section).toSet()
-            val newItems = items.filter {
+            var newItems = items.filter {
                 it.id.isBlank() || it.id !in existingIds
             }
             if (newItems.isEmpty()) return
+
+            // The user's own browsing is a capture path too, so the chosen
+            // totals bind it exactly like the pipeline: without this gate a
+            // long scrolling session kept adding posts past the setting and
+            // "stops at my number" was only ever true for the background
+            // run. Stories have no user-set count, so they stay uncapped.
+            val cap = when (section) {
+                OfflineFeed.SECTION_FEED -> prefs.offlinePostTarget
+                OfflineFeed.SECTION_REELS -> prefs.offlineReelTarget
+                else -> 0
+            }
+            if (cap > 0) {
+                val remaining = cap - OfflineFeed.totalStored(section)
+                if (remaining <= 0) return
+                newItems = newItems.take(remaining)
+            }
 
             OfflineFeed.addItems(section, newItems, target)
             OfflineFeed.prefetch(section, newItems, includeVideo = prefs.offlineVideo)
