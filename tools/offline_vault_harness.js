@@ -172,8 +172,11 @@ function classify(slice) {
   let labels = 0;
   JUNK.TAB_LABEL.lastIndex = 0;
   while (JUNK.TAB_LABEL.exec(slice) !== null) {
-    if (++labels >= 2) return MOVE_TAB;
+    if (++labels >= 2) return LEAVE;
   }
+  // Badge-carrying shell copies: prefix labels or two distinct nav
+  // hrefs - but never a real post, which carries its own permalink.
+  if (isTabRowMarkup(slice) && !test0(RX.POST_LINK, slice)) return LEAVE;
   if (test0(RX.POST_LINK, slice)) return STOP;
   return MOVE;
 }
@@ -412,7 +415,34 @@ const JUNK = {
   TRAY_LINK: kotlinRegex(vault, 'JUNK_TRAY_LINK'),
   TRAY_TEASER: kotlinRegex(vault, 'JUNK_TRAY_TEASER'),
   TRAY_CREATE: kotlinRegex(vault, 'JUNK_TRAY_CREATE'),
+  TAB_PREFIX: kotlinRegex(vault, 'JUNK_TAB_PREFIX'),
+  TAB_HREF: kotlinRegex(vault, 'JUNK_TAB_HREF'),
+  NAV_POST_PERMALINK: kotlinRegex(vault, 'NAV_POST_PERMALINK'),
 };
+
+/** Mirror of SectionVault.NAV_PATHS (the setOf literal, read from source). */
+const NAV_PATHS = (() => {
+  const m = vault.match(/NAV_PATHS = setOf\(([^)]*)\)/);
+  if (!m) throw new Error('NAV_PATHS not found in SectionVault.kt');
+  return new Set([...m[1].matchAll(/"([a-z]+)"/g)].map((x) => x[1]));
+})();
+
+/** Mirror of SectionVault.isTabRowMarkup(): one shared definition. */
+function isTabRowMarkup(html) {
+  JUNK.TAB_PREFIX.lastIndex = 0;
+  let pre = 0;
+  while (JUNK.TAB_PREFIX.exec(html) !== null && pre < 2) pre++;
+  if (pre >= 2) return true;
+  const seen = new Set();
+  JUNK.TAB_HREF.lastIndex = 0;
+  let mh;
+  while ((mh = JUNK.TAB_HREF.exec(html)) !== null) {
+    const seg = (mh[1] || '').toLowerCase();
+    if (NAV_PATHS.has(seg)) seen.add(seg);
+    if (seen.size >= 2) return true;
+  }
+  return false;
+}
 
 /** Mirror of SectionVault.isJunk(), branch for branch. */
 function isJunk(section, html) {
@@ -449,6 +479,10 @@ function isJunk(section, html) {
   while ((m = JUNK.TAB_LABEL.exec(html)) !== null) {
     if (++labels >= 2) return true;
   }
+  // Badge-carrying shell copies of the row heal here too, guarded by the
+  // permalink a real post always carries and the shells provably lack.
+  JUNK.NAV_POST_PERMALINK.lastIndex = 0;
+  if (isTabRowMarkup(html) && !JUNK.NAV_POST_PERMALINK.test(html)) return true;
   return false;
 }
 
@@ -485,13 +519,28 @@ function isComplete(media, has, videoRequired) {
  * (defaults to present, matching the old raw behaviour for callers that
  * never modelled media).
  */
-function addItems(existing, incoming, limit, floor, hardCap, has) {
+function addItems(existing, incoming, limit, floor, hardCap, has, inFlight) {
   const keep = Math.max(limit, floor);
   const hasAsset = has || (() => true);
   const existingIds = new Set(
     existing.map((e) => e.id).filter((x) => x && x.length));
-  let room = (hardCap == null) ? Number.MAX_SAFE_INTEGER :
-    hardCap - existing.filter((e) => isComplete(e.media, hasAsset)).length;
+  // Seats, honestly (round 21): COMPLETE entries, plus entries still IN
+  // FLIGHT (at least one media URL sitting in the download queue). A burst
+  // of chunk admissions used to each see a seat count of complete-only and
+  // all sail through while the media was still downloading - the
+  // "Posts: 16 of 10" of bug-report-v2. A stuck entry (captured, download
+  // dead, nothing queued) holds NO seat, so same-id re-capture with a
+  // fresh signed URL still walks in free: the round-12 rule stands.
+  let room = Number.MAX_SAFE_INTEGER;
+  if (hardCap != null) {
+    const queued = inFlight || new Set();
+    let seated = 0;
+    for (const e of existing) {
+      if (isComplete(e.media, hasAsset)) { seated++; continue; }
+      if (e.media.some((u) => queued.has(u))) seated++;
+    }
+    room = hardCap - seated;
+  }
   const allowed = incoming.filter((it) => {
     if (it.id && it.id.length && existingIds.has(it.id)) return true;
     if (room > 0) { room--; return true; }
@@ -586,6 +635,6 @@ module.exports = {
   ownMargin, ownHeight, withMargin, chromeKey,
   photoKey, isVideoUrl, isAvatar, isChrome, isComplete, addItems,
   completeItems, markViewed, evictViewedOnReconnect, stampOfflineId,
-  JUNK, isJunk,
+  JUNK, isJunk, isTabRowMarkup, NAV_PATHS,
   sources: { assembly, vault, docs, docsFeed },
 };

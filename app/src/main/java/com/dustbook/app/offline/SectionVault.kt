@@ -170,9 +170,35 @@ open class SectionVault(
             // same way at both sync gates above the vault). Counting raw
             // entries here is what made a shelf of undownloaded reels
             // permanently read as "full".
-            var room = if (hardCap != null)
-                hardCap - existing.count { isComplete(it) }
-                else Int.MAX_VALUE
+            // Seats once again, now honestly: COMPLETE entries, plus
+            // entries still IN FLIGHT (at least one of their media URLs
+            // sits in this vault's download queue right now). Counting
+            // seats by complete entries alone let a capture burst admit
+            // far past the target while the first batch's media was
+            // still downloading: every chunk's admission recomputed
+            // room from a store whose media had not landed yet, so a
+            // "Posts to download: 10" setting could read "16 of 10"
+            // the moment the queue emptied (bug-report-v2 screenshot).
+            // A stuck entry - captured, download dead, nothing of it
+            // left in the queue - holds NO seat, so a same-id
+            // re-capture with a fresh signed URL still walks in free
+            // and heals it (the round-12 rule stands exactly: a shelf
+            // of undownloaded entries must never read as full).
+            var room = Int.MAX_VALUE
+            if (hardCap != null) {
+                val inFlight = synchronized(queue) { HashSet(queued) }
+                var seated = 0
+                for (e in existing) {
+                    if (isComplete(e)) { seated++; continue }
+                    var flying = false
+                    for (u in e.media) if (inFlight.contains(u)) {
+                        flying = true
+                        break
+                    }
+                    if (flying) seated++
+                }
+                room = hardCap - seated
+            }
 
             val filtered = incoming
                 .filter { !isJunk(it.html) }
@@ -461,6 +487,12 @@ open class SectionVault(
             it.next()
             if (++labels >= 2) return true
         }
+        // Badge-carrying shell copies of the same row: prefix labels or
+        // two distinct nav hrefs. The permalink guard is what a real post
+        // always carries and the stored shells provably never do - the
+        // exact proof entry is the hrefless "text:15+ 15+ 4 15+" card.
+        if (isTabRowMarkup(html) &&
+            !NAV_POST_PERMALINK.containsMatchIn(html)) return true
         // The shortcuts/bookmarks menu (Finances, Marketplace, Groups,
         // Memories, Saved, ...) - an app-drawer tile grid that carries its
         // own small icon per tile, so it clears every check above and
@@ -933,6 +965,70 @@ open class SectionVault(
                 "menu|profile|friends|groups|gaming|messages|messenger|" +
                 "chats|search|create)[\"']",
             RegexOption.IGNORE_CASE)
+
+        /**
+         * The tab row with Facebook's badge counters still in the label:
+         * "Notifications, 15+ notifications" is the SAME row, but the
+         * exact matcher above refuses it - so a badge-carrying shell copy
+         * walked past capture (exact labels there too), past this vault's
+         * heal, and past classify, and rendered as a card between posts
+         * (round-17 screenshot; still reproducible on main: the stored
+         * entry is a HREFLESS button shell, id "text:15+ 15+ 4 15+").
+         * Prefix-anywhere match: the label STARTS with a nav name (a
+         * word boundary stands between "home" and "homemade").
+         */
+        internal val JUNK_TAB_PREFIX = Regex(
+            "aria-label=[\"']\\s*(?:home|reels|watch|notifications|" +
+                "marketplace|menu|profile|friends|groups|gaming|messages|" +
+                "messenger|chats|search|create)\\b",
+            RegexOption.IGNORE_CASE)
+
+        /**
+         * The row's unchanging skeleton: its links. Icons, badges and
+         * label text vary; the navigation hrefs do not. Two or more
+         * DISTINCT nav paths in one unit is only ever that row.
+         * PageAssembly and OfflineCapture use these same constants, so
+         * capture, vault and compose never drift apart on what a row is.
+         */
+        internal val JUNK_TAB_HREF = Regex(
+            "href=[\"'](?:https?://m\\.facebook\\.com)?/([a-z]+)",
+            RegexOption.IGNORE_CASE)
+        internal val NAV_PATHS = setOf(
+            "home", "friends", "watch", "reels", "notifications",
+            "marketplace", "groups", "menu", "profile", "messages",
+            "chats", "gaming", "bookmarks")
+
+        /**
+         * What a tab row never carries: a content permalink. The badge
+         * shell proofs are hrefless by construction, so this guard costs
+         * the heal nothing and is what keeps a REAL post safe - a feed
+         * card can legitimately hold one nav-prefixed label (audience
+         * "Friends", a "Watch more" control), never two plus a
+         * permalink it doesn't have. getNativeFeelScript labels made
+         * this class of accusation eat real posts once; not twice.
+         */
+        internal val NAV_POST_PERMALINK = Regex(
+            "/posts/|/videos/|/reel/|story_fbid",
+            RegexOption.IGNORE_CASE)
+
+        /** One shared test: does this unit's markup say "tab row"? */
+        fun isTabRowMarkup(html: String): Boolean {
+            var pre = 0
+            val labels = JUNK_TAB_PREFIX.findAll(html).iterator()
+            while (labels.hasNext() && pre < 2) {
+                labels.next()
+                pre++
+            }
+            if (pre >= 2) return true
+            val seen = HashSet<String>()
+            val hrefs = JUNK_TAB_HREF.findAll(html).iterator()
+            while (hrefs.hasNext()) {
+                val seg = hrefs.next().groupValues[1].lowercase()
+                if (NAV_PATHS.contains(seg)) seen.add(seg)
+                if (seen.size >= 2) return true
+            }
+            return false
+        }
         internal val JUNK_SHORTCUT_HEADING = Regex(
             "^(?:finances|marketplace|groups|memories|saved|pages|events|" +
                 "friends|feeds)$",

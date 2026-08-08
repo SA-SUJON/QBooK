@@ -1119,3 +1119,51 @@ PRODUCERS of work are the offscreen WebView passes and user scrolling, and
 every offscreen failure mode is silent by design. Which of the two is dead
 on the user's device cannot be decided without the two repro answers
 already asked for. No blind change: the round-17 exact-label lesson.
+
+## Round 21b — bug-report-v2: two fixed with proof, one honestly refused
+
+**Bug 2v2 (duplicate nav row): the badge species, alive on main.**
+Report guessed "stale cache, maybe". Proven instead: the badge-carrying
+shell (`aria-label="Notifications, 15+ notifications"`, hrefless, the
+stored proof `text:15+ 15+ 4 15+`) passed every exact-label gate still
+standing on main - capture, vault heal, classify. Claude's LEAVE change
+(127) stayed: this merge broadened WHAT a row is (one shared
+isTabRowMarkup in SectionVault, mirrored in capture), never re-litigated
+WHERE it goes, and added the permalink guard without which the prefix
+tier would eat real posts (audience "Friends" + a "Watch more" control
+on a reel card - the exact accusation class that ate posts before).
+Merit note: the harness mirror had quoted PRE-Claude classify for two
+releases (MOVE_TAB hoisting); 8 pins were pinning a dead mechanism and
+passed every release. Re-anchored to proven current behavior (measured
+in-jsdom: pad 104px, composer leads, row keeps margin-top:52px and
+position:fixed inside the hidden scroller).
+
+**Bug 1v2 ("Posts: 16 of 10"): report's root was dead code, real one
+was a seat that only counted the landed.**
+The report blamed OfflineManager's reel-target-for-posts call sites:
+verified dead on main AND on v5.2.16 (no callers anywhere). The live
+mechanism was subtler: room seats counted COMPLETE entries only, so a
+capture burst during a slow download all sailed through the same gate
+(each chunk admission recomputed room before any media landed), and the
+count jumped past the target the moment the queue emptied. Fix: a seat
+is COMPLETE or IN-FLIGHT (in the queue); stuck entries hold no seat, so
+the round-12 "a shelf never reads full" rule stands untouched - proved
+both ways in the mirror. Advisory bridge gates left playable-only by
+design; the vault gate is the binding one, as the architecture always
+intended.
+
+**Bug 3v2 (video paused, audio continues): refused to blind-fix.**
+Proven this round instead: (a) `data-is-reels` appears in ZERO real
+captures, so offline isReel() is the height heuristic - so far a real
+lead; (b) real captured cards hold exactly ONE <video> (kills every
+two-video theory); (c) markupOf rewires src but never autoplays; (d)
+the assist bridge toggles that one video and its 'play' listener pauses
+ALL others; (e) audible() requires !paused. Structurally, on the
+offline page, a paused reel cannot keep sounding - the remaining
+possible source is some OTHER playing element whose existence the code
+cannot explain, or the symptom is actually online/background-audio
+path. Needs the device facts, not a Hail Mary into AdBlocker.kt.
+One REAL defect found while proving this: nothing pauses the previous
+reel when the pager swipes on (only a 'play' event pauses others) -
+left deliberately untouched until the user confirms it is the same
+symptom, because the pager is the round-20 blast zone.

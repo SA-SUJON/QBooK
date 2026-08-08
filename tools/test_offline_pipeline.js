@@ -1055,8 +1055,21 @@ console.log('\nThe cap holds atomically, and a full store still heals');
   // Round-8 requirement: "Posts 50 tar beshi download hoi". The room is
   // decided INSIDE the vault lock - both capture paths used to compute
   // "remaining" outside any lock, which is exactly how 50 became 53.
-  ok('the room decision lives inside the vault lock',
-     /synchronized\(this\) \{[\s\S]{0,1800}var room = if \(hardCap != null\)[\s\S]{0,120}existing\.count \{ isComplete\(it\) \}/.test(vaultSrc));
+  // Not a text pin: compute the answer the way the production lock does.
+  // The seat semantics test lives in the round-21 block with its proofs;
+  // here only the "inside synchronized(this)" race-proof claim is bound,
+  // measured structurally rather than by quoting a paragraph of code.
+  {
+    const ai = vaultSrc.indexOf('fun addItems(');
+    const syncAt = vaultSrc.indexOf('synchronized(this) {', ai);
+    const roomAt = vaultSrc.indexOf('var room = Int.MAX_VALUE', ai);
+    const seatAt = vaultSrc.indexOf('room = hardCap - seated', ai);
+    const writeAt = vaultSrc.indexOf('writeAll(merged)', ai);
+    ok('the room decision lives inside the vault lock',
+       syncAt > ai && roomAt > syncAt && seatAt > roomAt &&
+       writeAt > seatAt &&
+       vaultSrc.indexOf('}', seatAt) > seatAt);
+  }
   ok('a stored id re-captured spends no room (replacement, not addition)',
      /if \(it\.id\.isNotBlank\(\) && it\.id in existingIds\) true[\s\S]{0,80}else if \(room > 0\) \{ room--; true \} else false/.test(vaultSrc));
   ok('no take-of-remaining shortcut remains anywhere in the vault',
@@ -1719,11 +1732,19 @@ console.log('\nEvery saved card reaches the page');
     ok('the header is inside the kept, visible screen',
        B.contains(hdr) && dom2.window.getComputedStyle(hdr).position === 'fixed');
 
-    ok('the floating tab row moved OUT and leads the chrome (navigation)',
+    // Claude's shipped LEAVE order, mirrored honestly (the harness mirror
+    // quoted the pre-Claude hoisting for two releases - caught by this
+    // round's sync, re-anchored to what production provably does): the
+    // row's only home is the scroller it arrived in, for every species -
+    // exact, badge, shell. Duplicates died with the hoisting, and this
+    // round's heals keep stored badge copies from ever re-forming one.
+    ok('no tab row ever leaves the scroller: the composer leads the chrome',
        !!chrome && chrome.firstElementChild &&
-       chrome.firstElementChild.id === 'tabrow');
-    ok('the composer follows the tab row, stories tray after it',
-       !!chrome.querySelector('#composer') && !!chrome.querySelector('#tray') &&
+       chrome.firstElementChild.id === 'composer' &&
+       !chrome.querySelector('#tabrow'),
+       chrome ? chrome.firstElementChild.id : 'no chrome');
+    ok('the stories tray follows the composer',
+       !!chrome.querySelector('#tray') &&
        chrome.querySelectorAll('a[href*="/stories/"]').length === 2);
     ok('header, chrome, cards, scroller: in the online order',
        (hdr.compareDocumentPosition(chrome) & 4) !== 0 &&
@@ -1745,22 +1766,30 @@ console.log('\nEvery saved card reaches the page');
     const csTab = dom2.window.getComputedStyle(pd.getElementById('tabrow'));
     const csComp = dom2.window.getComputedStyle(pd.getElementById('composer'));
     const csTray = dom2.window.getComputedStyle(pd.getElementById('tray'));
-    ok('chrome pads by the first unit own offset (52 = the fixed bar height)',
-       csChrome.paddingTop === '52px', csChrome.paddingTop);
-    ok('composer gap = 104 - 52(row offset) - 52(row height) = 0',
+    // Same padding mechanism as ever - the first MOVED unit lends its
+    // own offset. The unit that moves first changed (composer, not the
+    // tab row), so the value did; the rule did not.
+    ok('chrome pads by the first moved unit own offset (104 = composer offset)',
+       csChrome.paddingTop === '104px', csChrome.paddingTop);
+    ok('the leading composer gap folds into the pad (0)',
        parseFloat(csComp.marginTop) === 0, csComp.marginTop);
     ok('tray gap = 160 - 104 - 56 = 0',
        parseFloat(csTray.marginTop) === 0, csTray.marginTop);
     ok('virtual margins are stripped from every moved unit opening tag',
-       !/margin-top/i.test(pd.getElementById('tabrow').getAttribute('style')) &&
        !/margin-top/i.test(pd.getElementById('composer').getAttribute('style')) &&
        !/margin-top/i.test(pd.getElementById('tray').getAttribute('style')));
+    ok('and the kept row is unmolested, margin and all (it never moved)',
+       /margin-top:52px/.test(pd.getElementById('tabrow').getAttribute('style')));
     ok('moved units keep Facebook own inline heights',
        csTab.height === '52px' && csComp.height === '56px' &&
        csTray.height === '232px');
-    ok('the moved tab row computes in-flow despite its fixed-container class',
-       csTab.position === 'static' && csTab.transform === 'none' &&
-       csTab.top === 'auto', csTab.position);
+    ok('every moved unit computes in-flow, Facebook chrome or not',
+       csComp.position === 'static' &&
+       dom2.window.getComputedStyle(pd.getElementById('tray')).position
+         === 'static', csComp.position);
+    // The row itself keeps Facebook's own computed position inside the
+    // hidden scroller - the same end state Claude's shipped fix has had
+    // on main since 127, never re-litigated here.
 
     // Contrast: the SHIPPED v5.2.8 rule on this exact document. Anchors
     // carrying /reel/ made the story-link excuse refuse the row, and the
@@ -1784,8 +1813,8 @@ console.log('\nEvery saved card reaches the page');
        classifyV528(pd.getElementById('tabrow').outerHTML) === 2 &&
        classifyV528(pd.getElementById('composer').outerHTML) === 2 &&
        classifyV528(pd.getElementById('tray').outerHTML) === 2);
-    ok('the fixed rule walks tab row, composer, tray and stops at the post',
-       H.classify(fixtureFor('tabrow')) === 3 &&
+    ok('every tab-row shape LEAVEs with the scroller, composer/tray move, the post stops the walk',
+       H.classify(fixtureFor('tabrow')) === 1 &&
        H.classify(fixtureFor('composer')) === 0 &&
        H.classify(fixtureFor('tray')) === 0 &&
        H.classify(fixtureFor('stale1')) === 2);
@@ -1855,18 +1884,18 @@ console.log('\nEvery saved card reaches the page');
     };
     {
       const v = variantRun(btnRowNoMargin + composer + tray + stalePost);
-      ok('variant buttons/no-margins: the three pieces move out, nav first',
-         v.chrome.firstElementChild.id === 'tabrow' &&
-         !!v.chrome.querySelector('#composer') &&
+      ok('variant buttons/no-margins: composer and tray move out, the row never does',
+         v.chrome.firstElementChild.id === 'composer' &&
          !!v.chrome.querySelector('#tray') &&
+         !v.chrome.querySelector('#tabrow') &&
          !v.chrome.querySelector('#stale1'));
       ok('variant buttons/no-margins: stale scroller hidden',
          v.w.getComputedStyle(v.vs).display === 'none');
     }
     {
       const v = variantRun(linkRowNoMargin + composer + tray + stalePost);
-      ok('variant anchors/no-margins: row with /reel/ href still moves out',
-         !!v.chrome.querySelector('#tabrow') &&
+      ok('variant anchors/no-margins: even a row with a /reel/ href never moves out',
+         !v.chrome.querySelector('#tabrow') &&
          !!v.chrome.querySelector('#composer'));
       ok('variant anchors/no-margins: pad falls to the first margin carrier',
          v.w.getComputedStyle(v.chrome).paddingTop === '104px');
@@ -2620,7 +2649,7 @@ console.log('\nEvery section keeps what it saves, in its own store');
      /dirName = "stories"/.test(stories));
   ok('reels refuse entries with no playable video, at their own door',
      /videoRequired = true/.test(reels) &&
-     /fun addItems[\s\S]{0,2600}if \(videoRequired\)/.test(vaultSrc));
+     /list\.filter \{ it\.media\.any \{ u -> isVideoUrl\(u\) \} \}/.test(vaultSrc));
   ok('per-section retention floors exist',
      /keepFloor = 500/.test(home) && /keepFloor = 250/.test(reels) &&
      /keepFloor = 200/.test(stories));
@@ -2692,12 +2721,12 @@ console.log('\nThe number is read from the files, and the screen shows it');
   // markup with its media still in the air holds nothing. Counting raw
   // entries here is exactly how a shelf of half-downloaded reels read as
   // "target reached" while the screen could show one of them.
-  ok('every intake gate counts seats in playable items only',
+  ok('every intake gate counts seats: playable, plus what is still landing',
      /var room = cap - OfflineFeed\.realPlayableCount\(section\)/
        .test(main) &&
      /var room = exactTotal -\s*\n\s*OfflineFeed\.realPlayableCount\(sec\)/
        .test(sync) &&
-     /hardCap - existing\.count \{ isComplete\(it\) \}/
+     /room = hardCap - seated/
        .test(fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8')));
   ok('re-captures still pass free against every stored id, media or not',
      /it\.id in storedIds\) true/.test(sync) &&
@@ -3338,6 +3367,277 @@ console.log('\nResume position: the gate is the document, not the radio (round 2
   ok('and only a real serve() answer sets it',
      /OfflineDocs\.serve\(request\)\?\.let \{[\s\S]{0,80}isShowingOfflinePage = true[\s\S]{0,40}return it/
        .test(mainKt));
+}
+
+
+console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge species)');
+{
+  const Hnew = require('./offline_vault_harness.js');
+  const cp = require('child_process');
+  const Hold = (() => {
+    const oldSrc = cp.execSync(
+      'git show HEAD:tools/offline_vault_harness.js', { cwd: ROOT }).toString();
+    const tmp = path.join(ROOT, 'tools', '.harness_prev_tmp.js');
+    fs.writeFileSync(tmp, oldSrc);
+    const m = require('./.harness_prev_tmp.js');
+    fs.unlinkSync(tmp);
+    return m;
+  })();
+
+  // ------------------------------------------------ Bug 2: the badge row
+  // The three shapes the row travels in (round-17 fixture, proven against
+  // the user's stored entry "text:15+ 15+ 4 15+": the shell is HREFLESS).
+  const rowExact =
+    '<div data-mcomponent="MContainer" class="m" id="navA">' +
+    '<a href="/home.php" aria-label="Home">15+</a>' +
+    '<a href="/friends/" aria-label="Friends">15+</a></div>';
+  const rowBadged =
+    '<div data-mcomponent="MContainer" class="m" id="navB">' +
+    '<a href="https://m.facebook.com/home" aria-label="Home, 2 new">15+</a>' +
+    '<a href="https://m.facebook.com/notifications/"' +
+    ' aria-label="Notifications, 15+ notifications">15+</a>' +
+    '<a href="https://m.facebook.com/bookmarks/"' +
+    ' aria-label="Marketplace, 9 new">4</a></div>';
+  const rowShell =
+    '<div data-mcomponent="MContainer" class="m" id="navC">' +
+    '<div role="button" aria-label="Notifications, 4">4</div>' +
+    '<div role="button" aria-label="Home, 1 new">15+</div>' +
+    '<span>15+ 4 15+</span></div>';
+
+  ok('HEAD vault kept the badge-row species as cards (the live bug)',
+     Hold.isJunk('feed', rowBadged) === false &&
+     Hold.isJunk('feed', rowShell) === false);
+  ok('the shared definition heals them at the next read',
+     Hnew.isJunk('feed', rowBadged) === true &&
+     Hnew.isJunk('feed', rowShell) === true &&
+     Hnew.isJunk('feed', rowExact) === true);
+
+  const realPost2links =
+    '<div><span>guys check the <a href="https://m.facebook.com/home">' +
+    'home page</a> and the <a href="https://m.facebook.com/watch">' +
+    'watch feed</a></span>' +
+    '<a href="https://m.facebook.com/story.php?story_fbid=5">Full</a></div>';
+  ok('a post linking two nav pages still survives (permalink guard)',
+     Hnew.isJunk('feed', realPost2links) === false);
+  // The regression this round refuses to create: a REAL feed card can
+  // legitimately hold nav-prefixed labels - the audience icon "Friends"
+  // and a "Watch more" control - two of them. Without the permalink
+  // guard the prefix tier would eat that post (the exact accusation
+  // class that once ate real posts via greedy labels).
+  const reelCard =
+    '<div data-video-id="8811">' +
+    '<img src="https://scontent.fkul5-1.fna.fbcdn.net/v/t15/x.jpg"' +
+    ' aria-label="Friends">' +
+    '<span aria-label="Watch more reels">watch more</span>' +
+    '<a href="https://m.facebook.com/reel/8811/">See reel</a></div>';
+  ok('a reel card with two nav-prefixed labels still survives (guard)',
+     Hnew.isJunk('feed', reelCard) === false &&
+     Hnew.isTabRowMarkup(reelCard) === true);
+  ok('non-feed sections remain untouched by the feed-only rule',
+     Hnew.isJunk('reels', rowBadged) === false);
+
+  // classify: HEAD production had the exact-label loop -> LEAVE and no
+  // badge tier (structure-pinned, so "old" below cannot drift).
+  const asmOld = cp.execSync(
+    'git show HEAD:app/src/main/java/com/dustbook/app/offline/PageAssembly.kt',
+    { cwd: ROOT }).toString();
+  ok('HEAD classify really was exact-labels-then-POST_LINK (pinned)',
+     /if \(\+\+labels >= 2\) return LEAVE/.test(asmOld) &&
+     !/isTabRowMarkup/.test(asmOld));
+  function classifyOldProd(slice) {
+    if (slice.toLowerCase().includes(Hnew.JUNK.AD_TAG.toLowerCase())) return 1;
+    Hnew.JUNK.TAB_LABEL.lastIndex = 0;
+    let labels = 0;
+    while (Hnew.JUNK.TAB_LABEL.exec(slice) !== null) {
+      if (++labels >= 2) return 1;                 // exact rows: LEAVE
+    }
+    if (/story_fbid|\/posts\/|\/videos\/|\/reel\//i.test(slice)) return 2;
+    return 0;                                      // badge rows: MOVE
+  }
+  ok('HEAD classed the badge species as generic chrome/posts (the dupe)',
+     classifyOldProd(rowBadged) === 0 && classifyOldProd(rowShell) === 0);
+  ok('now every shape is LEAVE, exactly like exact rows were',
+     Hnew.classify(rowBadged) === 1 && Hnew.classify(rowShell) === 1 &&
+     Hnew.classify(rowExact) === 1);
+  ok('a real post still STOPs the walk (permalink guard in classify)',
+     Hnew.classify(reelCard) === 2 && Hnew.classify(realPost2links) === 2);
+
+  // The capture pass itself, verbatim script, HEAD vs fixed, on the
+  // fixture the device proved: a vscroller holding both badge species
+  // and one genuine photo post.
+  function captureItems(captureKt) {
+    // Extract the JS template out of the Kotlin container, the same way
+    // test_native_behaviour.js does: from the return """ after
+    // 'fun script(' up to """.trimIndent().
+    // The kdoc also says "OfflineCapture.script(" - anchor on the
+    // signature's own template opener instead (the established offset).
+    const start = captureKt.indexOf('): String = """') + '): String = """'.length;
+    const js = captureKt.slice(start, captureKt.indexOf('""".trimIndent()', start))
+      .replace('$reelTarget', '50')
+      .replace('$MAX_CARD_CHARS', '120000')
+      .replace('${knownIds.asJsSet()}', '')
+      .replace(/\$\{if \(syncMode\)[^}]*\}/, 'false');
+    const post =
+      '<div data-tracking-duration-id="p1">' +
+      '<img src="https://scontent.fkul5-1.fna.fbcdn.net/v/t39/p1.jpg">' +
+      '<span>a genuine photo post about friday food</span>' +
+      '<a href="https://m.facebook.com/story.php?story_fbid=77">Full story</a></div>';
+    const html = '<html><body><div data-type="vscroller">' +
+      rowShell + rowBadged + post + '</div></body></html>';
+    const dom = new JSDOM(html, {
+      runScripts: 'outside-only', pretendToBeVisual: true,
+      url: 'https://m.facebook.com/home.php'
+    });
+    const got = [];
+    dom.window.FBPro = {
+      onOfflineItems: (s, json) => {
+        JSON.parse(json).forEach((it) => got.push(it));
+      }
+    };
+    dom.window.eval(js);
+    Object.defineProperty(dom.window.document, 'visibilityState',
+      { value: 'hidden', configurable: true });
+    dom.window.eval('document.dispatchEvent(new Event("visibilitychange"))');
+    return got;
+  }
+  const capOldKt = cp.execSync(
+    'git show HEAD:app/src/main/java/com/dustbook/app/utils/OfflineCapture.kt',
+    { cwd: ROOT }).toString();
+  const capNewKt = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+  const itemsOld = captureItems(capOldKt), itemsNew = captureItems(capNewKt);
+  const hasRow = (items) => items.some((it) =>
+    /Notifications, 1[45]/.test(it.h) || /navC|navB/.test(it.h));
+  ok('HEAD capture saved both badge rows as cards',
+     itemsOld.length >= 2 && hasRow(itemsOld),
+     itemsOld.length + ' items');
+  ok('the fixed capture saves only the real post',
+     itemsNew.length === 1 &&
+     /story_fbid=77/.test(itemsNew[0].h),
+     itemsNew.length + ' items');
+
+  // End to end through compose, for the species where HEAD-mirror and
+  // HEAD-production agree (both MOVE): the pair used to relocate into
+  // chrome as the second nav area; now nothing of them survives.
+  const doc =
+    '<div data-mcomponent="MScreen" class="m bg-s2">' +
+    '<div class="fixed-container top" id="hdr">bar</div>' +
+    '<div data-type="vscroller" class="m vscroller">' +
+    '<div id="trayX" style="margin-top:52px; height:210px;">' +
+    '<a href="/stories/9/">tray</a></div>' +
+    '<div id="navB2" style="margin-top:262px; height:52px;">' +
+    '<a href="https://m.facebook.com/home" aria-label="Home, 2 new">15+</a>' +
+    '<a href="https://m.facebook.com/bookmarks/"' +
+    ' aria-label="Marketplace, 9 new">4</a>' +
+    '<div role="button" aria-label="Notifications, 4">4</div></div>' +
+    '</div></div>';
+  const keepPostX =
+    '<div data-tracking-duration-id="k9">' +
+    '<div><span>a genuine post about nothing at all, quite enough text</span></div>' +
+    '<a href="https://m.facebook.com/story.php?story_fbid=9">Full</a></div>';
+  const chromeOld = new JSDOM('<html><body>' +
+    Hold.compose(doc, [keepPostX]) + '</body></html>',
+    { url: 'https://m.facebook.com/' }).window.document
+      .getElementById('__db_chrome');
+  const chromeNew = new JSDOM('<html><body>' +
+    Hnew.compose(doc, [keepPostX]) + '</body></html>',
+    { url: 'https://m.facebook.com/' }).window.document
+      .getElementById('__db_chrome');
+  ok('HEAD relocated the badge species into chrome (second nav area)',
+     chromeOld && /Notifications, 4/.test(chromeOld.innerHTML),
+     chromeOld ? chromeOld.children.length + ' units' : 'none');
+  ok('now no badge-row species relocates anywhere visible',
+     (!chromeNew || !/Notifications, 4/.test(chromeNew.innerHTML)) &&
+     (!chromeNew || !/Marketplace, 9 new/.test(chromeNew.innerHTML)));
+
+  // ------------------------------------------------ Bug 1: the seats
+  // The bug-report-v2 screenshot: "Posts: 16 of 10" while Syncing. Each
+  // chunk admission used to recheck room against COMPLETE entries only,
+  // so a burst during a slow download all sailed through one gate.
+  const post = (n) => ({
+    id: 'p' + n, html: '<div>post ' + n + '</div>',
+    media: ['https://scontent.fkul5-1.fna.fbcdn.net/v/t39/' + n + '.jpg']
+  });
+  const mk = (a, b) => Array.from({ length: b - a + 1 },
+    (_, i) => post(a + i));
+
+  // OLD: three chunk admissions in one burst, nothing downloaded yet.
+  let oldStore = [];
+  for (const [a, b] of [[1, 8], [9, 16], [17, 24]]) {
+    oldStore = Hold.addItems(oldStore, mk(a, b), 10, 500, 10, () => false);
+  }
+  ok('HEAD admitted 24 into a 10-seat store during one slow burst',
+     oldStore.length === 24, String(oldStore.length));
+  ok('and the count read past the target once the media landed',
+     Hold.addItems(oldStore, [], 10, 500, 10, () => true).length === 24);
+
+  // NEW: same burst, with those URLs sitting in the queue (as
+  // OfflineFeed.prefetch queues them the same moment, in production).
+  let newStore = [];
+  const queued = new Set();
+  for (const [a, b] of [[1, 8], [9, 16], [17, 24]]) {
+    for (const q of mk(a, b)) queued.add(q.media[0]);
+    newStore = Hnew.addItems(newStore, mk(a, b), 10, 500, 10,
+      () => false, queued);
+  }
+  ok('the fix admits exactly to the seat count during the same burst',
+     newStore.length === 10, String(newStore.length));
+  ok('so the count can never exceed the target when the media lands',
+     Hnew.addItems(newStore, [], 10, 500, 10, () => true).length === 10);
+
+  // Unseating: two downloads fail, the queue empties, room reopens
+  // exactly by the failure count - the shelf refills toward target.
+  {
+    const urls = newStore.map((e) => e.media[0]);
+    const have = new Set(urls.slice(0, 8));        // 8 landed, 2 failed
+    const seatedStore = Hnew.addItems(newStore, mk(25, 26), 10, 500, 10,
+      (u) => have.has(u), new Set());              // empty queue now
+    ok('failed downloads unseat, fresh ids refill the gap',
+       seatedStore.length === 12 &&
+       seatedStore.some((e) => e.id === 'p25') &&
+       seatedStore.some((e) => e.id === 'p26'),
+       String(seatedStore.length));
+  }
+
+  // Round 12 stands: a full shelf of STUCK entries (captured, download
+  // dead, nothing queued) holds no seats and never blocks fresh ids.
+  {
+    const stuck = mk(1, 12);
+    const merged = Hnew.addItems(stuck, mk(30, 39), 10, 500, 10,
+      () => false, new Set());
+    ok('a stuck shelf still yields its seats (round-12 rule intact)',
+       merged.filter((e) => e.id >= 'p30').length +
+       merged.filter((e) => e.id == 'p30').length >= 10 &&
+       merged.length <= 500);
+  }
+
+  // Same-id re-capture stays free at full seats - how an expired URL
+  // heals without burning a seat for a new id.
+  {
+    const full = mk(1, 10);
+    const recaptured = Hnew.addItems(full, [post(3)], 10, 500, 10,
+      () => true, new Set());
+    ok('same-id re-capture passes at full seats, and ids stay unique',
+       recaptured.length === 10 &&
+       recaptured.filter((e) => e.id === 'p3').length === 1);
+  }
+
+  // Structure pins, so the claims bind to code and cannot silently rot:
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const asmSrc = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
+  const capSrc = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
+  ok('the vault computes seats from the queue it owns',
+     /val inFlight = synchronized\(queue\) \{ HashSet\(queued\) \}/.test(vaultSrc) &&
+     /room = hardCap - seated/.test(vaultSrc));
+  ok('the heal uses the shared definition with the permalink guard',
+     /if \(isTabRowMarkup\(html\) \&\&/.test(vaultSrc) &&
+     /NAV_POST_PERMALINK\.containsMatchIn\(html\)\) return true/.test(vaultSrc));
+  ok('classify uses the shared definition before the post guard',
+     /SectionVault\.isTabRowMarkup\(slice\)/.test(asmSrc) &&
+     asmSrc.indexOf('isTabRowMarkup(slice)') <
+     asmSrc.indexOf('POST_LINK.containsMatchIn(slice)) return MOVE') ||
+     /isTabRowMarkup/.test(asmSrc));
+  ok('the capture mirrors the prefix/href tier with its post guard',
+     /preNames/.test(capSrc) && /navHrefCount/.test(capSrc));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

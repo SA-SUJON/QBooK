@@ -311,6 +311,40 @@ object OfflineCapture {
                                  'a[href*="/videos/"],a[href*="/reel/"]')) {
               return true;
             }
+            // The badge-carrying shell copies. Exact labels refuse
+            // "Notifications, 15+ notifications", so the hrefless button
+            // shell walked into the store as a card and rendered between
+            // posts (round-17; the stored proof is "text:15+ 15+ 4 15+").
+            // Same rule the vault heals with, one definition from
+            // SectionVault.isTabRowMarkup mirrored: two-plus prefix
+            // labels, or two distinct nav hrefs. And the same permalink
+            // guard as every other tier: a real feed card can hold ONE
+            // nav-prefixed label ("Friends" audience icon, a "Watch"
+            // control), never two, and always has its permalink - which
+            // is what keeps this from eating real posts.
+            var preNames = 0;
+            var ee = c.querySelectorAll('[aria-label]');
+            for (var ei = 0; ei < ee.length && preNames < 2; ei++) {
+              if (/^\s*(home|reels|watch|notifications|marketplace|menu|profile|friends|groups|gaming|messages|messenger|chats|search|create)\b/i
+                  .test(ee[ei].getAttribute('aria-label') || '')) preNames++;
+            }
+            var NAVP = { home:1, friends:1, watch:1, reels:1,
+              notifications:1, marketplace:1, groups:1, menu:1,
+              profile:1, messages:1, chats:1, gaming:1, bookmarks:1 };
+            var hrefSegs = {};
+            var as = c.querySelectorAll('a[href]');
+            for (var ai = 0; ai < as.length; ai++) {
+              var hm = /^(?:https?:\/\/m\.facebook\.com)?\/([a-z]+)/i
+                .exec(as[ai].getAttribute('href') || '');
+              if (hm && NAVP[hm[1].toLowerCase()]) hrefSegs[hm[1].toLowerCase()] = 1;
+            }
+            var navHrefCount = 0;
+            for (var hk in hrefSegs) navHrefCount++;
+            if ((preNames >= 2 || navHrefCount >= 2) &&
+                !c.querySelector('a[href*="/posts/"],a[href*="story_fbid"],' +
+                                 'a[href*="/videos/"],a[href*="/reel/"]')) {
+              return true;
+            }
             // The stories tray. The composer and the tab row are covered
             // above; the tray never was - which is exactly how a whole
             // tray got saved as a card, and once the compose layer also

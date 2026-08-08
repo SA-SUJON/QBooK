@@ -479,6 +479,18 @@ object PageAssembly {
             it.next()
             if (++labels >= 2) return LEAVE
         }
+        // The badge-carrying shell copy of the same row: its labels are
+        // prefix-equal ("Notifications, 15+ notifications"), never
+        // exact, so the loop above never saw it and it classed as a
+        // POST - rendering between real cards (round-17, and the
+        // bug-report-v2 screenshot again). Same shared definition as
+        // capture and the vault (SectionVault.isTabRowMarkup). The
+        // permalink guard keeps every real post decision identical: an
+        // anchors row keeps its own /reel/ and still LEAVEs via the
+        // exact labels above, exactly as before; a hrefless shell has
+        // no permalink to protect it, which is the shell's own proof.
+        if (SectionVault.isTabRowMarkup(slice) &&
+            !POST_LINK.containsMatchIn(slice)) return LEAVE
         if (POST_LINK.containsMatchIn(slice)) return STOP
         return MOVE
     }
