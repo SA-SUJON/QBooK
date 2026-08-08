@@ -409,7 +409,7 @@ open class SectionVault(
      * disagree: what is counted is what is shown.
      */
     fun isComplete(e: Entry): Boolean {
-        if (e.media.isEmpty()) return true
+        if (e.media.isEmpty()) return !videoRequired
 
         val videos = e.media.filter { isVideoUrl(it) }
         if (videos.isNotEmpty()) {
