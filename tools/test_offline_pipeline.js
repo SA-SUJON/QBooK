@@ -835,7 +835,7 @@ console.log('\nThe pipeline runs in the documented order');
      /fun step2Reels[\s\S]{0,1400}step3MorePosts\(context, p\)/.test(bsm) &&
      /fun step3MorePosts[\s\S]{0,900}step4Stories\(context, p\)/.test(bsm));
   ok('step 0 trims the feed vault to the chosen count, before any fetch',
-     /isRunning = true[\s\S]{0,800}diskIO\.execute \{[\s\S]{0,200}OfflineFeed\.trimTo\(OfflineFeed\.SECTION_FEED, p\.offlinePostTarget\)[\s\S]{0,240}step1FirstPosts\(c, p\)/.test(bsm));
+     /isRunning = true[\s\S]{0,1500}diskIO\.execute \{[\s\S]{0,200}OfflineFeed\.trimTo\(OfflineFeed\.SECTION_FEED, p\.offlinePostTarget\)[\s\S]{0,300}step1FirstPosts\(c, p\)/.test(bsm));
   ok('step 1 is a starter set: min(10, the chosen count), exactly',
      /fun step1FirstPosts[\s\S]{0,800}minOf\(10, p\.offlinePostTarget\)[\s\S]{0,300}SECTION_FEED, quick,[\s\S]{0,200}exactTotal = quick/.test(bsm));
   ok('reels use the user\'s chosen count, exactly',
@@ -1286,7 +1286,9 @@ console.log('\nThe feed vault trims down to the chosen count');
   const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
   ok('trimTo exists and rewrites the store atomically, never a truncate',
      /fun trimTo\(maxEntries: Int\)/.test(vaultSrc) &&
-     /fun trimTo[\s\S]{0,1400}renameTo\(f\)/.test(vaultSrc));
+     (/fun trimTo[\s\S]{0,1400}renameTo\(f\)/.test(vaultSrc) ||
+      (/fun trimTo[\s\S]{0,700}writeAll\(keep\)/.test(vaultSrc) &&
+       /private fun writeAll[\s\S]{0,900}renameTo\(f\)/.test(vaultSrc))));
   ok('trimTo never touches a transfer in flight (.part is sacred)',
      /fun trimTo[\s\S]{0,2000}\.part/.test(vaultSrc));
   ok('trimTo drops only media the dropped entries referenced',
@@ -2626,7 +2628,8 @@ console.log('\nEvery section keeps what it saves, in its own store');
      /val keep = maxOf\(limit, keepFloor\)/.test(vaultSrc));
   ok('the cap uses the floored value',
      /if \(merged\.size >= keep\) break/.test(vaultSrc));
-  ok('dedupe still runs as a backstop', /seen\.add\(key\)/.test(vaultSrc));
+  ok('dedupe still runs as a backstop',
+     /(seen\.add\(key\)|distinctBy \{ keyFor)/.test(vaultSrc));
 
   // Faithful mirror of that merge (same algorithm as the vault), run
   // through the stresses that used to evict saved content.
@@ -2702,7 +2705,7 @@ console.log('\nThe number is read from the files, and the screen shows it');
      /else if \(room > 0\) \{ room--; true \} else false/.test(sync) &&
      /else if \(room > 0\) \{ room--; true \} else false/.test(main));
   ok('the page asks for exactly the counted cards',
-     /OfflineFeed\.cardMarkupList\(it\)/.test(docs));
+     /OfflineFeed\.(cardMarkupList|realPlayableItems)\(it\)/.test(docs));
   ok('and serves them as the document itself',
      /PageAssembly\.compose\(docText, cards, snap = screen == "reels"\)/
        .test(docs));
@@ -2924,5 +2927,313 @@ console.log('\nOne gesture, one reel - the pager, proven on the verbatim script'
   }
 }
 
+console.log('\nSeen tracking: unseen first, seen sinks, reconnect evicts seen');
+{
+  const H = require('./offline_vault_harness.js');
+  const vaultSrc = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
+  const vaultsSrc = fs.readFileSync(KT('offline/OfflineVaults.kt'), 'utf8');
+  const feedKt = fs.readFileSync(KT('utils/OfflineFeed.kt'), 'utf8');
+  const docsKt = fs.readFileSync(KT('utils/OfflineDocs.kt'), 'utf8');
+  const asmSrc = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
+  const mainKt = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  const bsmKt = fs.readFileSync(KT('utils/BackgroundSyncManager.kt'), 'utf8');
+
+  // ---- the data model and its one writer ----
+  ok('an entry knows it was seen, and when',
+     /val viewed: Boolean = false/.test(vaultSrc) &&
+     /val viewedAt: Long\? = null/.test(vaultSrc));
+  ok('old stores without the keys read as never-seen',
+     /optBoolean\("v", false\)/.test(vaultSrc) &&
+     /optLong\("va", 0L\)/.test(vaultSrc));
+  ok('seen flags persist through the one atomic writer',
+     /private fun writeAll\(entries: List<Entry>\): Boolean/.test(vaultSrc) &&
+     /\.put\("v", it\.viewed\)/.test(vaultSrc) &&
+     /\.put\("va", it\.viewedAt \?: 0L\)/.test(vaultSrc) &&
+     /tmp\.renameTo\(f\)/.test(vaultSrc));
+  ok('addItems itself goes through that writer now',
+     /fun addItems[\s\S]{0,5200}writeAll\(merged\)/.test(vaultSrc));
+  ok('trimTo goes through it too (kept entries stay seen)',
+     /fun trimTo[\s\S]{0,700}if \(!writeAll\(keep\)\) return 0/.test(vaultSrc) &&
+     !/fun trimTo[\s\S]{0,700}JSONArray\(\)/.test(vaultSrc));
+  ok('marking is local, idempotent and locked',
+     /fun markViewed\(id: String\)/.test(vaultSrc) &&
+     /fun markViewed[\s\S]{0,500}synchronized\(this\)/.test(vaultSrc) &&
+     /copy\([\s\S]{0,120}viewed = true/.test(vaultSrc));
+
+  // ---- the serving order: unseen first, stable inside each group ----
+  ok('the read path sinks the seen to the bottom',
+     /fun completeItems\(\): List<Entry> =[\s\S]{0,120}sortedBy \{ if \(it\.viewed\) 1 else 0 \}/
+       .test(vaultSrc));
+  {
+    const disk = new Set(['p1.jpg', 'p2.jpg', 'p3.jpg', 'p4.jpg', 'p5.jpg']);
+    const ent = (id, viewed) => ({ id, html: '<div>' + id + '</div>',
+      media: [id + '.jpg'], viewed, viewedAt: viewed ? 100 : null });
+    const out = H.completeItems(
+      [ent('p1', true), ent('p2', false), ent('p3', true),
+       ent('p4', false), ent('p5', false)],
+      (u) => disk.has(u));
+    ok('unseen first, and never re-shuffled inside a group',
+       out.map((e) => e.id).join(',') === 'p2,p4,p5,p1,p3',
+       out.map((e) => e.id).join(','));
+    ok('the count is untouched by the reorder',
+       out.length === 5);
+  }
+
+  // ---- the merge: over the floor, seen cards surrender first ----
+  ok('the merge partitions seen after unseen',
+     /filtered \+ existing\)[\s\S]{0,120}distinctBy \{ keyFor\(it\) \}[\s\S]{0,120}sortedBy \{ if \(it\.viewed\) 1 else 0 \}/
+       .test(vaultSrc) &&
+     /if \(merged\.size >= keep\) break/.test(vaultSrc));
+  {
+    const seenOld = [
+      { id: 'old-unseen-1', html: 'a', media: [], viewed: false },
+      { id: 'old-seen-1', html: 'b', media: [], viewed: true, viewedAt: 10 },
+      { id: 'old-seen-2', html: 'c', media: [], viewed: true, viewedAt: 20 },
+    ];
+    const fresh = Array.from({ length: 48 }, (_, i) =>
+      ({ id: 'new-' + i, html: 'n', media: [] }));
+    const merged = H.addItems(seenOld, fresh, 49, 3);
+    ok('a full store drops every seen card before one unseen',
+       merged.some((e) => e.id === 'old-unseen-1') &&
+       !merged.some((e) => e.id === 'old-seen-1') &&
+       !merged.some((e) => e.id === 'old-seen-2') &&
+       merged.length === 49);
+    const again = H.addItems(seenOld,
+      [{ id: 'old-seen-1', html: 'b2-fresh-media', media: [] }], 50, 3);
+    ok('a re-captured seen entry replaces in place, not duplicates',
+       again.filter((e) => e.id === 'old-seen-1').length === 1 &&
+       again.some((e) => e.id === 'old-unseen-1'));
+  }
+
+  // ---- markViewed on a stored list ----
+  {
+    const list = [
+      { id: 'a', html: 'x', media: [], viewed: false },
+      { id: 'b', html: 'y', media: [], viewed: false },
+    ];
+    const once = H.markViewed(list, 'a');
+    ok('marking flips exactly the named entry, with a timestamp',
+       once[0].viewed === true && typeof once[0].viewedAt === 'number' &&
+       once[1].viewed === false && list[0].viewed === false);
+    const twice = H.markViewed(once, 'a');
+    ok('a second mark is a no-op (the write is skipped)',
+       twice === once);
+    ok('blank and unknown ids touch nothing',
+       H.markViewed(list, '') === list && H.markViewed(list, 'zz') === list);
+  }
+
+  // ---- the reconnect eviction, floor maths ----
+  ok('the reconnect evict keeps the floor with unseen cards first',
+     /fun evictViewedOnReconnect\(\)/.test(vaultSrc) &&
+     /sortedByDescending \{ it\.viewedAt \?: 0L \}/.test(vaultSrc) &&
+     /take\(maxOf\(0, keepFloor - unviewed\.size\)\)/.test(vaultSrc) &&
+     /fun evictViewedOnReconnect\(\) \{\s*sections\.forEach/.test(vaultsSrc));
+  {
+    const ent = (id, viewed, at) => ({ id, html: 'h', media: [],
+      viewed, viewedAt: at });
+    const store = [ent('u1', false, null), ent('u2', false, null),
+                   ent('s1', true, 50), ent('s2', true, 30),
+                   ent('s3', true, 70), ent('s4', true, 10)];
+    const kept = H.evictViewedOnReconnect(store, 3);
+    ok('unseen is untouchable; only the freshest seen fills the floor',
+       kept.map((e) => e.id).join(',') === 'u1,u2,s3',
+       kept.map((e) => e.id).join(','));
+    const rich = store.concat([ent('u3', false, null), ent('u4', false, null)]);
+    ok('once unseen alone meets the floor, every seen card leaves',
+       H.evictViewedOnReconnect(rich, 3).every((e) => !e.viewed));
+    ok('a second pass over the result changes nothing',
+       H.evictViewedOnReconnect(kept, 3) === kept);
+    ok('never-seen stores skip the writer entirely',
+       H.evictViewedOnReconnect(
+         [ent('u1', false, null)], 3).length === 1);
+  }
+
+  // ---- stamping: the page can name each card ----
+  ok('cards serve with their vault id, escaped and surgery-inserted',
+     /fun stampOfflineId\(html: String, id: String\)/.test(docsKt) &&
+     /replace\("&", "&amp;"\)/.test(docsKt) &&
+     /m\.range\.first/.test(docsKt) &&
+     !/replaceFirst/.test(docsKt.slice(docsKt.indexOf('fun stampOfflineId'),
+        docsKt.indexOf('fun storyViewer'))));
+  {
+    ok('the stamp lands on the card root, id intact',
+       H.stampOfflineId('<div class="c">x</div>', 'data-video-id:rv1') ===
+       '<div class="c" data-offline-id="data-video-id:rv1">x</div>');
+    ok('escaping: an ampersand id can never break the attribute',
+       H.stampOfflineId('<div>x</div>', 'href:a&b"c') ===
+       '<div data-offline-id="href:a&amp;b&quot;c">x</div>');
+    ok('a $ in the id is text, never a group reference',
+       H.stampOfflineId('<div>x</div>', 'text:$1x') ===
+       '<div data-offline-id="text:$1x">x</div>');
+    ok('blank ids and pre-stamped cards are left alone',
+       H.stampOfflineId('<div>x</div>', '') === '<div>x</div>' &&
+       H.stampOfflineId('<div data-offline-id="k">x</div>', 'n') ===
+         '<div data-offline-id="k">x</div>');
+    ok('self-closing roots stamp cleanly too',
+       H.stampOfflineId('<img src="a.jpg"/>', 'i1') ===
+       '<img src="a.jpg" data-offline-id="i1"/>');
+  }
+
+  // ---- wiring: who hears the page, who runs the eviction ----
+  ok('the offline page talks to the vault through one bridge door',
+     /@JavascriptInterface[\s\S]{0,500}fun markViewed\(section: String, id: String\)/
+       .test(mainKt) &&
+     /fun markViewed\(section: String, id: String\) [\s\S]{0,200}SECTIONS\.contains\(section\)/
+       .test(feedKt));
+  ok('serving attaches the tracker beside the resume script, and the shell too',
+     /"<script>" \+ PageAssembly\.resumeScript\(resumeId, screen\) \+ "<\/script>" \+[\s\S]{0,120}PageAssembly\.viewTrackScript\(/
+       .test(docsKt) &&
+     (docsKt.match(/viewTrackScript\(/g) || []).length === 2);
+  ok('the tracker exists and holds the honest thresholds',
+     /fun viewTrackScript\(section: String\): String/.test(asmSrc) &&
+     /RATIO = 0\.6/.test(asmSrc) && /DWELL_MS = 1500/.test(asmSrc) &&
+     /IntersectionObserver/.test(asmSrc));
+  ok('the story viewer reports one tap-through as one seen',
+     /storyViewer\(cards: List<String>, ids: List<String>,[\s\S]{0,60}section: String/
+       .test(docsKt) &&
+     /FBPro\.markViewed\(SEC, sid\)/.test(docsKt));
+  ok('reconnect evicts seen inside the cycle, after the policy check',
+     /if \(!NetworkPolicy\.canDownload\(c, p\)\) return[\s\S]{0,1400}OfflineVaults\.evictViewedOnReconnect\(\)/
+       .test(bsmKt) &&
+     /diskIO\.execute \{[\s\S]{0,240}trimTo[\s\S]{0,160}evictViewedOnReconnect/
+       .test(bsmKt));
+  {
+    const fnStart = bsmKt.indexOf('fun onNetworkRestored');
+    const fnBody = bsmKt.slice(fnStart, fnStart + 900);
+    ok('reconnect no longer wipes the unread library',
+       !/clearAllStored/.test(fnBody) &&
+       !/fun clearAllStored/.test(bsmKt));
+  }
+
+  // ---- the tracker itself, verbatim, in a DOM ----
+  {
+    const i = asmSrc.indexOf('fun viewTrackScript');
+    const s = asmSrc.indexOf('"""', i) + 3;
+    const e = asmSrc.indexOf('"""', s);
+    // The dwell const is overridden AFTER extraction, only to keep the
+    // suite synchronous; every other byte is the shipped template.
+    const tpl = asmSrc.slice(s, e);
+    const world = (sec) => {
+      const dom = new JSDOM(
+        '<html><body><div id="__db_cards" data-db-cards="1">' +
+        '<div class="card" data-offline-id="data-video-id:rv1"></div>' +
+        '<div class="card" data-offline-id="data-video-id:rv2"></div>' +
+        '<div class="card"></div>' +
+        '</div></body></html>',
+        { runScripts: 'outside-only', pretendToBeVisual: true,
+          url: 'https://m.facebook.com/' });
+      const w = dom.window;
+      const calls = [];
+      w.FBPro = { markViewed: (s2, id) => calls.push([s2, id]) };
+      const timers = [];
+      w.setTimeout = (fn) => { timers.push(fn); return timers.length; };
+      w.clearTimeout = (id) => { if (timers[id - 1]) timers[id - 1] = null; };
+      const pump = () => {
+        const q = timers.slice(); timers.length = 0;
+        for (const f of q) if (f) f();
+      };
+      w.innerHeight = 768;
+      for (const el of w.document.querySelectorAll('.card')) {
+        el.getBoundingClientRect = () =>
+          ({ top: 0, bottom: 600, height: 600, left: 0, right: 360,
+             width: 360 });
+      }
+      const instances = [];
+      w.IntersectionObserver = class {
+        constructor(cb, opts) { this.cb = cb; this.opts = opts;
+          this.observed = []; instances.push(this); }
+        observe(el) { this.observed.push(el); }
+        unobserve(el) { this.observed =
+          this.observed.filter((x) => x !== el); }
+      };
+      w.eval(tpl.replace('__SEC__', sec)
+                .replace('var DWELL_MS = 1500;', 'var DWELL_MS = 25;'));
+      return { w, calls, pump, instances,
+        fire: (el, ratio) => instances[0].cb(
+          [{ target: el, intersectionRatio: ratio }]) };
+    };
+
+    // 1. a card at 80% for the dwell is reported exactly once, with its
+    //    own section, and unobserved afterwards
+    {
+      const W = world('reels');
+      const c1 = W.w.document.querySelector(
+        '[data-offline-id="data-video-id:rv1"]');
+      ok('only id-stamped cards are watched', W.instances.length === 1 &&
+         W.instances[0].observed.length === 2);
+      W.fire(c1, 0.8); W.pump();
+      W.fire(c1, 0.8); W.pump();
+      ok('60%+ for the dwell reports one seen, named by id and section',
+         W.calls.length === 1 &&
+         W.calls[0][0] === 'reels' &&
+         W.calls[0][1] === 'data-video-id:rv1');
+      ok('a reported card is unobserved - no work left per scroll',
+         W.instances[0].observed.length === 1);
+    }
+    // 2. scrolling away before the dwell resets the clock silently
+    {
+      const W = world('feed');
+      const c1 = W.w.document.querySelector(
+        '[data-offline-id="data-video-id:rv1"]');
+      W.fire(c1, 0.8);
+      W.fire(c1, 0.1);
+      W.pump();
+      ok('a scroll-past before the dwell marks nothing', W.calls.length === 0);
+    }
+    // 3. a sub-threshold flicker alone never even starts the clock
+    {
+      const W = world('feed');
+      const c1 = W.w.document.querySelector(
+        '[data-offline-id="data-video-id:rv1"]');
+      W.fire(c1, 0.4); W.pump();
+      ok('under 60% there is no clock and no mark', W.calls.length === 0);
+    }
+    // 4. no IntersectionObserver at all: the page just tracks nothing
+    {
+      const dom = new JSDOM('<html><body><div data-db-cards="1"></div>' +
+        '</body></html>',
+        { runScripts: 'outside-only', url: 'https://m.facebook.com/' });
+      let threw = false;
+      try { dom.window.eval(tpl.replace('__SEC__', 'feed')); }
+      catch (e) { threw = true; }
+      ok('a browser without IntersectionObserver breaks nothing', !threw);
+    }
+  }
+
+  // ---- the story viewer, verbatim, in a DOM ----
+  {
+    const sv = docsKt.slice(docsKt.indexOf('private fun storyViewer'));
+    const i = sv.indexOf('(function(){');
+    const t = sv.slice(i);
+    const js = t.slice(0, t.indexOf('})();') + 5)
+      .replace('$safe', JSON.stringify(
+        ['<div data-offline-id="s1">story one</div>',
+         '<div data-offline-id="s2">story two</div>']))
+      .replace('$safeIds', JSON.stringify(['story:/a', 'story:/b']))
+      .replace('$section', 'stories')
+      .replace('$resumeJs', 'var START=0;');
+    const dom = new JSDOM('<html><head></head><body></body></html>',
+      { runScripts: 'outside-only', pretendToBeVisual: true,
+        url: 'https://m.facebook.com/stories/' });
+    const calls = [];
+    dom.window.FBPro = { markViewed: (s2, id) => calls.push([s2, id]) };
+    dom.window.eval(js);
+    const overlay = dom.window.document
+      .getElementById('__db_story_overlay');
+    ok('opening the viewer marks the first story seen, as stories',
+       calls.length === 1 &&
+       calls[0][0] === 'stories' && calls[0][1] === 'story:/a');
+    overlay.children[1].dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true }));
+    ok('tapping through marks the next story with ITS id',
+       calls.length === 2 && calls[1][1] === 'story:/b');
+    overlay.children[0].dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true }));
+    ok('tapping back re-reports (the vault-side no-op dedupes)',
+       calls.length === 3 && calls[2][1] === 'story:/a');
+  }
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
+
 process.exit(fail ? 1 : 0);

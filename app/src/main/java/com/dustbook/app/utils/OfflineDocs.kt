@@ -233,7 +233,14 @@ object OfflineDocs {
                 "home" -> OfflineFeed.SECTION_FEED
                 else -> null
             }
-            val cards = section?.let { OfflineFeed.cardMarkupList(it) } ?: emptyList()
+            // The entries themselves (not bare markup) so each served card
+            // carries its vault id for the seen tracker. The same complete
+            // list feeds the count, so number, screen and tracker can never
+            // disagree about which card an id belongs to.
+            val items = section?.let { OfflineFeed.realPlayableItems(it) }
+                ?: emptyList()
+            val cards = items.map { stampOfflineId(it.html, it.id) }
+            val cardIds = items.map { it.id }
 
             // Resume position, so the user picks up where they left off
             // instead of scrolling from the top every time - EXCEPT on
@@ -270,10 +277,13 @@ object OfflineDocs {
                 OfflineBanner.html() +
                 "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
                 (if (cards.isNotEmpty() && screen == "stories") {
-                    "<script>" + storyViewer(cards, resumeId) + "</script>"
+                    "<script>" + storyViewer(cards, cardIds,
+                        OfflineFeed.SECTION_STORIES, resumeId) + "</script>"
                 } else "") +
                 (if (cards.isNotEmpty() && screen != "stories") {
-                    "<script>" + PageAssembly.resumeScript(resumeId, screen) + "</script>"
+                    "<script>" + PageAssembly.resumeScript(resumeId, screen) + "</script>" +
+                    "<script>" + PageAssembly.viewTrackScript(
+                        section ?: OfflineFeed.SECTION_FEED) + "</script>"
                 } else "") +
                 (if (screen == "home") unmuteByDefaultScript() else "") +
                 (if (screen == "reels" || screen == "watch" || screen == "stories") {
@@ -296,13 +306,45 @@ object OfflineDocs {
 
     /** @see shellFor */
 
+    /** A card's own opening tag - the only place its vault id is stamped. */
+    private val CARD_FIRST_TAG = Regex("<[a-zA-Z][^>]*>")
+
+    /**
+     * Stamps a served card with its vault id, so the page's own seen
+     * tracker can name exactly the entry on screen. Set only at serve
+     * time - stored markup stays untouched - and carried as an attribute
+     * because the resume script has always looked for `data-offline-id`
+     * as one of its anchors. The id is entity-escaped (&, ") and inserted
+     * by string surgery rather than a regex replacement, so an id that
+     * happens to contain a '$' can never be read as a group reference.
+     */
+    private fun stampOfflineId(html: String, id: String): String {
+        if (id.isBlank()) return html
+        val safe = id.replace("&", "&amp;").replace("\"", "&quot;")
+        val m = CARD_FIRST_TAG.find(html) ?: return html
+        val tag = m.value
+        if (tag.contains("data-offline-id=")) return html
+        val insertAt = if (tag.endsWith("/>")) tag.length - 2
+            else tag.length - 1
+        val newTag = tag.substring(0, insertAt) +
+            " data-offline-id=\"" + safe + "\"" + tag.substring(insertAt)
+        return html.substring(0, m.range.first) + newTag +
+            html.substring(m.range.last + 1)
+    }
+
     /**
      * Full-screen story viewer. Stories are MScreen captures, not inline
      * cards, so they are shown one at a time. Left-half tap = previous,
      * right-half tap = next. An overlay hides the page chrome so the
      * story fills the viewport.
+     *
+     * A story on screen IS a story seen - the tracker is the show()
+     * toast itself, reported through the ids riding alongside the cards
+     * ([ids] is index-aligned with [cards], both from the same complete
+     * list).
      */
-    private fun storyViewer(cards: List<String>, resumeId: String?): String {
+    private fun storyViewer(cards: List<String>, ids: List<String>,
+                            section: String, resumeId: String?): String {
         if (cards.isEmpty()) return ""
         // One JSON array, never a template literal: a "</script" inside a
         // stored card would otherwise end this host block early, and the
@@ -312,6 +354,9 @@ object OfflineDocs {
         val json = JSONArray()
         for (c in cards) json.put(c)
         val safe = json.toString().replace("</", "<\\/")
+        val jsonIds = JSONArray()
+        for (i in ids) jsonIds.put(i)
+        val safeIds = jsonIds.toString().replace("</", "<\\/")
         val resumeJs = if (resumeId != null) {
             "\nvar START=0;var all=STORIES;for(var i=0;i<all.length;i++){" +
             "if(all[i].indexOf('" + resumeId + "')>=0){START=i;break;}}\n"
@@ -322,6 +367,8 @@ object OfflineDocs {
           window.__dbStoryViewer=true;
 
           var STORIES = $safe;
+          var IDS = $safeIds;
+          var SEC = "$section";
           if(!STORIES || !STORIES.length)return;
           $resumeJs
           var idx=START;
@@ -404,6 +451,14 @@ object OfflineDocs {
             idx=n;
             content.innerHTML=STORIES[idx];
             updateDots();
+            // One story on screen is one story seen: the only honest
+            // signal a tap-through viewer has. The section travels with
+            // the cards, so a fallback shell reports to the vault the
+            // cards actually came from.
+            var sid = IDS[idx];
+            if (sid && window.FBPro && FBPro.markViewed) {
+              try { FBPro.markViewed(SEC, sid); } catch (e) {}
+            }
           }
 
           prevZone.addEventListener('click',function(ev){
@@ -442,13 +497,16 @@ object OfflineDocs {
             "stories" -> OfflineFeed.SECTION_STORIES
             else -> OfflineFeed.SECTION_FEED
         }
-        val cardList = OfflineFeed.cardMarkupList(section)
-        val use = if (cardList.isNotEmpty()) cardList else
-            listOf(OfflineFeed.SECTION_REELS, OfflineFeed.SECTION_FEED,
-                   OfflineFeed.SECTION_STORIES)
-            .firstNotNullOfOrNull { s ->
-                OfflineFeed.cardMarkupList(s).takeIf { it.isNotEmpty() }
-            } ?: return offlineFallbackPage()
+        val firstItems = OfflineFeed.realPlayableItems(section)
+        val (winSection, winItems) =
+            if (firstItems.isNotEmpty()) section to firstItems else
+                listOf(OfflineFeed.SECTION_REELS, OfflineFeed.SECTION_FEED,
+                       OfflineFeed.SECTION_STORIES)
+                    .map { s -> s to OfflineFeed.realPlayableItems(s) }
+                    .firstOrNull { it.second.isNotEmpty() }
+                ?: return offlineFallbackPage()
+        val use = winItems.map { stampOfflineId(it.html, it.id) }
+        val useIds = winItems.map { it.id }
 
         val html = "<!DOCTYPE html><html lang=\"en\"><head>" +
             "<meta charset=\"utf-8\"><meta name=\"viewport\" " +
@@ -469,13 +527,17 @@ object OfflineDocs {
             "</head><body>" + PageAssembly.holderHtml(use) +
             unmuteStripScript() +
             "<script>" + OfflineNav.script(navigableScreens()) + "</script>" +
+            (if (screen != "stories") {
+                "<script>" + PageAssembly.viewTrackScript(winSection) +
+                    "</script>"
+            } else "") +
             (if (screen == "reels" || screen == "watch" || screen == "stories") {
                 "<script>" + VideoHelper.getOfflineVideoAssistScript() +
                     "</script>"
             } else "") +
             (if (screen == "home") unmuteByDefaultScript() else "") +
             (if (screen == "stories") {
-                "<script>" + storyViewer(use, null) + "</script>"
+                "<script>" + storyViewer(use, useIds, winSection, null) + "</script>"
             } else "") +
             "</body></html>"
 

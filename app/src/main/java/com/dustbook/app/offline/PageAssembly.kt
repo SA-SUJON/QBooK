@@ -1017,4 +1017,79 @@ object PageAssembly {
         }
         return bound
     }
+
+    /**
+     * The seen tracker every served feed/reels page carries.
+     *
+     * A card counts as SEEN only after it has really been in front of the
+     * user: at least 60% of it visible, for at least 1.5 seconds, in one
+     * unbroken stretch. A fast scroll-past resets the clock, so flicking
+     * through the library never marks anything. The report goes straight
+     * to the vault through the same bridge the resume script uses - it
+     * is local file state, so it works with the network completely dead,
+     * and Unknown-browser builds without IntersectionObserver simply
+     * track nothing instead of breaking the page.
+     */
+    fun viewTrackScript(section: String): String {
+        val track = """
+        (function(){
+          if (window.__dbViewTrack) return;
+          window.__dbViewTrack = true;
+
+          var SEC = "__SEC__";
+          var RATIO = 0.6;      // of the card that must be on screen
+          var DWELL_MS = 1500;  // and for this long, uninterrupted
+
+          function holder() {
+            return document.querySelector('[data-db-cards]');
+          }
+
+          function visibleFrac(el) {
+            var r = el.getBoundingClientRect();
+            if (r.height <= 0) return 0;
+            var vh = window.innerHeight ||
+                     (document.documentElement &&
+                      document.documentElement.clientHeight) || 0;
+            var vis = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+            return vis > 0 ? vis / r.height : 0;
+          }
+
+          var done = {};
+
+          function mark(el) {
+            var id = el.getAttribute('data-offline-id');
+            if (!id || done[id]) return;
+            done[id] = true;
+            try { io.unobserve(el); } catch (e) {}
+            if (window.FBPro && FBPro.markViewed) {
+              try { FBPro.markViewed(SEC, id); } catch (e) {}
+            }
+          }
+
+          if (!('IntersectionObserver' in window)) return;
+          var io = new IntersectionObserver(function(entries){
+            for (var i = 0; i < entries.length; i++) {
+              var el = entries[i].target;
+              if (entries[i].intersectionRatio >= RATIO) {
+                if (!el.__dbViewT) {
+                  el.__dbViewT = setTimeout(function(){
+                    el.__dbViewT = null;
+                    if (visibleFrac(el) >= RATIO) mark(el);
+                  }, DWELL_MS);
+                }
+              } else if (el.__dbViewT) {
+                clearTimeout(el.__dbViewT);
+                el.__dbViewT = null;
+              }
+            }
+          }, {threshold: [RATIO]});
+
+          var h = holder();
+          if (!h) return;
+          var cards = h.querySelectorAll('[data-offline-id]');
+          for (var i = 0; i < cards.length; i++) io.observe(cards[i]);
+        })();
+        """.trimIndent()
+        return track.replace("__SEC__", section)
+    }
 }

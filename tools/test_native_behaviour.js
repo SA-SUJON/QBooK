@@ -225,7 +225,8 @@ console.log('\nOfflineFeed');
   // Drawing our own page is exactly what lost the real controls.
   ok('does not render a page of its own', !of.includes('fun renderPage'));
   ok('de-duplicates and caps the store',
-     ov.includes('seen.add') && ov.includes('limit'));
+     (ov.includes('seen.add') || ov.includes('distinctBy')) &&
+     ov.includes('limit'));
   ok('refuses encoded responses', of.includes('Accept-Encoding') &&
      of.includes('identity'));
   ok('does not queue overlapping prefetch passes',

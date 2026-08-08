@@ -1013,3 +1013,31 @@ behavioural assertion of its INTENT, or every honest rewrite of that
 implementation will masquerade as a bug.
 
 > Session: 2026-08-08 | Base: 05abe4e | Tests: 1130 passed, 0 failed (10 suites)
+
+## Round 19 - offline "seen" tracking: unseen first, evict seen on reconnect (2026-08-08, user-signed plan)
+
+The user asked (via a reviewed plan): offline content the user already
+saw must sink to the bottom on the next offline session, and when real
+connectivity returns the seen entries hand their room to the next fetch
+- floor protection now counts UNSEEN cards first. All of it runs
+on-device, no server call anywhere.
+
+Two discoveries changed the plan's shape, honestly recorded:
+
+1. The plan assumed only eviction needed writing. The assembled pages
+   and ids were the real spine: cards serve stamped with their vault id
+   (`data-offline-id`, serve-time only, entity-escaped, string surgery -
+   never a regex replacement, so a '$' in an id stays text). Feed/reels
+   track via IntersectionObserver (>=60% for >=1.5s, scroll-past resets),
+   stories via the tap-through viewer itself (one show() = one seen).
+2. `onNetworkRestored` used to WIPE THE WHOLE LIBRARY - seen and unseen
+   alike - before resyncing. The feature would have been dead on arrival.
+   The wipe is replaced by a floor-aware seen-only eviction inside the
+   cycle's existing disk block, strictly after the network-policy check,
+   so freed room is always refillable.
+
+Fresh bug caught before it shipped: `trimTo` kept its own inline JSON
+builder without the new keys - every trim silently un-saw what it kept.
+One writer now (`writeAll`), pinned both ways.
+
+> Session: 2026-08-08 | Tag: v5.2.17 (127) | Tests: 1171 passed, 0 failed (10 suites) | kotlinc: delta-zero vs 7986494

@@ -497,18 +497,83 @@ function addItems(existing, incoming, limit, floor, hardCap, has) {
     if (room > 0) { room--; return true; }
     return false;
   });
-  const seen = new Set();
-  const merged = [];
+  // The seen-aware merge: dedupe keys first (first copy wins), then a
+  // STABLE partition puts unviewed entries ahead of viewed ones, so over
+  // the floor the viewed surrender their seats. New captures are never
+  // viewed, so intake order stays newest-first inside each group.
   const keyFor = (it) => it.id && it.id.length ? it.id :
     ((it.media[0] || '') + '|' + it.html.slice(0, 180));
+  const seen = new Set();
+  const ordered = [];
   for (const it of [...allowed, ...existing]) {
     const k = keyFor(it);
     if (seen.has(k)) continue;
     seen.add(k);
+    ordered.push(it);
+  }
+  ordered.sort((a, b) => ((a.viewed ? 1 : 0) - (b.viewed ? 1 : 0)));
+  const merged = [];
+  for (const it of ordered) {
     merged.push(it);
     if (merged.length >= keep) break;
   }
   return merged;
+}
+
+/** Mirror of SectionVault.completeItems(): complete, then unseen first. */
+function completeItems(entries, has, videoRequired) {
+  const hasAsset = has || (() => true);
+  const out = entries.filter(
+    (e) => isComplete(e.media, hasAsset, videoRequired));
+  out.sort((a, b) => ((a.viewed ? 1 : 0) - (b.viewed ? 1 : 0)));
+  return out;
+}
+
+/**
+ * Mirror of SectionVault.markViewed() on an in-memory list: the first
+ * entry with the id flips to viewed (fresh stamp); anything else - a
+ * blank id, no such id, already viewed - is a no-op.
+ */
+function markViewed(entries, id) {
+  if (!id || !id.length) return entries;
+  const idx = entries.findIndex((e) => e.id === id);
+  if (idx < 0 || entries[idx].viewed) return entries;
+  const out = entries.slice();
+  out[idx] = Object.assign({}, entries[idx],
+    { viewed: true, viewedAt: Date.now() });
+  return out;
+}
+
+/**
+ * Mirror of SectionVault.evictViewedOnReconnect(): everything unviewed
+ * stays, plus only as many of the freshest viewed as the floor still
+ * needs. Media purge is disk-side, out of mirror scope.
+ */
+function evictViewedOnReconnect(entries, floor) {
+  if (!entries.length) return entries;
+  const unviewed = entries.filter((e) => !e.viewed);
+  const viewed = entries.filter((e) => e.viewed);
+  if (!viewed.length) return entries;
+  const keepViewed = viewed
+    .slice()
+    .sort((a, b) => (b.viewedAt || 0) - (a.viewedAt || 0))
+    .slice(0, Math.max(0, floor - unviewed.length));
+  const keep = unviewed.concat(keepViewed);
+  return keep.length === entries.length ? entries : keep;
+}
+
+/** Mirror of OfflineDocs.stampOfflineId() (string surgery, escaping). */
+function stampOfflineId(html, id) {
+  if (!id || !id.length) return html;
+  const safe = id.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const m = /<[a-zA-Z][^>]*>/.exec(html);
+  if (!m) return html;
+  const tag = m[0];
+  if (tag.indexOf('data-offline-id=') >= 0) return html;
+  const insertAt = tag.endsWith('/>') ? tag.length - 2 : tag.length - 1;
+  const newTag = tag.slice(0, insertAt) +
+    ' data-offline-id="' + safe + '"' + tag.slice(insertAt);
+  return html.slice(0, m.index) + newTag + html.slice(m.index + tag.length);
 }
 
 module.exports = {
@@ -520,6 +585,7 @@ module.exports = {
   classify, stripVirtualMargin, stolenOffset, topLevelChildren,
   ownMargin, ownHeight, withMargin, chromeKey,
   photoKey, isVideoUrl, isAvatar, isChrome, isComplete, addItems,
+  completeItems, markViewed, evictViewedOnReconnect, stampOfflineId,
   JUNK, isJunk,
   sources: { assembly, vault, docs, docsFeed },
 };

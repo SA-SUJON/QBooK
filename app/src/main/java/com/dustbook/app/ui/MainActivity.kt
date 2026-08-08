@@ -2365,6 +2365,21 @@ class MainActivity : AppCompatActivity() {
                 "feed" -> prefs.offlineResumeFeed = "SCROLL:$id"
             }
         }
+
+        /**
+         * An offline page reports a card the user has actually had on
+         * screen (60% visible, 1.5s straight, or a story tapped through).
+         * Deliberately NOT gated on isOnline: a saved page the user kept
+         * reading while the network came back still tells the truth about
+         * what was seen, and the write itself is pure local vault state.
+         * Bridge calls already arrive on the JS-binding thread, and the
+         * vault serialises its own file writes - nothing here can block
+         * or fight the page mid-scroll.
+         */
+        @JavascriptInterface
+        fun markViewed(section: String, id: String) {
+            OfflineFeed.markViewed(section, id)
+        }
     }
 
 

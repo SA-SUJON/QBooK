@@ -64,11 +64,20 @@ open class SectionVault(
      * @param id    stable identity, so the same post is never stored twice.
      * @param html  Facebook's own markup for the card - nothing is rebuilt.
      * @param media every media URL the card references.
+     * @param viewed    the user has already seen this one (on-device state
+     *                  only, set by the offline pages' own view tracker -
+     *                  no network is ever involved). Unviewed always
+     *                  outranks viewed: it is served first and evicted last.
+     * @param viewedAt  when it was marked, null while never viewed; only
+     *                  used to keep the freshest viewed entries at the
+     *              floor line during a reconnect eviction.
      */
     data class Entry(
         val id: String,
         val html: String,
-        val media: List<String>
+        val media: List<String>,
+        val viewed: Boolean = false,
+        val viewedAt: Long? = null
     )
 
     private val pool = Executors.newFixedThreadPool(2)
@@ -139,7 +148,6 @@ open class SectionVault(
         val f = itemsFile() ?: return
         synchronized(this) {
             val existing = load()
-            val seen = HashSet<String>()
 
             // The user's chosen total, and it is absolute for NEW entries.
             // Checking the room INSIDE this lock is what makes the cap
@@ -189,36 +197,126 @@ open class SectionVault(
                 return "$mediaKey|$textKey"
             }
 
-            for (it in filtered + existing) {
-                val key = keyFor(it)
-                if (!seen.add(key)) continue
+            // Over the floor, VIEWED entries surrender their seats first:
+            // the reconnect rule (delete what was seen, keep what was not)
+            // applies at every merge too, so a full pass naturally refills
+            // with unviewed content instead of freezing on already-read
+            // cards. New captures are never viewed, which keeps the
+            // newest-first intake order untouched inside each group
+            // (distinctBy and sortedBy are both stable).
+            val ordered = (filtered + existing)
+                .distinctBy { keyFor(it) }
+                .sortedBy { if (it.viewed) 1 else 0 }
+            for (it in ordered) {
                 merged.add(it)
                 if (merged.size >= keep) break
             }
 
-            val arr = JSONArray()
-            for (it in merged) {
-                val m = JSONArray()
-                for (u in it.media) m.put(u)
-                arr.put(
-                    JSONObject()
-                        .put("id", it.id)
-                        .put("h", it.html)
-                        .put("m", m)
-                )
+            writeAll(merged)
+        }
+    }
+
+    /**
+     * The one atomic write behind [addItems], [trimTo], [markViewed], and
+     * the reconnect eviction: whole JSON array to a `.part` sibling,
+     * renamed into place. A truncated store is worse than a stale one, so
+     * there is no other way in. Successful writes stale every assembled
+     * page. Callers must already hold this vault's lock.
+     *
+     * @return true only when the new list actually replaced the old one.
+     */
+    private fun writeAll(entries: List<Entry>): Boolean {
+        val f = itemsFile() ?: return false
+        val arr = JSONArray()
+        for (it in entries) {
+            val m = JSONArray()
+            for (u in it.media) m.put(u)
+            arr.put(
+                JSONObject()
+                    .put("id", it.id)
+                    .put("h", it.html)
+                    .put("m", m)
+                    .put("v", it.viewed)
+                    .put("va", it.viewedAt ?: 0L)
+            )
+        }
+        return try {
+            val tmp = File(f.parentFile, f.name + ".part")
+            tmp.writeText(arr.toString())
+            if (tmp.renameTo(f)) {
+                // The assembled offline pages embed these cards, so they
+                // are stale now and must rebuild on the next request.
+                OfflineDocs.invalidate()
+                true
+            } else {
+                tmp.delete()
+                false
             }
-            try {
-                val tmp = File(f.parentFile, f.name + ".part")
-                tmp.writeText(arr.toString())
-                if (tmp.renameTo(f)) {
-                    // The assembled offline pages embed these cards, so they
-                    // are stale now and must rebuild on the next request.
-                    OfflineDocs.invalidate()
-                } else {
-                    tmp.delete()
-                }
-            } catch (e: Exception) {
-                // Out of space: the previous list stays usable.
+        } catch (e: Exception) {
+            // Out of space: the previous list stays usable.
+            false
+        }
+    }
+
+    /**
+     * Marks a stored entry as seen by the user. Pure local state - the
+     * offline pages report it over the bridge while being read, no
+     * network is involved at any point. Safe to call repeatedly: a
+     * second mark for the same id changes nothing.
+     */
+    fun markViewed(id: String) {
+        if (id.isBlank()) return
+        if (itemsFile() == null) return
+        synchronized(this) {
+            val existing = load()
+            val idx = existing.indexOfFirst { it.id == id }
+            if (idx < 0 || existing[idx].viewed) return
+            val updated = existing.toMutableList()
+            updated[idx] = existing[idx].copy(
+                viewed = true, viewedAt = System.currentTimeMillis())
+            writeAll(updated)
+        }
+    }
+
+    /**
+     * Called once per sync cycle when connectivity is back and downloads
+     * are allowed again. Viewed entries have served their purpose, so
+     * they hand their disk room to the next fetch: everything unviewed
+     * stays, plus just enough of the freshest viewed ones to keep the
+     * section at its floor. Media that only a dropped entry referenced
+     * goes with it - freeing seats without freeing bytes would not be
+     * "jaiga khali" at all.
+     */
+    fun evictViewedOnReconnect() {
+        val f = itemsFile() ?: return
+        synchronized(this) {
+            val existing = load()
+            if (existing.isEmpty()) return
+            val unviewed = existing.filter { !it.viewed }
+            val viewed = existing.filter { it.viewed }
+            if (viewed.isEmpty()) return
+            val keepViewed = viewed
+                .sortedByDescending { it.viewedAt ?: 0L }
+                .take(maxOf(0, keepFloor - unviewed.size))
+            val keep = unviewed + keepViewed
+            if (keep.size == existing.size) return
+            writeAll(keep)
+
+            // Media only the dropped entries referenced is now unreachable
+            // (same purge as trimTo: never a .part of a live transfer).
+            val keepNames = HashSet<String>()
+            for (e in keep) for (u in e.media) keepNames.add(hashFor(u))
+            val dir = media
+            if (dir != null) {
+                try {
+                    for (file in dir.listFiles() ?: emptyArray()) {
+                        val n = file.name
+                        if (n.endsWith(".part")) continue
+                        val base = if (n.endsWith(".mime"))
+                            n.removeSuffix(".mime") else n
+                        if (!keepNames.contains(base)) file.delete()
+                    }
+                } catch (e: Exception) {}
             }
         }
     }
@@ -262,7 +360,13 @@ open class SectionVault(
                 Entry(
                     id = o.optString("id", ""),
                     html = html,
-                    media = mediaUrls
+                    media = mediaUrls,
+                    // Stores written before the seen-tracking build carry
+                    // neither key: everything in them simply reads as not
+                    // yet seen, no migration step is needed.
+                    viewed = o.optBoolean("v", false),
+                    viewedAt = o.optLong("va", 0L).let {
+                        if (it == 0L) null else it }
                 )
             }
         } catch (e: Exception) {
@@ -423,8 +527,18 @@ open class SectionVault(
         return groups.values.all { variants -> variants.any { hasAsset(it) } }
     }
 
-    /** The entries that are ready to show offline - the only honest count. */
-    fun completeItems(): List<Entry> = load().filter { isComplete(it) }
+    /**
+     * The entries that are ready to show offline - the only honest count.
+     *
+     * Serving order is UNSEEN FIRST: what the user already read sinks to
+     * the bottom on the next offline session, what is still new floats to
+     * the top. sortedBy is stable, so the newest-first intake order is
+     * preserved inside each of the two groups - only the groups swap
+     * places, nothing inside them is re-shuffled.
+     */
+    fun completeItems(): List<Entry> =
+        load().filter { isComplete(it) }
+            .sortedBy { if (it.viewed) 1 else 0 }
 
     /** The real count: complete entries, read from this vault's own files. */
     fun count(): Int = completeItems().size
@@ -763,25 +877,9 @@ open class SectionVault(
             if (items.size <= maxEntries) return 0
             val keep = items.take(maxEntries)
 
-            val arr = JSONArray()
-            for (it in keep) {
-                val m = JSONArray()
-                for (u in it.media) m.put(u)
-                arr.put(
-                    JSONObject()
-                        .put("id", it.id)
-                        .put("h", it.html)
-                        .put("m", m)
-                )
-            }
-            val renamed = try {
-                val tmp = File(f.parentFile, f.name + ".part")
-                tmp.writeText(arr.toString())
-                tmp.renameTo(f).also { ok -> if (!ok) tmp.delete() }
-            } catch (e: Exception) {
-                false
-            }
-            if (!renamed) return 0
+            // One writer, again: trimming inline once forgot the viewed
+            // flags and silently un-saw everything it kept.
+            if (!writeAll(keep)) return 0
 
             // Media only the dropped entries referenced is now unreachable.
             val keepNames = HashSet<String>()

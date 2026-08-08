@@ -104,6 +104,15 @@ object OfflineVaults {
     fun hasAnything(): Boolean = sections.any { it.count() > 0 }
 
     /**
+     * One reconnect pass over every section: entries the user has already
+     * seen hand their room to the next fetch, unseen ones never move. See
+     * [SectionVault.evictViewedOnReconnect] for the per-vault rule.
+     */
+    fun evictViewedOnReconnect() {
+        sections.forEach { it.evictViewedOnReconnect() }
+    }
+
+    /**
      * Serve a stored asset, whichever vault holds it.
      *
      * A card's media URL is only ever requested because a card referenced

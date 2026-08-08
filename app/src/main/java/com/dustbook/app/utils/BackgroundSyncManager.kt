@@ -3,6 +3,7 @@ package com.dustbook.app.utils
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.dustbook.app.offline.OfflineVaults
 
 /**
  * Central orchestrator for the complete offline content lifecycle.
@@ -20,9 +21,10 @@ import android.os.Looper
  *             the same hard ceiling as everywhere else, never past it
  *     Step 4: Once posts are complete, save the stories of the user's
  *             followed friends (watched + unwatched)
- *   User browses online → seen content tracked via bridge + store
- *   App goes offline → saved content displays
- *   App comes back online → clearAll() → start() fresh
+ *   User reads offline → viewed cards mark themselves via the bridge
+ *   App goes offline → saved content displays, unseen first
+ *   App comes back online → seen entries evicted (floor aside) →
+ *     start() refills with what is still unread
  *
  * A phase only ends when its media queue is empty: the settings count reads
  * from disk, so after a phase's downloads are drained the number shown is
@@ -75,28 +77,29 @@ object BackgroundSyncManager {
         // chased 300 no matter what), or more than a setting the user has
         // since lowered. Trimming once per cycle is what makes "stops at
         // my number" true on disk, not just a promise about new adds.
-        // Fire and forget: the newest entries survive, and the first
-        // phase below adds nothing while the store is still oversized.
+        //
+        // Same moment, the reconnect rule: entries the user already saw
+        // hand their disk room to the coming fetch (unseen entries are
+        // never touched, and the floor still counts unseen-first). This
+        // runs only because downloads are allowed - start() has already
+        // passed the network policy check above - so freed room is always
+        // refillable. Fire and forget, same disk thread as the trim.
         AppExecutors.diskIO.execute {
             OfflineFeed.trimTo(OfflineFeed.SECTION_FEED, p.offlinePostTarget)
+            OfflineVaults.evictViewedOnReconnect()
         }
         step1FirstPosts(c, p)
     }
 
     /** Called when connectivity returns after being offline. */
     fun onNetworkRestored() {
+        // Reconnecting no longer wipes the library. A full clear punished
+        // exactly the entries the user had NOT seen yet - everything was
+        // thrown out, seen or not, and refetched. start()'s cycle-opening
+        // bookkeeping now evicts only what was seen (floor aside), then
+        // the fresh pass refills around what is still unread.
         if (!isRunning) {
-            clearAllStored()
             start()
-        }
-    }
-
-    /** Clear the entire offline library for a fresh sync cycle. */
-    fun clearAllStored() {
-        AppExecutors.diskIO.execute {
-            OfflineCache.clear()
-            OfflineFeed.clear()
-            OfflineDocs.clear()
         }
     }
 

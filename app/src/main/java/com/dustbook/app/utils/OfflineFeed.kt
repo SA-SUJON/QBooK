@@ -115,6 +115,16 @@ object OfflineFeed {
     fun knownIds(section: String): List<String> =
         vault(section)?.knownIds() ?: emptyList()
 
+    /**
+     * The offline pages report what the user has already seen through
+     * this one door. Pure local state in the section's own vault: no
+     * network, works fully offline.
+     */
+    fun markViewed(section: String, id: String) {
+        if (!SECTIONS.contains(section)) return
+        vault(section)?.markViewed(id)
+    }
+
     fun loadItems(section: String): List<Item> =
         vault(section)?.load()?.map { Item(it.id, it.html, it.media) }
             ?: emptyList()

@@ -88,7 +88,8 @@ ok('both the live page and the sync pass send it',
   // the backstop moved with it, unchanged.
   const vault = fs.readFileSync(KT('offline/SectionVault.kt'), 'utf8');
   ok('the store still de-duplicates as a backstop',
-     /seen\.add\(key\)/.test(vault), 'dedupe guard left the vault');
+     /(seen\.add\(key\)|distinctBy \{ keyFor)/.test(vault),
+     'dedupe guard left the vault');
 }
 // A story is a pager, not a list, so scrolling it saves only the first one.
 ok('the story tray is advanced, not scrolled',
