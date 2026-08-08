@@ -862,8 +862,12 @@ object PageAssembly {
             var DRAG_LOCK = 7;    // px before a touch counts as a drag
             var DIST_FRAC = 0.15; // of card height commits on release
             var FLING_V = 0.45;   // px/ms finger speed that always commits
+            var TAP_SLOP = 16;    // a tapped finger still wobbles this much
+                                // (the round-20 "pause hoina" lesson)
 
             var active = false, locked = false;
+            var tapX0 = 0, tapY0 = 0; // anchored at touchstart, never moved
+            var peak = 0;             // furthest the finger ever wandered
             var startY = 0, startX = 0, startTop = 0, startIdx = 0;
             var loTop = 0, hiTop = -1;  // drag boundaries, -1 = no cap yet
             var lastDy = 0;             // finger travel since the lock
@@ -928,12 +932,16 @@ object PageAssembly {
               startIdx = nearestIndex();
               startY = ev.touches[0].clientY;
               startX = ev.touches[0].clientX;
+              tapX0 = startX; tapY0 = startY; peak = 0;
               trail = [[Date.now(), startY]];
             }, {passive: true});
 
             document.addEventListener('touchmove', function(ev) {
               if (!active || !ev.touches || ev.touches.length !== 1) return;
               var y = ev.touches[0].clientY, x = ev.touches[0].clientX;
+              var tdy = Math.abs(y - tapY0), tdx = Math.abs(x - tapX0);
+              if (tdy > peak) peak = tdy;
+              if (tdx > peak) peak = tdx;
               var dy = y - startY, dx = x - startX;
               var box = scroller(); if (!box) { active = false; return; }
               if (!locked) {
@@ -1001,6 +1009,37 @@ object PageAssembly {
               else if (cardH > 0 && travel < -cardH * DIST_FRAC) intent--;
               if (intent < 0) intent = 0;
               if (intent > list.length - 1) intent = list.length - 1;
+
+              if (intent === startIdx && peak <= TAP_SLOP) {
+                // The gesture stayed inside tap slop: it was never a
+                // scroll, it was a tap with a shaking finger. But the
+                // moment the lock engaged, the move's preventDefault
+                // silently cancelled the browser's synthetic click - so
+                // a tap on a playing reel paused NOTHING on device
+                // (round 20: "offline reels pause kora jai na"), while
+                // a 3px lab tap kept passing the test. Every real pager
+                // treats a sub-slop touch as a tap, so we do it here by
+                // hand: the card drifts home through the normal commit,
+                // and the click the browser swallowed is delivered to
+                // whatever was under the finger (the tap bridge then
+                // pauses the video; links and buttons keep their jobs).
+                commitTo(startIdx);
+                try {
+                  var ct = ev.changedTouches && ev.changedTouches[0];
+                  if (ct) {
+                    var hit = (document.elementFromPoint &&
+                               document.elementFromPoint(
+                                 ct.clientX, ct.clientY)) || null;
+                    if (!hit) hit = list[startIdx] || null;
+                    if (hit && hit.dispatchEvent) {
+                      hit.dispatchEvent(new MouseEvent('click', {
+                        bubbles: true, cancelable: true, view: window,
+                        clientX: ct.clientX, clientY: ct.clientY }));
+                    }
+                  }
+                } catch (e) {}
+                return;
+              }
               commitTo(intent);
             }, {passive: true});
           }

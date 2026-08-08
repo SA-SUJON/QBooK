@@ -109,6 +109,19 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var isOnline: Boolean = true
 
     /**
+     * True exactly while the WebView's current main-frame document was
+     * served by [OfflineDocs] - the stored page itself, not a guess from
+     * the radio state. Recomputed at every main-frame request: reset at
+     * the top of shouldInterceptRequest, set only when serve() actually
+     * answers. This is the gate the offline pages' own bridges trust:
+     * a saved page the user keeps reading through a silent reconnect
+     * must keep reporting position (the radio flipping to "online"
+     * mid-read used to freeze resume forever), while a genuinely live
+     * page must never write offline state.
+     */
+    @Volatile private var isShowingOfflinePage: Boolean = false
+
+    /**
      * Consecutive main-frame failures for the current navigation.
      *
      * Reset the moment a page starts or finishes successfully, so a genuine
@@ -1431,6 +1444,11 @@ class MainActivity : AppCompatActivity() {
             ): WebResourceResponse? {
                 request ?: return null
 
+                // Every new main-frame navigation leaves the offline
+                // document behind unless serve() says otherwise below -
+                // back online, a reload, a link tap: all mean live again.
+                if (request.isForMainFrame) isShowingOfflinePage = false
+
                 // Developer: silently capture video CDN URLs for reel ad blocking.
                 // Enable in Hidden Settings → About → Developer Options.
                 // URLs are flushed to clipboard ONLY on long-press (AdInspector).
@@ -1454,7 +1472,10 @@ class MainActivity : AppCompatActivity() {
                 // because it is the same page. Without this the WebView's own
                 // error page wins before a single cached asset is requested.
                 if (prefs.offlineRead && !isOnline && request.isForMainFrame) {
-                    OfflineDocs.serve(request)?.let { return it }
+                    OfflineDocs.serve(request)?.let {
+                        isShowingOfflinePage = true
+                        return it
+                    }
                 }
 
                 // Online, hand every subresource straight back to the WebView.
@@ -2355,10 +2376,17 @@ class MainActivity : AppCompatActivity() {
          * The offline page reports where the user is so the next session can
          * resume from the same point. Called periodically while the user
          * scrolls through offline content.
+         *
+         * The gate is the DOCUMENT, not the radio: this bridge only ever
+         * runs inside a page OfflineDocs itself served (isShowingOfflinePage
+         * is set at the intercept), so a silent mid-read reconnect can no
+         * longer freeze the resume position at whatever was saved before
+         * the network came back (the round-20 report: reels always resumed
+         * at the same first item).
          */
         @JavascriptInterface
         fun reportPosition(type: String, id: String) {
-            if (isOnline) return
+            if (!isShowingOfflinePage) return
             when (type) {
                 "reel" -> if (id.isNotBlank()) prefs.offlineResumeReel = id
                 "stories", "story" -> if (id.isNotBlank()) prefs.offlineResumeStories = id

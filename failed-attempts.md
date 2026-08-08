@@ -1041,3 +1041,36 @@ builder without the new keys - every trim silently un-saw what it kept.
 One writer now (`writeAll`), pinned both ways.
 
 > Session: 2026-08-08 | Tag: v5.2.17 (127) | Tests: 1171 passed, 0 failed (10 suites) | kotlinc: delta-zero vs 7986494
+
+## Round 20 - the resume gate, and the tap the lock kept eating (2026-08-08)
+
+Two device reports, two one-line roots, both proven before fixing:
+
+1. REELS ALWAYS RESUME AT THE FIRST ITEM. reportPosition was gated on
+   `isOnline` - the radio - while offline reading survives a silent
+   reconnect (the served page is never force-reloaded). After the user's
+   network came back mid-read, every position written dropped on the
+   floor. The gate is now the DOCUMENT: OfflineDocs marks exactly the
+   main frames it serves (`isShowingOfflinePage`, recomputed at every
+   navigation), and the bridge trusts that. Live pages still cannot
+   write offline state.
+
+2. "OFFLINE REELS PAUSE KORA JAI NA." The 3px lab tap always passed, so
+   the bug hid until a real fingertip. A human tap wobbles ~10px; the
+   pager's 7px drag-lock then engaged and its touchmove preventDefault
+   silently cancelled the browser's synthetic click - the tap bridge
+   never heard a thing, and the sub-15% snap-back made the gesture look
+   like nothing at all. Every real pager treats a sub-slop touch as a
+   tap: a gesture that ends on its own card within TAP_SLOP (16px) now
+   gets its click delivered by hand (elementFromPoint first, the card
+   itself as fallback), while fast sub-slop flicks still commit by the
+   velocity rule and 20px+ drags rescue nothing. Proven end-to-end in
+   jsdom with BOTH verbatim scripts: the exact device wobble now pauses
+   the playing reel, and a second wobble plays it again.
+
+Fixture-honesty note of the round: the test world forgot the holder's
+production id (`#__db_cards`), which the tap bridge queries - the
+bridge was never even reached until the fixture matched the real DOM.
+A stale world proving green is the same class of lie as a stale pin.
+
+> Session: 2026-08-08 | Tag: v5.2.18 (128) | Tests: 1181 passed, 0 failed (10 suites) | kotlinc: delta-zero vs e3dcb94

@@ -2793,7 +2793,7 @@ console.log('\nOne gesture, one reel - the pager, proven on the verbatim script'
       'html,body{scroll-snap-type:y mandatory!important}' +
       '#__db_cards>*{scroll-snap-align:start!important;' +
       'scroll-snap-margin-top:128px!important}</style>' +
-      '<div data-type="vscroller"><div data-db-cards>';
+      '<div data-type="vscroller"><div id="__db_cards" data-db-cards>';
     for (let i = 0; i < cardCount; i++) {
       html += '<div class="rc" data-video-id="r' + i + '"></div>';
     }
@@ -2924,6 +2924,88 @@ console.log('\nOne gesture, one reel - the pager, proven on the verbatim script'
     P.ev('touchend', 100, 300, 16);
     ok('on home the identical gesture is untouched (no pager, no snap cut)',
        !P.snapGone() && P.box.scrollTop === 0, '' + P.box.scrollTop);
+  }
+  // 9. THE ROUND-20 TAP RESCUE: a real fingertip wobbles 10-12px, which
+  //    crosses the 7px lock, preventDefaults the move, and kills the
+  //    browser's synthetic click - that is why a tap on a playing reel
+  //    could never pause on device. A sub-slop gesture ending back on
+  //    its own card gets its click delivered by hand.
+  {
+    const P = pagerWorld('reels', 3);
+    const card = P.w.document.querySelector('.rc');
+    let clicks = 0, lastTarget = null;
+    P.w.document.addEventListener('click', (e) => {
+      clicks++; lastTarget = e.target; });
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 100, 494, 200);  // crosses the 7px lock here
+    P.ev('touchmove', 100, 488, 200);  // 12px from origin, slow
+    P.ev('touchend', 100, 488, 200);
+    P.pump();
+    ok('a slow 12px wobble is still a tap: the click is rescued once',
+       clicks === 1 && lastTarget === card, 'clicks=' + clicks);
+    ok('and the card still settles back home, not a reel over',
+       P.box.scrollTop === 0, '' + P.box.scrollTop);
+  }
+  // 10. past tap slop it really was a tiny drag: no fake click
+  {
+    const P = pagerWorld('reels', 3);
+    let clicks = 0;
+    P.w.document.addEventListener('click', () => clicks++);
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 100, 480, 200);  // 20px from origin
+    P.ev('touchend', 100, 480, 200);
+    P.pump();
+    ok('a 20px drag rescues nothing and clicks nothing',
+       clicks === 0 && P.box.scrollTop === 0, '' + P.box.scrollTop);
+  }
+  // 11. a FAST sub-slop flick is a flick, not a tap: velocity still wins
+  {
+    const P = pagerWorld('reels', 3);
+    let clicks = 0;
+    P.w.document.addEventListener('click', () => clicks++);
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 100, 493, 12);   // locks the drag here
+    P.ev('touchend', 100, 488, 12);    // 12px from origin but ~0.6px/ms
+    P.pump();
+    ok('a quick 12px flick commits the next reel, with no tap rescued',
+       clicks === 0 && P.box.scrollTop === 1000 - 128,
+       'final=' + P.box.scrollTop);
+  }
+  // 12. end to end, both verbatim scripts: the exact wobble that could
+  //     never pause on device now hits the tap bridge and pauses
+  {
+    const vhSrc = fs.readFileSync(KT('utils/VideoHelper.kt'), 'utf8');
+    const vi = vhSrc.indexOf('fun getOfflineVideoAssistScript');
+    const vs = vhSrc.indexOf('"""', vi) + 3;
+    const assist = vhSrc.slice(vs, vhSrc.indexOf('"""', vs));
+    const P = pagerWorld('reels', 3);
+    const card = P.w.document.querySelector('.rc');
+    const holder = P.w.document.createElement('div');
+    const video = P.w.document.createElement('video');
+    holder.appendChild(video);
+    card.appendChild(holder);
+    let pausedNow = false; const log = [];
+    Object.defineProperty(video, 'paused', { get: () => pausedNow });
+    video.play = () => { pausedNow = false; log.push('play');
+      return { catch: () => {} }; };
+    video.pause = () => { pausedNow = true; log.push('pause'); };
+    pausedNow = false;                 // the reel is PLAYING on screen
+    P.w.eval(assist);
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 100, 493, 200);
+    P.ev('touchmove', 100, 490, 200);
+    P.ev('touchend', 100, 490, 200);
+    P.pump();
+    ok('the same wobble-tap now PAUSES the playing reel (round 20)',
+       log.join(',') === 'pause' && pausedNow === true, log.join(','));
+    // and the rescued tap is a full citizen: a second one plays again
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 100, 492, 200);
+    P.ev('touchend', 100, 492, 200);
+    P.pump();
+    ok('and tapping it again plays, exactly the online toggle',
+       log.join(',') === 'pause,play' && pausedNow === false,
+       log.join(','));
   }
 }
 
@@ -3232,6 +3314,30 @@ console.log('\nSeen tracking: unseen first, seen sinks, reconnect evicts seen');
     ok('tapping back re-reports (the vault-side no-op dedupes)',
        calls.length === 3 && calls[2][1] === 'story:/a');
   }
+}
+
+console.log('\nResume position: the gate is the document, not the radio (round 20)');
+{
+  const mainKt = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+
+  // The round-20 report: reels resume froze at the same first item.
+  // reportPosition used to return early whenever isOnline was true - and
+  // offline reading survives a silent reconnect, so a mid-read network
+  // return froze every position written after it. The bridge now trusts
+  // the page itself: OfflineDocs marks exactly the documents it served.
+  ok('the resume bridge no longer consults the radio',
+     !/fun reportPosition\(type: String, id: String\)[\s\S]{0,90}if \(isOnline\) return/
+       .test(mainKt));
+  ok('it answers only while an OfflineDocs document is on screen',
+     /fun reportPosition\(type: String, id: String\)[\s\S]{0,90}if \(!isShowingOfflinePage\) return/
+       .test(mainKt) &&
+     /@Volatile private var isShowingOfflinePage: Boolean/.test(mainKt));
+  ok('every main-frame navigation clears the flag first',
+     /if \(request\.isForMainFrame\) isShowingOfflinePage = false/
+       .test(mainKt));
+  ok('and only a real serve() answer sets it',
+     /OfflineDocs\.serve\(request\)\?\.let \{[\s\S]{0,80}isShowingOfflinePage = true[\s\S]{0,40}return it/
+       .test(mainKt));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
