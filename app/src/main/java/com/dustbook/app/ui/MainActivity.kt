@@ -1373,6 +1373,23 @@ class MainActivity : AppCompatActivity() {
                 // SPA navigation - re-run the blocker.
                 injectAll(view)
                 scheduleAuthProbes(view)
+                // Bug-report-v3's dead strip, Wi-Fi reels/stories: those
+                // screens swap INLINE, so none of the recovery's existing
+                // moments (resume, IME, load, fullscreen) ever arrives
+                // while the user is swiping - and this callback is the
+                // app's own proof that an in-place swap announces itself
+                // here (it has re-run the blocker on SPA swaps all
+                // along). The recovery is state-gated, not timed: the
+                // window is measured first, and unless the strip's own
+                // signature (a short window, no keyboard) is present,
+                // nothing is dispatched at all - no resize, no layout,
+                // no loop, exactly the pair leaving fullscreen uses.
+                // A short window persists until something acts, so an
+                // every-swap re-check has no timing to guess: the next
+                // swap measures again, and heals the moment it is true.
+                if (isReelOrStoryUrl(url) && recoverWindowSizeIfStale()) {
+                    forcePageRelayout(view)
+                }
             }
 
             override fun onReceivedError(
@@ -1998,16 +2015,28 @@ class MainActivity : AppCompatActivity() {
      *
      * Deliberately not a listener on every layout - that risks a loop, since
      * requesting insets causes a layout. This is called at the few moments
-     * the window is known to be suspect.
+     * the window is known to be suspect. Round 22 adds one more: the
+     * reel/story SPA swap in doUpdateVisitedHistory, an event and not a
+     * layout pass, so the loop warning does not apply - and the answer
+     * now comes back, so a caller wanting to reflow the page can do so
+     * only when a shortfall was actually measured here.
      */
-    private fun recoverWindowSizeIfStale() {
+    /** Reels/stories family, exactly the URL tests saveOfflinePosition uses. */
+    private fun isReelOrStoryUrl(url: String?): Boolean {
+        url ?: return false
+        return url.contains("/reel") || url.contains("/reels") ||
+            url.contains("fb.watch") || url.contains("/stories/") ||
+            url.contains("/story/")
+    }
+
+    private fun recoverWindowSizeIfStale(): Boolean {
         val root = binding.root
-        val insets = ViewCompat.getRootWindowInsets(root) ?: return
+        val insets = ViewCompat.getRootWindowInsets(root) ?: return false
         // A visible keyboard is a legitimate reason to be short.
-        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return
+        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return false
 
         val windowH = root.height
-        if (windowH <= 0) return
+        if (windowH <= 0) return false
 
         val screenH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             windowManager.maximumWindowMetrics.bounds.height()
@@ -2023,7 +2052,9 @@ class MainActivity : AppCompatActivity() {
         if (short > 24 && short < screenH / 2) {
             ViewCompat.requestApplyInsets(root)
             root.requestLayout()
+            return true
         }
+        return false
     }
 
     private fun enterImmersive(on: Boolean) {

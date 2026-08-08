@@ -1167,3 +1167,39 @@ One REAL defect found while proving this: nothing pauses the previous
 reel when the pager swipes on (only a 'play' event pauses others) -
 left deliberately untouched until the user confirms it is the same
 symptom, because the pager is the round-20 blast zone.
+
+Round 22 (bug-report-v3): two reports, one real fix, one honest hold.
+Bug 4 (offline home: nav row entirely gone, v2 fix landed clean) -
+  the report's two guesses were both disproven before any edit:
+  (1) isTabRowMarkup over-matching the real header - impossible, the
+      header (#hdr, MContainer fixed-container) is a SIBLING of the
+      vscroller; classify only ever walks the scroller's own children,
+      so the header is never classified at all;
+  (2) RESET_SCREEN_ROOT stripping the header - disproven by an existing
+      battery pin that computes the header position:fixed through
+      jsdom's cascade on the shipped CSS (RESET touches MScreen itself
+      and #__db_chrome/#__db_cards, never the header).
+  The true cause: c4a37fd ("finally offline mode complete") flipped the
+  exact-label classify tier MOVE_TAB -> LEAVE with no reason recorded.
+  For three releases the badge-shell duplicate among the cards masked
+  it (a row was always visible); once 7b7182a healed the shell, zero
+  rows surfaced. The file's own header doc, the tier's own comment and
+  the intact compose-side MOVE_TAB plumbing (tabs + moved, row first)
+  all still argued for surfacing - c4a37fd had made code contradict
+  its own design texts. Fix = restore MOVE_TAB on the exact-label tier
+  only; both badge-shell species stay LEAVE. Proven on the round-8
+  device fixture: shipped 5.2.20 (c367b21 harness, hash-pinned) = no
+  row, composer leads, pad 104; fixed = row leads, pad 52, margins
+  stripped, in-flow static, cards/composer/tray/ads/stale untouched.
+  7 pins flipped, 0 unexpected failures; battery 1236/1236.
+Bug (WiFi-only dead strip on reels/stories) - held, not fixed:
+  every wiring point of the two recoveries is lifecycle-bound
+  (onResume 406, IME close 685, onPageFinished 1350, fullscreen entry
+  1768, fullscreen exit 1801/1813/1816/1817) and none fires on a lite
+  renderer in-place swap; every real fixture plays inline (0
+  requestFullscreen anywhere). The measured 375px strip matches
+  recoverWindowSizeIfStale's exact no-op-safe condition, so it is the
+  right recovery - but the RIGHT trigger (does the URL change per
+  reel/story swipe?) is a device fact. Guessing it is exactly the
+  119-attempt pattern the file comments warn about. Asking the user
+  for the one 30-second observation instead of shipping a blind hook.

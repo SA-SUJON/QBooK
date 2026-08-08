@@ -169,13 +169,18 @@ function classify(slice) {
   // labels and by nothing else - the real row is anchors and carries
   // /reel/ right inside it, so a story-link excuse here loses navigation
   // itself (the round-9 report). The vault keeps that guard for storage.
+  // MOVE_TAB, restated: c4a37fd's unrecorded flip to LEAVE hid the only
+  // real navigation with the scroller (masked by the badge-shell
+  // duplicate for three releases - bug-report-v3's "row entirely gone").
   let labels = 0;
   JUNK.TAB_LABEL.lastIndex = 0;
   while (JUNK.TAB_LABEL.exec(slice) !== null) {
-    if (++labels >= 2) return LEAVE;
+    if (++labels >= 2) return MOVE_TAB;
   }
   // Badge-carrying shell copies: prefix labels or two distinct nav
   // hrefs - but never a real post, which carries its own permalink.
+  // The shell never reaches the exact-label count above; only the
+  // tappable row does.
   if (isTabRowMarkup(slice) && !test0(RX.POST_LINK, slice)) return LEAVE;
   if (test0(RX.POST_LINK, slice)) return STOP;
   return MOVE;

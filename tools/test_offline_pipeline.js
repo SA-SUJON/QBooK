@@ -20,6 +20,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const cp = require('child_process');
 const { JSDOM } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
@@ -1732,16 +1733,20 @@ console.log('\nEvery saved card reaches the page');
     ok('the header is inside the kept, visible screen',
        B.contains(hdr) && dom2.window.getComputedStyle(hdr).position === 'fixed');
 
-    // Claude's shipped LEAVE order, mirrored honestly (the harness mirror
-    // quoted the pre-Claude hoisting for two releases - caught by this
-    // round's sync, re-anchored to what production provably does): the
-    // row's only home is the scroller it arrived in, for every species -
-    // exact, badge, shell. Duplicates died with the hoisting, and this
-    // round's heals keep stored badge copies from ever re-forming one.
-    ok('no tab row ever leaves the scroller: the composer leads the chrome',
+    // ROUND 22 (bug-report-v3, Bug 4): the real row surfaces again.
+    // c4a37fd flipped the exact-label tier MOVE_TAB -> LEAVE for no
+    // recorded reason, so for three releases the row's only home was
+    // the hidden scroller it arrived in. The badge-shell duplicate
+    // among the cards kept a row visible, which masked it; once the
+    // v2 heals removed the shell, the offline home had NO navigation
+    // at all. The shipped dead state is still proven below, composed
+    // by c367b21's own harness, pinned by hash.
+    ok('the real tab row leaves the scroller and leads the chrome',
        !!chrome && chrome.firstElementChild &&
-       chrome.firstElementChild.id === 'composer' &&
-       !chrome.querySelector('#tabrow'),
+       chrome.firstElementChild.id === 'tabrow' &&
+       chrome.children.length >= 3 &&
+       chrome.children[1].id === 'composer' &&
+       !!chrome.querySelector('#tray') && !vs.querySelector('#tabrow'),
        chrome ? chrome.firstElementChild.id : 'no chrome');
     ok('the stories tray follows the composer',
        !!chrome.querySelector('#tray') &&
@@ -1767,29 +1772,26 @@ console.log('\nEvery saved card reaches the page');
     const csComp = dom2.window.getComputedStyle(pd.getElementById('composer'));
     const csTray = dom2.window.getComputedStyle(pd.getElementById('tray'));
     // Same padding mechanism as ever - the first MOVED unit lends its
-    // own offset. The unit that moves first changed (composer, not the
-    // tab row), so the value did; the rule did not.
-    ok('chrome pads by the first moved unit own offset (104 = composer offset)',
-       csChrome.paddingTop === '104px', csChrome.paddingTop);
-    ok('the leading composer gap folds into the pad (0)',
+    // own offset. With the row restored ahead of the composer the first
+    // unit carries the row's own 52, exactly the value the pinned
+    // header bar occupies, so the row lands flush under it.
+    ok('chrome pads by the first moved unit own offset (52 = tab row offset)',
+       csChrome.paddingTop === '52px', csChrome.paddingTop);
+    ok('composer gap = 104 - 52 - 52 = 0',
        parseFloat(csComp.marginTop) === 0, csComp.marginTop);
     ok('tray gap = 160 - 104 - 56 = 0',
        parseFloat(csTray.marginTop) === 0, csTray.marginTop);
     ok('virtual margins are stripped from every moved unit opening tag',
+       !/margin-top/i.test(pd.getElementById('tabrow').getAttribute('style')) &&
        !/margin-top/i.test(pd.getElementById('composer').getAttribute('style')) &&
        !/margin-top/i.test(pd.getElementById('tray').getAttribute('style')));
-    ok('and the kept row is unmolested, margin and all (it never moved)',
-       /margin-top:52px/.test(pd.getElementById('tabrow').getAttribute('style')));
     ok('moved units keep Facebook own inline heights',
        csTab.height === '52px' && csComp.height === '56px' &&
        csTray.height === '232px');
     ok('every moved unit computes in-flow, Facebook chrome or not',
-       csComp.position === 'static' &&
+       csTab.position === 'static' && csComp.position === 'static' &&
        dom2.window.getComputedStyle(pd.getElementById('tray')).position
-         === 'static', csComp.position);
-    // The row itself keeps Facebook's own computed position inside the
-    // hidden scroller - the same end state Claude's shipped fix has had
-    // on main since 127, never re-litigated here.
+         === 'static', csTab.position);
 
     // Contrast: the SHIPPED v5.2.8 rule on this exact document. Anchors
     // carrying /reel/ made the story-link excuse refuse the row, and the
@@ -1813,8 +1815,8 @@ console.log('\nEvery saved card reaches the page');
        classifyV528(pd.getElementById('tabrow').outerHTML) === 2 &&
        classifyV528(pd.getElementById('composer').outerHTML) === 2 &&
        classifyV528(pd.getElementById('tray').outerHTML) === 2);
-    ok('every tab-row shape LEAVEs with the scroller, composer/tray move, the post stops the walk',
-       H.classify(fixtureFor('tabrow')) === 1 &&
+    ok('the anchors row heads for chrome, composer/tray move, the post stops the walk',
+       H.classify(fixtureFor('tabrow')) === 3 &&
        H.classify(fixtureFor('composer')) === 0 &&
        H.classify(fixtureFor('tray')) === 0 &&
        H.classify(fixtureFor('stale1')) === 2);
@@ -1822,6 +1824,30 @@ console.log('\nEvery saved card reaches the page');
       return ({ tabrow: tabRow, composer: composer, tray: tray,
                stale1: stalePost })[id];
     }
+
+    // Contrast: the SHIPPED Bug-4 build on exactly this document,
+    // composed by its own harness, pinned by hash (c367b21 = remote
+    // main when the v3 report was written). Every row species hid with
+    // the scroller there - the v3 screenshot's "row entirely gone".
+    const HBug4 = (() => {
+      const oldSrc = cp.execSync(
+        'git show c367b21:tools/offline_vault_harness.js',
+        { cwd: ROOT }).toString();
+      const tmp = path.join(ROOT, 'tools', '.harness_bug4_tmp.js');
+      fs.writeFileSync(tmp, oldSrc);
+      const m = require('./.harness_bug4_tmp.js');
+      fs.unlinkSync(tmp);
+      return m;
+    })();
+    const bug4Page = '<html><head>' + hostile + '</head><body>' +
+      HBug4.compose(deviceDoc, savedCards) + '</body></html>';
+    const b4d = new JSDOM(bug4Page, { url: 'https://m.facebook.com/' });
+    const b4Chrome = b4d.window.document.getElementById('__db_chrome');
+    ok('contrast: shipped 5.2.20 surfaced no row at all (Bug 4 verbatim)',
+       !!b4Chrome && !b4Chrome.querySelector('#tabrow') &&
+       b4Chrome.firstElementChild.id === 'composer' &&
+       b4d.window.getComputedStyle(b4Chrome).paddingTop === '104px',
+       b4Chrome ? b4Chrome.firstElementChild.id : 'no chrome');
 
     // Scroll proof under the hostile cascade.
     const csB = dom2.window.getComputedStyle(B);
@@ -1884,19 +1910,21 @@ console.log('\nEvery saved card reaches the page');
     };
     {
       const v = variantRun(btnRowNoMargin + composer + tray + stalePost);
-      ok('variant buttons/no-margins: composer and tray move out, the row never does',
-         v.chrome.firstElementChild.id === 'composer' &&
+      ok('variant buttons/no-margins: the exact-label div row leads the chrome too',
+         v.chrome.firstElementChild.id === 'tabrow' &&
+         !!v.chrome.querySelector('#composer') &&
          !!v.chrome.querySelector('#tray') &&
-         !v.chrome.querySelector('#tabrow') &&
-         !v.chrome.querySelector('#stale1'));
+         !v.chrome.querySelector('#stale1') &&
+         !v.vs.querySelector('#tabrow'));
       ok('variant buttons/no-margins: stale scroller hidden',
          v.w.getComputedStyle(v.vs).display === 'none');
     }
     {
       const v = variantRun(linkRowNoMargin + composer + tray + stalePost);
-      ok('variant anchors/no-margins: even a row with a /reel/ href never moves out',
-         !v.chrome.querySelector('#tabrow') &&
-         !!v.chrome.querySelector('#composer'));
+      ok('variant anchors/no-margins: a row with a /reel/ href surfaces the same',
+         v.chrome.firstElementChild.id === 'tabrow' &&
+         !!v.chrome.querySelector('#composer') &&
+         !v.vs.querySelector('#tabrow'));
       ok('variant anchors/no-margins: pad falls to the first margin carrier',
          v.w.getComputedStyle(v.chrome).paddingTop === '104px');
     }
@@ -3460,9 +3488,43 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
   }
   ok('HEAD classed the badge species as generic chrome/posts (the dupe)',
      classifyOldProd(rowBadged) === 0 && classifyOldProd(rowShell) === 0);
-  ok('now every shape is LEAVE, exactly like exact rows were',
-     Hnew.classify(rowBadged) === 1 && Hnew.classify(rowShell) === 1 &&
-     Hnew.classify(rowExact) === 1);
+
+  // ROUND 22 - Bug 4 (v3): the REAL row vanished with the shell.
+  // c4a37fd flipped the exact-label tier MOVE_TAB -> LEAVE for no
+  // recorded reason; for three releases the badge-shell duplicate
+  // masked it, and once the v2 heals removed the shell the offline
+  // home had NO nav row at all. Pin the shipped-Bug-4 build by hash
+  // (c367b21 = remote main when the v3 report was written), prove its
+  // dead state on all three species, then the fix's full truth table.
+  const asmBug4 = cp.execSync(
+    'git show c367b21:app/src/main/java/com/dustbook/app/offline/PageAssembly.kt',
+    { cwd: ROOT }).toString();
+  const asmPhone = cp.execSync(
+    'git show f0d9cdc:app/src/main/java/com/dustbook/app/offline/PageAssembly.kt',
+    { cwd: ROOT }).toString();
+  ok('the Bug-4 build really left every species hidden (pinned)',
+     /if \(\+\+labels >= 2\) return LEAVE/.test(asmBug4) &&
+     /isTabRowMarkup/.test(asmBug4));
+  ok('the phone-era build surfaced the exact-label row (pinned)',
+     /if \(\+\+labels >= 2\) return MOVE_TAB/.test(asmPhone));
+  function classifyBug4Build(slice) {
+    if (slice.toLowerCase().includes(Hnew.JUNK.AD_TAG.toLowerCase())) return 1;
+    Hnew.JUNK.TAB_LABEL.lastIndex = 0;
+    let labels = 0;
+    while (Hnew.JUNK.TAB_LABEL.exec(slice) !== null) {
+      if (++labels >= 2) return 1;                 // exact rows: LEAVE
+    }
+    if (Hnew.isTabRowMarkup(slice) &&              // badge rows: LEAVE
+        !/story_fbid|\/posts\/|\/videos\/|\/reel\//i.test(slice)) return 1;
+    if (/story_fbid|\/posts\/|\/videos\/|\/reel\//i.test(slice)) return 2;
+    return 0;
+  }
+  ok('shipped 5.2.20 hid every species: no nav offline (Bug 4, verbatim)',
+     classifyBug4Build(rowExact) === 1 && classifyBug4Build(rowBadged) === 1 &&
+     classifyBug4Build(rowShell) === 1);
+  ok('the fix surfaces the real row and still buries both shell species',
+     Hnew.classify(rowExact) === 3 &&
+     Hnew.classify(rowBadged) === 1 && Hnew.classify(rowShell) === 1);
   ok('a real post still STOPs the walk (permalink guard in classify)',
      Hnew.classify(reelCard) === 2 && Hnew.classify(realPost2links) === 2);
 

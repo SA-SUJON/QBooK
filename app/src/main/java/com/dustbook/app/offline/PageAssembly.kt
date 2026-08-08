@@ -26,17 +26,18 @@ package com.dustbook.app.offline
  *       +-- vscroller (Facebook's JS-driven virtual list:
  *             composer, stories tray, then stale server-rendered posts)
  *
- *  1. the composer and the stories tray are MOVED OUT of the old scroller
- *     into the normal document flow, right after the header, so the
- *     offline home screen has the same pieces the online one has - proven
- *     against the user's own side-by-side screenshots, where both were
- *     missing because the whole scroller had to hide;
+ *  1. the tab row, the composer and the stories tray are MOVED OUT of
+ *     the old scroller into the normal document flow, right after the
+ *     header, so the offline home screen has the same pieces the online
+ *     one has - proven against the user's own side-by-side screenshots,
+ *     where all three were missing because the whole scroller had to
+ *     hide;
  *  2. the saved cards go in right after them, as the scroller's previous
  *     sibling - the same parent BY CONSTRUCTION, so the sibling rule that
  *     hides the stale scroller can never miss it;
  *  3. the old scroller - now just stale posts plus any junk that must not
- *     resurface (a floating tab row, a condemned ad) - hides whole, by
- *     name;
+ *     resurface (a shell copy of the tab row, a condemned ad) - hides
+ *     whole, by name;
  *  4. an offline layout reset un-clips the screen root: on the live site
  *     scrolling belongs to the scroller, whose CSS keeps the screen root
  *     at viewport height with overflow hidden, so a static block inside
@@ -473,11 +474,25 @@ object PageAssembly {
         // evil is losing navigation, and no post carries two exact nav
         // labels. (The row must still never be saved as a CARD - that
         // vault filter is unchanged.)
+        //
+        // MOVE_TAB restated, after three releases of LEAVE: c4a37fd
+        // ("finally offline mode complete") flipped this return with the
+        // reason never recorded, leaving the row hidden with the
+        // scroller. Nobody saw it for three releases because the badge
+        // shell kept a copy visible among the cards - the duplicate
+        // masked the missing original. Once the v2 fix healed the shell,
+        // the offline home had NO navigation row at all (bug-report-v3,
+        // Bug 4; "only the Facebook wordmark + search + hamburger
+        // remain"). Exact labels are the live, tappable row in every
+        // captured species (anchors on the user's own home capture, the
+        // div-button twin below it), so it surfaces to head the chrome
+        // exactly as it did at v5.2.16; the badge-shell species never
+        // reaches this tier's count and stays hidden below.
         var labels = 0
         val it = SectionVault.JUNK_TAB_LABEL.findAll(slice).iterator()
         while (it.hasNext()) {
             it.next()
-            if (++labels >= 2) return LEAVE
+            if (++labels >= 2) return MOVE_TAB
         }
         // The badge-carrying shell copy of the same row: its labels are
         // prefix-equal ("Notifications, 15+ notifications"), never
@@ -486,9 +501,12 @@ object PageAssembly {
         // bug-report-v2 screenshot again). Same shared definition as
         // capture and the vault (SectionVault.isTabRowMarkup). The
         // permalink guard keeps every real post decision identical: an
-        // anchors row keeps its own /reel/ and still LEAVEs via the
-        // exact labels above, exactly as before; a hrefless shell has
-        // no permalink to protect it, which is the shell's own proof.
+        // anchors row keeps its own /reel/ and still MOVE_TABs via the
+        // exact labels above (that tier runs first); a hrefless shell
+        // has no permalink to protect it, which is the shell's own
+        // proof. This tier is why the exact-label tier above is safe:
+        // everything it refuses as "not the exact row" lands here, and
+        // only the real, tappable row ever carries two exact labels.
         if (SectionVault.isTabRowMarkup(slice) &&
             !POST_LINK.containsMatchIn(slice)) return LEAVE
         if (POST_LINK.containsMatchIn(slice)) return STOP

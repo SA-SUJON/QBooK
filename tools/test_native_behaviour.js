@@ -1652,6 +1652,45 @@ console.log('\nBackground audio is for Reels, and only when audible');
        /addJavascriptInterface\(JsBridge\(\), "FBPro"\)/.test(ma));
   }
 
+  // -------------------------------------------------------- round 22 (v3)
+  // Bug-report-v3: the dead black strip on reels/stories over Wi-Fi.
+  // Both recoveries were only wired to lifecycle moments (resume, IME,
+  // load, native fullscreen) that an inline lite-renderer swap never
+  // produces. The fix wires the SAME pair into the app's own SPA-swap
+  // callback, double-gated: reel/story URL family first, then a
+  // measured window shortfall - so a healthy window does nothing.
+  {
+    const ma2 = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+    const cp = require('child_process');
+    const maOld = cp.execSync(
+      'git show c367b21:app/src/main/java/com/dustbook/app/ui/MainActivity.kt',
+      { cwd: ROOT }).toString();
+
+    // Old side, pinned by hash: the SPA hook knew nothing of recovery.
+    ok('shipped 5.2.20: the SPA hook never ran the recovery (Bug 3 verbatim)',
+       /override fun doUpdateVisitedHistory[\s\S]{0,400}scheduleAuthProbes\(view\)\s*\n\s*}/.test(maOld) &&
+       !/doUpdateVisitedHistory[\s\S]{0,600}recoverWindowSizeIfStale/.test(maOld));
+
+    // New side: the same proven pair, wired at the swap, twice gated.
+    ok('the SPA swap now checks the window on reel/story pages only',
+       /doUpdateVisitedHistory[\s\S]{0,1400}isReelOrStoryUrl\(url\) && recoverWindowSizeIfStale\(\)\) \{\s*\n\s*forcePageRelayout\(view\)/.test(ma2));
+    ok('the URL gate runs BEFORE any measurement (no work on other screens)',
+       /isReelOrStoryUrl\(url\) && recoverWindowSizeIfStale\(\)/.test(ma2));
+    ok('the gate covers the exact reel/story families, nothing else',
+       /fun isReelOrStoryUrl[\s\S]{0,300}contains\("\/reel"\)[\s\S]{0,300}contains\("\/stories\/"\)[\s\S]{0,120}contains\("\/story\/"\)/.test(ma2) &&
+       !/isReelOrStoryUrl[\s\S]{0,400}(home|feed)/.test(ma2));
+    ok('recoverWindowSizeIfStale reports whether it acted',
+       /private fun recoverWindowSizeIfStale\(\): Boolean/.test(ma2) &&
+       /requestApplyInsets\(root\)[\s\S]{0,120}return true/.test(ma2));
+    // Literal `recoverWindowSizeIfStale()` occurrences: 4 lifecycle call
+    // sites + 1 doc comment + 1 definition on the shipped build (6);
+    // the fix adds exactly one call - the gated one at the SPA swap (7).
+    ok('the four lifecycle call sites are all still there, plus the one new',
+       (maOld.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 6 &&
+       (ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 7,
+       String((ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length));
+  }
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })();
