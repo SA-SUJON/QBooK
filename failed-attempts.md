@@ -992,3 +992,24 @@ pushed alone - it ships folded into this round as the fallback style.
   53912a6 baseline.
 
 > Session: 2026-08-08 | Tag: v5.2.16 | Tests: 1129 passed, 0 failed (10 suites)
+
+## Round 18 - the fake reel count, and the pin that counted the wrong thing (2026-08-08)
+
+The user reported reels showing downloads that were never fetched, and
+fixed the root himself (7807cd3): `isComplete` treated an entry with NO
+media as complete on every section, so any media-less leak counted as a
+downloaded reel. The rule is now per section: `videoRequired = true`
+(reels) makes empty media incomplete; feed and stories keep
+`videoRequired = false`, so a text post still counts with zero
+downloads. CI stayed red all the same: the battery pinned the OLD LINE
+TEXT (`if (e.media.isEmpty()) return true`) instead of the behaviour,
+so an honest rule change read as a regression. The pin is now
+three-sided - the rule's text, the per-vault `videoRequired` wiring,
+and the rule's behaviour in both directions (feed text counts, a
+media-less reel does not).
+
+Lesson: a pin that quotes an implementation must always travel with a
+behavioural assertion of its INTENT, or every honest rewrite of that
+implementation will masquerade as a bug.
+
+> Session: 2026-08-08 | Base: 05abe4e | Tests: 1130 passed, 0 failed (10 suites)

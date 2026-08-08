@@ -730,8 +730,20 @@ console.log('\nCounting waits for the whole item');
   ok('files only ever exist complete: every failure deletes the stub',
      /\.part/.test(vaultSrc) && /if \(!tmp\.renameTo\(final\)\)/.test(vaultSrc) &&
      vaultSrc.replace(/\n\s+/g, ' ').includes('tmp.delete() return false'));
-  ok('a text post with no media still counts',
-     /if \(e\.media\.isEmpty\(\)\) return true/.test(vaultSrc));
+  // The empty-media rule now answers PER SECTION (the user's own fake
+  // count fix, commit 7807cd3). Feed and stories keep the old intent -
+  // a text post is complete with zero downloads - while a reel with no
+  // media was the inflated count. Proven from three sides: the rule's
+  // text, the per-vault wiring, and the rule's behaviour both ways.
+  ok('a text post with no media still counts (feed rule kept)',
+     /if \(e\.media\.isEmpty\(\)\) return !videoRequired/.test(vaultSrc) &&
+     /videoRequired = false/.test(
+       fs.readFileSync(KT('offline/HomeVault.kt'), 'utf8')) &&
+     H.isComplete([], () => false, false) === true);
+  ok('a reel with no media no longer counts (the fake count dies)',
+     /videoRequired = true/.test(
+       fs.readFileSync(KT('offline/ReelsVault.kt'), 'utf8')) &&
+     H.isComplete([], () => false, true) === false);
 
   ok('the count and the screen share one source of truth',
      /fun count\(\): Int = completeItems\(\)\.size/.test(vaultSrc) &&
