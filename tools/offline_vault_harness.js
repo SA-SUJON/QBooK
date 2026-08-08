@@ -457,8 +457,8 @@ function isJunk(section, html) {
  * asset's file exists in the vault's own media folder; by construction
  * a file there only ever exists COMPLETE (written .part, renamed in).
  */
-function isComplete(media, has) {
-  if (media.length === 0) return true;
+function isComplete(media, has, videoRequired) {
+  if (media.length === 0) return !videoRequired;
 
   const videos = media.filter(isVideoUrl);
   if (videos.length > 0) {
