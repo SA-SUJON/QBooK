@@ -3375,8 +3375,12 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
   const Hnew = require('./offline_vault_harness.js');
   const cp = require('child_process');
   const Hold = (() => {
+    // The old side must be pinned by HASH, never HEAD: in CI HEAD is the
+    // commit under test (the fix itself), so 'git show HEAD' reads the NEW
+    // behavior and every old-side pin lies. e90a8f6 is remote main before
+    // this round - immutable, and reachable forever.
     const oldSrc = cp.execSync(
-      'git show HEAD:tools/offline_vault_harness.js', { cwd: ROOT }).toString();
+      'git show e90a8f6:tools/offline_vault_harness.js', { cwd: ROOT }).toString();
     const tmp = path.join(ROOT, 'tools', '.harness_prev_tmp.js');
     fs.writeFileSync(tmp, oldSrc);
     const m = require('./.harness_prev_tmp.js');
@@ -3439,7 +3443,7 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
   // classify: HEAD production had the exact-label loop -> LEAVE and no
   // badge tier (structure-pinned, so "old" below cannot drift).
   const asmOld = cp.execSync(
-    'git show HEAD:app/src/main/java/com/dustbook/app/offline/PageAssembly.kt',
+    'git show e90a8f6:app/src/main/java/com/dustbook/app/offline/PageAssembly.kt',
     { cwd: ROOT }).toString();
   ok('HEAD classify really was exact-labels-then-POST_LINK (pinned)',
      /if \(\+\+labels >= 2\) return LEAVE/.test(asmOld) &&
@@ -3501,7 +3505,7 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
     return got;
   }
   const capOldKt = cp.execSync(
-    'git show HEAD:app/src/main/java/com/dustbook/app/utils/OfflineCapture.kt',
+    'git show e90a8f6:app/src/main/java/com/dustbook/app/utils/OfflineCapture.kt',
     { cwd: ROOT }).toString();
   const capNewKt = fs.readFileSync(KT('utils/OfflineCapture.kt'), 'utf8');
   const itemsOld = captureItems(capOldKt), itemsNew = captureItems(capNewKt);
