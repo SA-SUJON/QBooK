@@ -1652,18 +1652,24 @@ console.log('\nBackground audio is for Reels, and only when audible');
        /addJavascriptInterface\(JsBridge\(\), "FBPro"\)/.test(ma));
   }
 
-  // -------------------------------------------------------- round 22 (v3)
+  // -------------------------------------------------------- round 23 (v3)
   // Bug-report-v3: the dead black strip on reels/stories over Wi-Fi.
   // Both recoveries were only wired to lifecycle moments (resume, IME,
   // load, native fullscreen) that an inline lite-renderer swap never
-  // produces. The fix wires the SAME pair into the app's own SPA-swap
-  // callback, double-gated: reel/story URL family first, then a
-  // measured window shortfall - so a healthy window does nothing.
+  // produces. Round 22 wired the pair in DOUBLE-gated (reel/story URL
+  // AND a measured short window) - the device answered with the same
+  // strip on v5.2.21, so the strip is page-side staleness, not a short
+  // window. Round 23 keeps the URL family gate but always runs the
+  // page-side half there - exactly the pair fullscreen exit uses; the
+  // window half no-ops on its own when the window is healthy.
   {
     const ma2 = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
     const cp = require('child_process');
     const maOld = cp.execSync(
       'git show c367b21:app/src/main/java/com/dustbook/app/ui/MainActivity.kt',
+      { cwd: ROOT }).toString();
+    const ma521 = cp.execSync(
+      'git show 9ba4283:app/src/main/java/com/dustbook/app/ui/MainActivity.kt',
       { cwd: ROOT }).toString();
 
     // Old side, pinned by hash: the SPA hook knew nothing of recovery.
@@ -1671,24 +1677,32 @@ console.log('\nBackground audio is for Reels, and only when audible');
        /override fun doUpdateVisitedHistory[\s\S]{0,400}scheduleAuthProbes\(view\)\s*\n\s*}/.test(maOld) &&
        !/doUpdateVisitedHistory[\s\S]{0,600}recoverWindowSizeIfStale/.test(maOld));
 
-    // New side: the same proven pair, wired at the swap, twice gated.
-    ok('the SPA swap now checks the window on reel/story pages only',
-       /doUpdateVisitedHistory[\s\S]{0,1400}isReelOrStoryUrl\(url\) && recoverWindowSizeIfStale\(\)\) \{\s*\n\s*forcePageRelayout\(view\)/.test(ma2));
-    ok('the URL gate runs BEFORE any measurement (no work on other screens)',
-       /isReelOrStoryUrl\(url\) && recoverWindowSizeIfStale\(\)/.test(ma2));
+    // v5.2.21, pinned by hash: the reflow was shortfall-gated there.
+    ok('v5.2.21 gated the reflow behind a measured short window (pinned)',
+       /isReelOrStoryUrl\(url\) && recoverWindowSizeIfStale\(\)\) \{\s*\n\s*forcePageRelayout\(view\)/.test(ma521));
+
+    // New side: one gate (the URL family), then the same pair, in order.
+    ok('the SPA swap now runs the fullscreen-exit pair on reel/story only',
+       /doUpdateVisitedHistory[\s\S]{0,1800}if \(isReelOrStoryUrl\(url\)\) \{\s*\n\s*recoverWindowSizeIfStale\(\)\s*\n\s*forcePageRelayout\(view\)\s*\n\s*\}/.test(ma2));
     ok('the gate covers the exact reel/story families, nothing else',
        /fun isReelOrStoryUrl[\s\S]{0,300}contains\("\/reel"\)[\s\S]{0,300}contains\("\/stories\/"\)[\s\S]{0,120}contains\("\/story\/"\)/.test(ma2) &&
        !/isReelOrStoryUrl[\s\S]{0,400}(home|feed)/.test(ma2));
-    ok('recoverWindowSizeIfStale reports whether it acted',
-       /private fun recoverWindowSizeIfStale\(\): Boolean/.test(ma2) &&
-       /requestApplyInsets\(root\)[\s\S]{0,120}return true/.test(ma2));
+    ok('the window check kept its own internal health gate',
+       /private fun recoverWindowSizeIfStale\(\) \{/.test(ma2) &&
+       /if \(short > 24 && short < screenH \/ 2\)/.test(ma2) &&
+       !/recoverWindowSizeIfStale\(\): Boolean/.test(ma2));
     // Literal `recoverWindowSizeIfStale()` occurrences: 4 lifecycle call
     // sites + 1 doc comment + 1 definition on the shipped build (6);
-    // the fix adds exactly one call - the gated one at the SPA swap (7).
+    // the fix adds exactly one call - the one at the SPA swap (7).
     ok('the four lifecycle call sites are all still there, plus the one new',
        (maOld.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 6 &&
        (ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 7,
        String((ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length));
+    // Bound: the settle loop still self-terminates and still dispatches
+    // resize only while the measured height is moving (tracer on purpose).
+    ok('the settle loop still self-terminates and pokes only while moving',
+       /fun settleRelayout[\s\S]{0,900}__dbSettleAt \|\| 0\)\) < 1200/.test(ma2) &&
+       /n >= 2 \|\| f >= 40/.test(ma2));
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

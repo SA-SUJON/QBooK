@@ -1379,15 +1379,20 @@ class MainActivity : AppCompatActivity() {
                 // while the user is swiping - and this callback is the
                 // app's own proof that an in-place swap announces itself
                 // here (it has re-run the blocker on SPA swaps all
-                // along). The recovery is state-gated, not timed: the
-                // window is measured first, and unless the strip's own
-                // signature (a short window, no keyboard) is present,
-                // nothing is dispatched at all - no resize, no layout,
-                // no loop, exactly the pair leaving fullscreen uses.
-                // A short window persists until something acts, so an
-                // every-swap re-check has no timing to guess: the next
-                // swap measures again, and heals the moment it is true.
-                if (isReelOrStoryUrl(url) && recoverWindowSizeIfStale()) {
+                // along). v5.2.21 gated the reflow behind a measured
+                // short window; the device answered with the same strip
+                // on v5.2.21 - so the strip is page-side staleness, not
+                // a short window, and the right dose is the page-side
+                // half of the pair, exactly what leaving fullscreen
+                // uses, gated to this family only. The settle loop is
+                // self-terminating (two agreeing frames or ~40 max,
+                // 1.2s anti-stacking guard) and only ever dispatches a
+                // resize while the measured height is still moving -
+                // the tracer's healing read, on purpose. The window
+                // check stays first: it no-ops on a healthy window, and
+                // on the home feed this whole branch is never taken.
+                if (isReelOrStoryUrl(url)) {
+                    recoverWindowSizeIfStale()
                     forcePageRelayout(view)
                 }
             }
@@ -2015,11 +2020,9 @@ class MainActivity : AppCompatActivity() {
      *
      * Deliberately not a listener on every layout - that risks a loop, since
      * requesting insets causes a layout. This is called at the few moments
-     * the window is known to be suspect. Round 22 adds one more: the
+     * the window is known to be suspect. Round 23 adds one more: the
      * reel/story SPA swap in doUpdateVisitedHistory, an event and not a
-     * layout pass, so the loop warning does not apply - and the answer
-     * now comes back, so a caller wanting to reflow the page can do so
-     * only when a shortfall was actually measured here.
+     * layout pass, so the loop warning does not apply.
      */
     /** Reels/stories family, exactly the URL tests saveOfflinePosition uses. */
     private fun isReelOrStoryUrl(url: String?): Boolean {
@@ -2029,14 +2032,14 @@ class MainActivity : AppCompatActivity() {
             url.contains("/story/")
     }
 
-    private fun recoverWindowSizeIfStale(): Boolean {
+    private fun recoverWindowSizeIfStale() {
         val root = binding.root
-        val insets = ViewCompat.getRootWindowInsets(root) ?: return false
+        val insets = ViewCompat.getRootWindowInsets(root) ?: return
         // A visible keyboard is a legitimate reason to be short.
-        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return false
+        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return
 
         val windowH = root.height
-        if (windowH <= 0) return false
+        if (windowH <= 0) return
 
         val screenH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             windowManager.maximumWindowMetrics.bounds.height()
@@ -2052,9 +2055,7 @@ class MainActivity : AppCompatActivity() {
         if (short > 24 && short < screenH / 2) {
             ViewCompat.requestApplyInsets(root)
             root.requestLayout()
-            return true
         }
-        return false
     }
 
     private fun enterImmersive(on: Boolean) {

@@ -177,11 +177,12 @@ function classify(slice) {
   while (JUNK.TAB_LABEL.exec(slice) !== null) {
     if (++labels >= 2) return MOVE_TAB;
   }
-  // Badge-carrying shell copies: prefix labels or two distinct nav
-  // hrefs - but never a real post, which carries its own permalink.
-  // The shell never reaches the exact-label count above; only the
-  // tappable row does.
-  if (isTabRowMarkup(slice) && !test0(RX.POST_LINK, slice)) return LEAVE;
+  // The badge form is the SAME row on this device (badges live inside
+  // the aria-labels now - v5.2.21's exact-only restore got an empty
+  // nav bar back). It surfaces too; vault/capture keep it out of the
+  // cards, and compose keeps only the first. A real post with two
+  // nav-prefixed labels owns its /reel/ and falls to STOP below.
+  if (isTabRowMarkup(slice) && !test0(RX.POST_LINK, slice)) return MOVE_TAB;
   if (test0(RX.POST_LINK, slice)) return STOP;
   return MOVE;
 }
@@ -303,6 +304,10 @@ function compose(doc, cards, snap) {
         if ((kind === MOVE || kind === MOVE_TAB) &&
             chromeSeen.has(chromeKey(slice))) continue;
         if (kind === MOVE || kind === MOVE_TAB) chromeSeen.add(chromeKey(slice));
+        // One navigation bar: the first row moves, later row-shaped
+        // units stay hidden - badge ticks make twin text dodge the
+        // dedup above (the v2 duplicate). First copy wins.
+        if (kind === MOVE_TAB && tabs.length > 0) continue;
         if (kind === MOVE || kind === MOVE_TAB) {
           inner += base.slice(cursor, c.start);
           cursor = c.end;

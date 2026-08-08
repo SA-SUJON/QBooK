@@ -3415,6 +3415,17 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
     fs.unlinkSync(tmp);
     return m;
   })();
+  const H521 = (() => {
+    // 9ba4283 = v5.2.21, the build the device rejected with an empty
+    // nav bar: exact species surfaced, both badge forms stayed LEAVE.
+    const oldSrc = cp.execSync(
+      'git show 9ba4283:tools/offline_vault_harness.js', { cwd: ROOT }).toString();
+    const tmp = path.join(ROOT, 'tools', '.harness_521_tmp.js');
+    fs.writeFileSync(tmp, oldSrc);
+    const m = require('./.harness_521_tmp.js');
+    fs.unlinkSync(tmp);
+    return m;
+  })();
 
   // ------------------------------------------------ Bug 2: the badge row
   // The three shapes the row travels in (round-17 fixture, proven against
@@ -3522,9 +3533,16 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
   ok('shipped 5.2.20 hid every species: no nav offline (Bug 4, verbatim)',
      classifyBug4Build(rowExact) === 1 && classifyBug4Build(rowBadged) === 1 &&
      classifyBug4Build(rowShell) === 1);
-  ok('the fix surfaces the real row and still buries both shell species',
+  // v5.2.21 mistake, pinned honest: it classed the two badge forms as
+  // junk, but on this device they ARE the row (the 03:34 screenshot's
+  // empty nav bar on 5.2.21). Every row species surfaces now; the
+  // burial of extra copies happens at capture/vault/cap, not classify.
+  ok('every row species returns as navigation, shells included',
      Hnew.classify(rowExact) === 3 &&
-     Hnew.classify(rowBadged) === 1 && Hnew.classify(rowShell) === 1);
+     Hnew.classify(rowBadged) === 3 && Hnew.classify(rowShell) === 3);
+  ok('...and the v5.2.21 build really did bury both badge forms (pinned)',
+     H521.classify(rowBadged) === 1 && H521.classify(rowShell) === 1 &&
+     H521.classify(rowExact) === 3);
   ok('a real post still STOPs the walk (permalink guard in classify)',
      Hnew.classify(reelCard) === 2 && Hnew.classify(realPost2links) === 2);
 
@@ -3583,7 +3601,10 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
 
   // End to end through compose, for the species where HEAD-mirror and
   // HEAD-production agree (both MOVE): the pair used to relocate into
-  // chrome as the second nav area; now nothing of them survives.
+  // chrome as the second nav area. Round 23 (device proof): on this
+  // device the badge form IS the real row - the badges live INSIDE the
+  // aria-labels - so it surfaces as THE navigation bar; the v2 leak
+  // (rows stored as cards) stays buried by the capture/vault arms.
   const doc =
     '<div data-mcomponent="MScreen" class="m bg-s2">' +
     '<div class="fixed-container top" id="hdr">bar</div>' +
@@ -3611,9 +3632,48 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
   ok('HEAD relocated the badge species into chrome (second nav area)',
      chromeOld && /Notifications, 4/.test(chromeOld.innerHTML),
      chromeOld ? chromeOld.children.length + ' units' : 'none');
-  ok('now no badge-row species relocates anywhere visible',
-     (!chromeNew || !/Notifications, 4/.test(chromeNew.innerHTML)) &&
-     (!chromeNew || !/Marketplace, 9 new/.test(chromeNew.innerHTML)));
+  ok('v5.2.21 hid even the badge form entirely (the device empty bar)',
+     H521.classify('<div><a href="/home" aria-label="Home, 2 new">15+</a>' +
+       '<a href="/bookmarks/" aria-label="Marketplace, 9 new">4</a></div>') === 1 &&
+     H521.classify('<div role="button" aria-label="Notifications, 4">4' +
+       '<div role="button" aria-label="Home, 1 new">15+</div>') === 1);
+  ok('now the badge form surfaces as the single navigation bar',
+     !!chromeNew && chromeNew.firstElementChild.id === 'navB2' &&
+     /Notifications, 4/.test(chromeNew.innerHTML),
+     chromeNew ? chromeNew.firstElementChild.id : 'no chrome');
+
+  // The actual duplicate mechanism from bug-report-v2: a recycled twin
+  // whose badge text differs dodges the text-key dedup. Cap = one row.
+  {
+    const navTwin =
+      '<div id="navT" style="margin-top:314px; height:52px;">' +
+      '<a href="https://m.facebook.com/home" aria-label="Home, 3 new">7</a>' +
+      '<a href="https://m.facebook.com/bookmarks/"' +
+      ' aria-label="Marketplace, 10 new">9</a>' +
+      '<div role="button" aria-label="Notifications, 17">17</div></div>';
+    const twoRowDoc =
+      '<div data-mcomponent="MScreen" class="m bg-s2">' +
+      '<div class="fixed-container top" id="hdr2">bar</div>' +
+      '<div data-type="vscroller" class="m vscroller">' +
+      '<div id="navF" style="margin-top:52px; height:52px;">' +
+      '<div role="button" aria-label="Home, 2 new">15+</div>' +
+      '<div role="button" aria-label="Reels, 5 new">15+</div></div>' +
+      navTwin +
+      '<div data-tracking-duration-id="k9">' +
+      '<div><span>a genuine post about nothing at all, quite enough' +
+      ' text</span></div>' +
+      '<a href="https://m.facebook.com/story.php?story_fbid=9">Full</a></div>' +
+      '</div></div>';
+    const p2 = new JSDOM('<html><body>' +
+      Hnew.compose(twoRowDoc, [keepPostX]) + '</body></html>',
+      { url: 'https://m.facebook.com/' }).window.document;
+    const c2 = p2.getElementById('__db_chrome');
+    const vs2 = p2.querySelector('[data-type="vscroller"]');
+    ok('the first row moves, its distinct-badge twin stays hidden (v2 dupe)',
+       !!c2 && p2.querySelectorAll('#__db_chrome #navF').length === 1 &&
+       p2.querySelectorAll('#__db_chrome #navT').length === 0 &&
+       !!vs2 && !!vs2.querySelector('#navT'));
+  }
 
   // ------------------------------------------------ Bug 1: the seats
   // The bug-report-v2 screenshot: "Posts: 16 of 10" while Syncing. Each

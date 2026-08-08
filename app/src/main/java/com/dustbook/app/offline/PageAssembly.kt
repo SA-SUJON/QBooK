@@ -475,40 +475,36 @@ object PageAssembly {
         // labels. (The row must still never be saved as a CARD - that
         // vault filter is unchanged.)
         //
-        // MOVE_TAB restated, after three releases of LEAVE: c4a37fd
-        // ("finally offline mode complete") flipped this return with the
-        // reason never recorded, leaving the row hidden with the
-        // scroller. Nobody saw it for three releases because the badge
-        // shell kept a copy visible among the cards - the duplicate
-        // masked the missing original. Once the v2 fix healed the shell,
-        // the offline home had NO navigation row at all (bug-report-v3,
-        // Bug 4; "only the Facebook wordmark + search + hamburger
-        // remain"). Exact labels are the live, tappable row in every
-        // captured species (anchors on the user's own home capture, the
-        // div-button twin below it), so it surfaces to head the chrome
-        // exactly as it did at v5.2.16; the badge-shell species never
-        // reaches this tier's count and stays hidden below.
+        // MOVE_TAB, again after three releases of LEAVE: c4a37fd
+        // ("finally offline mode complete") flipped this return with
+        // the reason never recorded, and the badge-shell duplicate
+        // masked it until the v2 heals. But v5.2.21 restored it for
+        // the exact species only, and the device answered with an
+        // EMPTY nav bar: on the user's current captures the badge
+        // counters sit INSIDE the aria-labels, so the real row never
+        // reaches this tier's count. Both species move below.
         var labels = 0
         val it = SectionVault.JUNK_TAB_LABEL.findAll(slice).iterator()
         while (it.hasNext()) {
             it.next()
             if (++labels >= 2) return MOVE_TAB
         }
-        // The badge-carrying shell copy of the same row: its labels are
-        // prefix-equal ("Notifications, 15+ notifications"), never
-        // exact, so the loop above never saw it and it classed as a
-        // POST - rendering between real cards (round-17, and the
-        // bug-report-v2 screenshot again). Same shared definition as
-        // capture and the vault (SectionVault.isTabRowMarkup). The
-        // permalink guard keeps every real post decision identical: an
-        // anchors row keeps its own /reel/ and still MOVE_TABs via the
-        // exact labels above (that tier runs first); a hrefless shell
-        // has no permalink to protect it, which is the shell's own
-        // proof. This tier is why the exact-label tier above is safe:
-        // everything it refuses as "not the exact row" lands here, and
-        // only the real, tappable row ever carries two exact labels.
+        // The badge-carrying form of the VERY SAME row: prefix-equal
+        // labels ("Notifications, 15+ notifications"), usually hrefless
+        // div-buttons. Round 17 / bug-report-v2 treated this species as
+        // a shell to hide - but on this device the shell and the real
+        // row are ONE species: the v2 "duplicate" was a recycled twin
+        // of the row itself, whose badge text differed just enough to
+        // dodge the text-key dedup. Same shared definition as capture
+        // and the vault (SectionVault.isTabRowMarkup) - those two keep
+        // it out of the CARDS (the actual v2 leak, still fixed); here
+        // it surfaces as navigation, and compose keeps only the first
+        // one (the user's own words: original ta rekho). The permalink
+        // guard stays: a real post carrying two nav-prefixed labels
+        // (audience "Friends", a "Watch more" control) owns a /reel/
+        // and falls to the STOP rule below, exactly as before.
         if (SectionVault.isTabRowMarkup(slice) &&
-            !POST_LINK.containsMatchIn(slice)) return LEAVE
+            !POST_LINK.containsMatchIn(slice)) return MOVE_TAB
         if (POST_LINK.containsMatchIn(slice)) return STOP
         return MOVE
     }
@@ -662,6 +658,13 @@ object PageAssembly {
                     // The first copy moves, later twins stay hidden here.
                     if ((kind == MOVE || kind == MOVE_TAB) &&
                         !chromeSeen.add(chromeKey(slice))) continue
+                    // The tab row is ONE navigation bar: the first row
+                    // that moves is it, and every later row-shaped unit
+                    // stays hidden with the scroller (LEAVE-equivalent).
+                    // Text keyed twins dodge the dedup above whenever a
+                    // badge tick flips - that is the exact "duplicate
+                    // nav row" from bug-report-v2. First copy wins.
+                    if (kind == MOVE_TAB && tabs.isNotEmpty()) continue
                     if (kind == MOVE || kind == MOVE_TAB) {
                         inner += base.substring(cursor, c.start)
                         cursor = c.end

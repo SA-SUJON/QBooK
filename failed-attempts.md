@@ -1203,3 +1203,31 @@ Bug (WiFi-only dead strip on reels/stories) - held, not fixed:
   reel/story swipe?) is a device fact. Guessing it is exactly the
   119-attempt pattern the file comments warn about. Asking the user
   for the one 30-second observation instead of shipping a blind hook.
+
+Round 23: my round-22 was wrong on BOTH bugs, and the device said so.
+- Bug 4 follow-up (still no nav row on v5.2.21, user screenshot): I had
+  assumed from an old fixture that the REAL row always carries EXACT
+  aria-labels with badges as anchor text. False on the user's current
+  captures: the badge counters live INSIDE the labels ("Home, 15+ new"),
+  so the exact-label tier never saw the real row, and both badge forms
+  still LEAVE'd. Worse: on this device the "shell" and the "row" are
+  one species - the v2 "duplicate" was a recycled twin whose badge text
+  differed enough to dodge the text-key dedup. Rule replaced: EVERY
+  row-shaped unit (exact or prefix, with the permalink guard intact for
+  real posts) heads for chrome, and compose keeps only the FIRST row
+  (the user's words: "original ta rekho"); vault/capture still keep all
+  row species out of the cards, so the actual v2 leak stays fixed.
+  Device screenshot logic check: composer+tray visible + row hidden on
+  5.2.21 proves the device row is prefix-labeled AND carries no /reel/
+  permalink (an anchor-/reel/ row would STOP the walk and hide the
+  composer too) - consistent with the hrefless div-button species in
+  his own offline_ui capture fixture.
+- WiFi strip follow-up (strip still on v5.2.21): the shortfall-gated
+  reflow measured nothing, i.e. the strip is PAGE-SIDE staleness, not a
+  short native window. The same fullscreen-exit pair now runs on the
+  reel/story SPA swap with only the URL-family gate; the settle loop
+  self-terminates and only pokes while heights move (the tracer's
+  healing read, on purpose). Home feed: gate never matches there.
+  If the strip still persists after this, the lite renderer's swap does
+  NOT announce via history events on this device, and the next step is
+  a scroll-idle probe - only with fresh device evidence.
