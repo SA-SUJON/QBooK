@@ -1074,3 +1074,48 @@ bridge was never even reached until the fixture matched the real DOM.
 A stale world proving green is the same class of lie as a stale pin.
 
 > Session: 2026-08-08 | Tag: v5.2.18 (128) | Tests: 1181 passed, 0 failed (10 suites) | kotlinc: delta-zero vs e3dcb94
+
+## Round 21 — the settings freeze was a trusted comment, not code
+
+**Reported:** hidden settings screen freezes ("download stall ar settings
+freeze ei duita kaj hoini keno?"). Bug 3 of the uploaded report.
+
+**The wrong belief shipped into the report (and believed earlier):** "the
+counts are already inside `AppExecutors.background.execute` (line 362), so
+threading is fine." Line 362 is the *update-check click*. Nobody had
+checked which executor wraps which call — the claim was one plausible
+sight-line away from a function named `background`, exactly the "lab-perfect
+inputs hiding device conditions" class of error: the code looked threaded
+because the word `background` was nearby.
+
+**What was actually true (proven):** `refreshOfflineSize()` — called at
+open, at resume, and every 2 s from the tick — ran full-store JSON reads +
+per-media `exists()/length()` stats + three recursive directory walks ON
+THE MAIN THREAD. JVM harness with the verbatim vault functions against a
+grown in-range vault (200/50/120): median 12.6 ms on caller per refresh on
+workstation NVMe, 36 ms worst-case while a download wrote into the same
+dirs, JSON parse excluded (lower bound). On the phone: recurring
+multi-frame stalls = "thamia jai".
+
+**Fix:** same expression moved to the pool behind an in-flight CAS guard,
+fragment strings pre-resolved on the caller (a detached-fragment
+`getString` throw inside the pool would have stranded the guard — caught
+in the self-review of my own first draft), result posted with
+`runOnUiThread`.
+
+**Process confession:** first harness draft measured the NEW shape with
+the verification `future.get()` *inside* the timed region — it "proved"
+the fix did nothing. A proof whose verifier sabotages the measurement is
+worse than no proof; the verification step now runs AFTER the timing loop,
+and the harness asserts result-equality separately. Second draft's fixture
+emitted raw quotes into items.json (production stores escaped markup) —
+fixture must be production-shaped or the proof is about a different world.
+
+**Bug 2 (downloads stall) status: deliberately untouched this round.** The
+static audit this time reached bedrock: the download half (enqueue →
+serial-slot pump → pool drain → fetchInto) contains zero references to
+activities, scroll state, or WebViews — provable by grep; the only two
+PRODUCERS of work are the offscreen WebView passes and user scrolling, and
+every offscreen failure mode is silent by design. Which of the two is dead
+on the user's device cannot be decided without the two repro answers
+already asked for. No blind change: the round-17 exact-label lesson.

@@ -194,6 +194,14 @@ class SettingsActivity : AppCompatActivity() {
 
         private var tick: Runnable? = null
 
+        /**
+         * One refresh at a time, process-wide cheap. The 2 s tick must
+         * never queue a second count while the first is still walking the
+         * vaults - see refreshOfflineSize().
+         */
+        private val refreshInFlight =
+            java.util.concurrent.atomic.AtomicBoolean(false)
+
         private fun wire() {
             // ---- about → developer nav ----
             findPreference<Preference>("nav_developer")?.setOnPreferenceClickListener {
@@ -438,45 +446,90 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        /** No-op on every screen except Offline, which is where the row is. */
+        /**
+         * No-op on every screen except Offline, which is where the row is.
+         *
+         * Nothing below the guard may touch the disk on the calling thread.
+         * The count is realPlayableCount(), which loads and parses every
+         * vault's full store and stats every referenced media file; the size
+         * is three recursive directory walks. Until this build all of it ran
+         * on the MAIN thread - once when the screen opened, once on resume,
+         * and then EVERY TWO SECONDS from the tick above. With a grown vault
+         * (hundreds of entries, a thousand-plus media files, worse while a
+         * download phase is writing into those same directories) each pass
+         * costs long enough that the screen visibly hitches, then freezes -
+         * "settings e dhukle thamia jai". The earlier read of this code
+         * mistook the update-check's executor (further up, on a click) for
+         * this path; verified line by line: these calls sat on the caller.
+         */
         private fun refreshOfflineSize() {
             if (findPreference<Preference>("offline_status") == null) return
-            // One line: what is on disk, against the target, and how big it
-            // is. Downloading is shown as it happens, so the user can see it
-            // working rather than having to trust that it is.
-            val p = Prefs(requireContext())
-            val mb = (OfflineCache.sizeBytes() + OfflineFeed.sizeBytes() +
-                OfflineDocs.sizeBytes()) / (1024.0 * 1024.0)
-
+            // Skip rather than stack: one refresh may still be counting a
+            // large vault when the next 2 s tick fires, and the pool's
+            // caller-runs rejection policy would otherwise pull the disk
+            // work back onto the main thread it was moved off.
+            if (!refreshInFlight.compareAndSet(false, true)) return
+            val app = activity
+            val ctx = context?.applicationContext
+            if (app == null || ctx == null) {
+                refreshInFlight.set(false)
+                return
+            }
+            // Everything fragment- or resource-touching is resolved HERE, on
+            // the caller: Fragment.getString() and lastSyncText() throw on a
+            // detached fragment, and a throw inside the pool task would also
+            // strand the in-flight flag. System-service and volatile reads
+            // (network caps, isRunning flags) are cheap and safe here.
+            val p = Prefs(ctx)
+            val pausedText = getString(R.string.offline_paused_metered) + " • "
+            val agoText = lastSyncText(p)
             val working = OfflineSync.isRunning() || OfflineFeed.isPrefetching() || OfflineManager.isPreparingOffline()
 
-            // V4 Step 2: Show preparation status so user knows we are fetching fresh content
             // Say why nothing is happening. Without this, "Wi-Fi only" on a
             // mobile connection looks identical to saving being broken.
-            val paused = NetworkPolicy.blockedByMetered(requireContext(), p)
+            val paused = NetworkPolicy.blockedByMetered(ctx, p)
 
             val prefix = when {
-                paused -> getString(R.string.offline_paused_metered) + " • "
+                paused -> pausedText
                 OfflineManager.isPreparingOffline() -> "Preparing fresh content • "
                 working -> "Syncing • "
                 else -> ""
             }
+            val postTarget = p.offlinePostTarget
+            val reelTarget = p.offlineReelTarget
 
-            // Count only items that will actually play offline (media is
-            // really on disk), not just items whose markup was captured.
-            // totalStored() used to be shown here, so "Reels: 50 of 50"
-            // could be true while most of those 50 still had videos
-            // sitting in the download queue - the number looked complete
-            // when it was not.
-            val rc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_REELS)
-            val fc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_FEED)
-            val sc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_STORIES)
-            val statusLine = "Posts: " + fc + " of " + p.offlinePostTarget +
-                "  •  Reels: " + rc + " of " + p.offlineReelTarget +
-                "  •  Stories: " + sc +
-                "  •  " + "%.0f".format(mb) + " MB  •  " + lastSyncText(p)
-            findPreference<Preference>("offline_status")?.summary =
-                (if (working || OfflineManager.isPreparingOffline()) prefix else "") + statusLine
+            AppExecutors.background.execute {
+                // One line: what is on disk, against the target, and how big
+                // it is. Downloading is shown as it happens, so the user can
+                // see it working rather than having to trust that it is.
+                val mb = (OfflineCache.sizeBytes() + OfflineFeed.sizeBytes() +
+                    OfflineDocs.sizeBytes()) / (1024.0 * 1024.0)
+
+                // Count only items that will actually play offline (media is
+                // really on disk), not just items whose markup was captured.
+                // totalStored() used to be shown here, so "Reels: 50 of 50"
+                // could be true while most of those 50 still had videos
+                // sitting in the download queue - the number looked complete
+                // when it was not.
+                val rc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_REELS)
+                val fc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_FEED)
+                val sc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_STORIES)
+                val statusLine = "Posts: " + fc + " of " + postTarget +
+                    "  •  Reels: " + rc + " of " + reelTarget +
+                    "  •  Stories: " + sc +
+                    "  •  " + "%.0f".format(mb) + " MB  •  " + agoText
+                val finalText =
+                    (if (working || OfflineManager.isPreparingOffline()) prefix else "") + statusLine
+                // Only assembling the text happens off the main thread; a
+                // Preference is a View-tree object, so the write goes back.
+                app.runOnUiThread {
+                    refreshInFlight.set(false)
+                    if (isAdded) {
+                        findPreference<Preference>("offline_status")?.summary =
+                            finalText
+                    }
+                }
+            }
         }
 
         /**

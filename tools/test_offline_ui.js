@@ -346,9 +346,14 @@ console.log('\nThe settings screen is the six things asked for');
   const settings = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
   ok('reels are counted against the target',
      /offlineReelTarget/.test(settings));
+  // Round-18 rule: bind the behaviour (the Posts row is fed by
+  // offlinePostTarget), not one spelling of it - the threading fix hoists
+  // the read into a local so a background thread never touches Prefs.
   ok('posts are counted against their own target now',
      /offlinePostTarget/.test(settings) &&
-     /Posts: " \+ fc \+ " of " \+ p\.offlinePostTarget/.test(settings));
+     (/Posts: " \+ fc \+ " of " \+ p\.offlinePostTarget/.test(settings) ||
+      (/val postTarget = p\.offlinePostTarget/.test(settings) &&
+       /Posts: " \+ fc \+ " of " \+ postTarget/.test(settings))));
   ok('posts and stories are counted too',
      /SECTION_FEED/.test(settings) && /SECTION_STORIES/.test(settings));
 }
