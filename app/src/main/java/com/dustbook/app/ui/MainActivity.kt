@@ -2032,14 +2032,14 @@ class MainActivity : AppCompatActivity() {
             url.contains("/story/")
     }
 
-    private fun recoverWindowSizeIfStale() {
+    private fun recoverWindowSizeIfStale(): Boolean {
         val root = binding.root
-        val insets = ViewCompat.getRootWindowInsets(root) ?: return
+        val insets = ViewCompat.getRootWindowInsets(root) ?: return false
         // A visible keyboard is a legitimate reason to be short.
-        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return
+        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return false
 
         val windowH = root.height
-        if (windowH <= 0) return
+        if (windowH <= 0) return false
 
         val screenH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             windowManager.maximumWindowMetrics.bounds.height()
@@ -2055,7 +2055,9 @@ class MainActivity : AppCompatActivity() {
         if (short > 24 && short < screenH / 2) {
             ViewCompat.requestApplyInsets(root)
             root.requestLayout()
+            return true
         }
+        return false
     }
 
     private fun enterImmersive(on: Boolean) {
