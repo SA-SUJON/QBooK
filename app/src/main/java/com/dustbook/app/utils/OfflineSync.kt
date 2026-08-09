@@ -59,6 +59,17 @@ object OfflineSync {
     @Volatile var lastRunBlockReason: String = "not called yet"
         private set
 
+    private fun stampedRunNote(msg: String): String {
+        val stamp = java.text.SimpleDateFormat(
+            "HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        return "$stamp $msg"
+    }
+
+    /** Records the reason and returns Unit, so it can sit in `return noteRun(...)`. */
+    private fun noteRun(msg: String) {
+        lastRunBlockReason = stampedRunNote(msg)
+    }
+
     fun isRunning(): Boolean = running
 
     /**
@@ -160,33 +171,20 @@ object OfflineSync {
         exactTotal: Int? = null,
         onDone: (Int) -> Unit = {}
     ) {
-        val stamp = java.text.SimpleDateFormat(
-            "HH:mm:ss", java.util.Locale.US).format(java.util.Date())
-        if (target <= 0) {
-            lastRunBlockReason = "$stamp target <= 0 ($target)"
-            return
-        }
-        if (!canRun(force)) {
-            lastRunBlockReason = "$stamp canRun() == false " +
-                "(running=$running, force=$force, " +
-                "msSinceLastRun=${System.currentTimeMillis() - lastRun})"
-            return
-        }
-        if (!UrlHelper.isLoggedIn()) {
-            lastRunBlockReason = "$stamp isLoggedIn() == false"
-            return
-        }
+        if (target <= 0) return noteRun("target <= 0 ($target)")
+        if (!canRun(force)) return noteRun(
+            "canRun() == false (running=$running, force=$force, " +
+                "msSinceLastRun=${System.currentTimeMillis() - lastRun})")
+        if (!UrlHelper.isLoggedIn()) return noteRun("isLoggedIn() == false")
         // The offscreen WebView loads real Facebook pages, so this costs data
         // even before any media is fetched.
         val p = Prefs(context)
-        if (!NetworkPolicy.canDownload(context, p)) {
-            lastRunBlockReason = "$stamp canDownload() == false " +
+        if (!NetworkPolicy.canDownload(context, p)) return noteRun(
+            "canDownload() == false " +
                 "(wifiOnly=${p.offlineWifiOnly}, " +
                 "connected=${NetworkPolicy.isConnected(context)}, " +
-                "unmetered=${NetworkPolicy.isUnmetered(context)})"
-            return
-        }
-        lastRunBlockReason = "$stamp passed all gates, section=$section"
+                "unmetered=${NetworkPolicy.isUnmetered(context)})")
+        lastRunBlockReason = stampedRunNote("passed all gates, section=$section")
 
         running = true
         lastRun = System.currentTimeMillis()
