@@ -112,15 +112,31 @@ object VideoHelper {
               if (t.closest('a,button,[role="button"],input,textarea,select'))
                 return;
               var card = t.closest ? t.closest('#__db_cards>*') : null;
-              var v = card && card.querySelector ? card.querySelector('video') : null;
-              if (!v) v = t.closest('video');
-              if (!v) return;
+              var vs = card && card.querySelectorAll ?
+                card.querySelectorAll('video') : null;
+              if ((!vs || !vs.length) && t.closest) {
+                var vv = t.closest('video');
+                if (vv) vs = [vv];
+              }
+              if (!vs || !vs.length) return;
               e.preventDefault();
-              if (v.paused) {
-                var p = v.play();
-                if (p && p.catch) p.catch(function() {});
+              // A pause must reach EVERY player the card carries, not
+              // just the first. Every captured species so far holds
+              // exactly one video per card, where this is byte-for-byte
+              // the old behavior; should a card ever hold two, pausing
+              // the first alone would leave the second one's audio
+              // running - audible forever, picture frozen.
+              var anyPlaying = false;
+              for (var i = 0; i < vs.length; i++) {
+                if (!vs[i].paused) { anyPlaying = true; break; }
+              }
+              if (anyPlaying) {
+                for (var j = 0; j < vs.length; j++) {
+                  try { vs[j].pause(); } catch (e2) {}
+                }
               } else {
-                v.pause();
+                var p = vs[0].play();
+                if (p && p.catch) p.catch(function() {});
               }
             } catch (err) {}
           }, true);

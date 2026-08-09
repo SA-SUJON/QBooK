@@ -937,9 +937,29 @@ object PageAssembly {
             function cancelAnim() {
               if (raf) { cancelAnimationFrame(raf); raf = 0; }
             }
+            // A commit is also the moment sound dies everywhere else.
+            // Online, leaving a reel pauses it. Offline the pager used
+            // to change scrollTop and nothing else, and the solo-sound
+            // rule only wakes on a 'play' event - so a swipe to a
+            // still reel left the LAST one sounding forever, with its
+            // picture off-screen: the "pause korle audio choltei
+            // thake" report. No timing, no delay: silence everything
+            // that is not inside the committed card, once, at commit.
+            function pauseOthers(exceptCard) {
+              try {
+                var vs = document.querySelectorAll('video');
+                for (var j = 0; j < vs.length; j++) {
+                  var vj = vs[j];
+                  if (exceptCard && exceptCard.contains &&
+                      exceptCard.contains(vj)) continue;
+                  if (!vj.paused) { try { vj.pause(); } catch (e) {} }
+                }
+              } catch (e) {}
+            }
             function commitTo(i) {
               var t = targetTop(i); if (t == null) return;
               var box = scroller(); if (!box) return;
+              pauseOthers(reelCards()[i] || null);
               cancelAnim();
               var from = box.scrollTop, d = t - from;
               if (Math.abs(d) < 2) { box.scrollTop = t; return; }

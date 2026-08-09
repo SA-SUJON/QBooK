@@ -395,7 +395,7 @@ console.log('\nVideo sound');
   ok('a tap bridge exists and toggles the card\u2019s own video',
      /addEventListener\('click',/.test(vh) &&
      /t\.closest\('#__db_cards>\*'\)/.test(vh) &&
-     /v\.play\(\)/.test(vh) && /v\.pause\(\)/.test(vh));
+     /vs\[0\]\.play\(\)/.test(vh) && /vs\[j\]\.pause\(\)/.test(vh));
   ok('real links, buttons and form fields keep their own jobs',
      /t\.closest\('a,button,\[role="button"\],input,textarea,select'\)/
        .test(vh));
@@ -3063,6 +3063,91 @@ console.log('\nOne gesture, one reel - the pager, proven on the verbatim script'
     ok('and tapping it again plays, exactly the online toggle',
        log.join(',') === 'pause,play' && pausedNow === false,
        log.join(','));
+  }
+  // 13. swipe-commit silences the reel just left (parked leak, v5.2.23):
+  //     the pager only changed scrollTop before, and the solo-sound
+  //     rule wakes only on 'play' - a swipe to a still reel left the
+  //     last one sounding off-screen forever ("audio choltei thake").
+  {
+    const P = pagerWorld('reels', 3);
+    const mkVideo = (card, id, log) => {
+      const v = P.w.document.createElement('video');
+      let paused = true;
+      Object.defineProperty(v, 'paused', { get: () => paused });
+      v.play = () => { paused = false; log.push(id + ':play');
+        return { catch() {} }; };
+      v.pause = () => { paused = true; log.push(id + ':pause'); };
+      card.appendChild(v);
+      return { isPaused: () => paused };
+    };
+    const cards = P.w.document.querySelectorAll('.rc');
+    const log = [];
+    const v0 = mkVideo(cards[0], 'v0', log);
+    mkVideo(cards[1], 'v1', log);
+    v0; // reel 0 is the one sounding
+    cards[0].querySelector('video').play(); log.length = 0;
+    P.ev('touchstart', 100, 500);
+    P.ev('touchmove', 100, 493, 12);   // locks the drag here
+    P.ev('touchend', 100, 488, 12);    // quick flick -> commits reel 1
+    P.pump();
+    ok('swiping to the next reel pauses the one just left',
+       log.join(',') === 'v0:pause' &&
+       cards[0].querySelector('video').paused, log.join(','));
+    // and a tap-rescue commit at the same card never touches its own
+    P.w.eval('');
+    const P2 = pagerWorld('reels', 3);
+    const c2 = P2.w.document.querySelectorAll('.rc');
+    const log2 = [];
+    let p2paused = false;
+    const v2 = P2.w.document.createElement('video');
+    Object.defineProperty(v2, 'paused', { get: () => p2paused });
+    v2.play = () => { p2paused = false; log2.push('play');
+      return { catch() {} }; };
+    v2.pause = () => { p2paused = true; log2.push('pause'); };
+    c2[0].appendChild(v2);
+    const vhSrc = fs.readFileSync(KT('utils/VideoHelper.kt'), 'utf8');
+    const vi = vhSrc.indexOf('fun getOfflineVideoAssistScript');
+    const vs = vhSrc.indexOf('"""', vi) + 3;
+    P2.w.eval(vhSrc.slice(vs, vhSrc.indexOf('"""', vs)));
+    v2.play(); log2.length = 0;      // reel sounding, tap to pause
+    P2.ev('touchstart', 100, 500);
+    P2.ev('touchmove', 100, 490, 200);
+    P2.ev('touchend', 100, 490, 200);
+    P2.pump();
+    ok('the tap-rescue path pauses through the bridge alone, once',
+       log2.join(',') === 'pause', log2.join(','));
+  }
+  // 14. multi-player card safety: a card carrying two players pauses
+  //     BOTH; on one-player cards the toggle is byte-identical to before
+  {
+    const P = pagerWorld('reels', 3);
+    const card = P.w.document.querySelector('.rc');
+    const mkV = (id, log) => {
+      const v = P.w.document.createElement('video');
+      let paused = true;
+      Object.defineProperty(v, 'paused', { get: () => paused });
+      v.play = () => { paused = false; log.push(id + ':play');
+        return { catch() {} }; };
+      v.pause = () => { paused = true; log.push(id + ':pause'); };
+      card.appendChild(v);
+    };
+    const log = [];
+    mkV('a', log); mkV('b', log);
+    const vhSrc = fs.readFileSync(KT('utils/VideoHelper.kt'), 'utf8');
+    const vi = vhSrc.indexOf('fun getOfflineVideoAssistScript');
+    const vs = vhSrc.indexOf('"""', vi) + 3;
+    P.w.eval(vhSrc.slice(vs, vhSrc.indexOf('"""', vs)));
+    // both sounding (whatever species this card is), tap once
+    card.querySelectorAll('video').forEach((v) => v.play());
+    log.length = 0;
+    card.dispatchEvent(new P.w.MouseEvent('click',
+      { bubbles: true, cancelable: true }));
+    ok('one tap pauses every player the card carries',
+       log.join(',') === 'a:pause,b:pause', log.join(','));
+    card.dispatchEvent(new P.w.MouseEvent('click',
+      { bubbles: true, cancelable: true }));
+    ok('and the resume plays one source, never two sounds',
+       log.join(',') === 'a:pause,b:pause,a:play', log.join(','));
   }
 }
 

@@ -1231,3 +1231,25 @@ Round 23: my round-22 was wrong on BOTH bugs, and the device said so.
   If the strip still persists after this, the lite renderer's swap does
   NOT announce via history events on this device, and the next step is
   a scroll-idle probe - only with fresh device evidence.
+
+Round 24 (user, post-5.2.22): pause-audio + the strip, act on evidence.
+- "pause korle audio choltei thake": the pager's commitTo changed only
+  scrollTop; nothing ever paused the departed reel (the solo-sound rule
+  wakes only on a 'play' event). Offline the next reel is a still until
+  tapped, so a swipe leaves the last reel sounding off-screen forever.
+  commitTo now silences every player outside the committed card, once,
+  at commit time - no timer, no gesture path change. The tap toggle
+  learned its sibling: pause ALL players a card carries (byte-identical
+  on every captured one-video species; covers a multi-player card if
+  one ever ships). Both proven in the pager harness: swipe = departed
+  reel paused, tap-rescue commit never double-pauses, two-player card
+  = one tap two pauses, resume = one sound. Still open until the user
+  confirms: if the audible source was the SAME reel (not the departed
+  one), the next lever is inside the card itself; their one-line answer
+  ("sei reel er audio, na ager reel er?") decides.
+- The strip: intentionally untouched this round. Online (WiFi reels)
+  survived the 5.2.22 family-gated reflow, and the user's own question
+  proves the offline pages need their own explanation - different
+  mechanism candidates (composed-page layout vs renderer height), and
+  no fixture showed it. No blind change; asked exactly which offline
+  screen shows it.
