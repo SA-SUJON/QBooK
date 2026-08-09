@@ -1688,15 +1688,27 @@ console.log('\nBackground audio is for Reels, and only when audible');
        /fun isReelOrStoryUrl[\s\S]{0,300}contains\("\/reel"\)[\s\S]{0,300}contains\("\/stories\/"\)[\s\S]{0,120}contains\("\/story\/"\)/.test(ma2) &&
        !/isReelOrStoryUrl[\s\S]{0,400}(home|feed)/.test(ma2));
     ok('the window check kept its own internal health gate',
-       /private fun recoverWindowSizeIfStale\(\) \{/.test(ma2) &&
-       /if \(short > 24 && short < screenH \/ 2\)/.test(ma2) &&
-       !/recoverWindowSizeIfStale\(\): Boolean/.test(ma2));
+       /private fun recoverWindowSizeIfStale\(\)/.test(ma2) &&
+       /if \(short > 24 && short < screenH \/ 2\)/.test(ma2));
+    // Round 24: offline reel/story swipes never change the URL, so
+    // doUpdateVisitedHistory never fires for them either - the SPA hook
+    // above only ever covers the ONLINE Wi-Fi case. The offline case is
+    // fixed at reportPosition instead (already-reliable, fires every
+    // swipe), which needed the function to report back whether it acted,
+    // so forcePageRelayout only runs when a real shortfall was measured -
+    // hence the Boolean return this round adds.
+    ok('offline swipes are covered at reportPosition, since the URL never changes there',
+       /fun reportPosition\(type: String, id: String\)[\s\S]{0,800}if \(type == "reel" \|\| type == "stories" \|\| type == "story"\) \{\s*\n\s*runOnUiThread \{\s*\n\s*if \(recoverWindowSizeIfStale\(\)\) \{\s*\n\s*forcePageRelayout\(binding\.webView\)/.test(ma2));
+    ok('recoverWindowSizeIfStale reports back whether it acted, so callers can gate on it',
+       /private fun recoverWindowSizeIfStale\(\): Boolean/.test(ma2) &&
+       /return true\s*\n\s*\}\s*\n\s*return false/.test(ma2));
     // Literal `recoverWindowSizeIfStale()` occurrences: 4 lifecycle call
     // sites + 1 doc comment + 1 definition on the shipped build (6);
-    // the fix adds exactly one call - the one at the SPA swap (7).
-    ok('the four lifecycle call sites are all still there, plus the one new',
+    // the SPA-swap call from round 23 (7); round 24 adds one more at
+    // reportPosition for the offline case (8).
+    ok('the four lifecycle call sites are all still there, plus the two new',
        (maOld.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 6 &&
-       (ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 7,
+       (ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 8,
        String((ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length));
     // Bound: the settle loop still self-terminates and still dispatches
     // resize only while the measured height is moving (tracer on purpose).
