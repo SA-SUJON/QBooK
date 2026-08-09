@@ -112,7 +112,12 @@ object VideoHelper {
           // touch on those cards at all (17:12: "ekhon to pause o hoi
           // na offline er video te"; overnight: "just 1st ta pause
           // hoto" - the first reel was the species WITHOUT this role).
-          // A button is only a control when it holds no player.
+          // A button is only a control when it holds no player. A third
+          // species puts role="button" directly ON the <video> tag
+          // itself instead of a wrapper: querySelector('video') never
+          // matches self, so rb looked like it held no player and every
+          // tap on that species was swallowed too - silently on reels,
+          // intermittently on home (posts mix both species).
           document.addEventListener('click', function(e) {
             try {
               if (document.getElementById('__db_story_overlay')) return;
@@ -120,7 +125,8 @@ object VideoHelper {
               if (!t || !t.closest) return;
               if (t.closest('a,button,input,textarea,select')) return;
               var rb = t.closest('[role="button"]');
-              if (rb && !(rb.querySelector && rb.querySelector('video'))) {
+              if (rb && rb.tagName !== 'VIDEO' &&
+                  !(rb.querySelector && rb.querySelector('video'))) {
                 return;
               }
               var card = t.closest ? t.closest('#__db_cards>*') : null;

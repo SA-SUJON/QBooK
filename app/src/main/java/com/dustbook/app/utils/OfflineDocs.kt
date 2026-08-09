@@ -205,6 +205,24 @@ object OfflineDocs {
         built.clear()
     }
 
+    /**
+     * Same, but scoped to the screens fed by one section. A view-mark on a
+     * single reel used to clear every screen's cache — home included — so
+     * scrolling reels alone made the next back-to-home rebuild from
+     * scratch every time. Only the screens that actually draw from
+     * [section] need to rebuild.
+     */
+    fun invalidate(section: String) {
+        val screens = when (section) {
+            OfflineFeed.SECTION_REELS -> listOf("reels", "watch")
+            OfflineFeed.SECTION_STORIES -> listOf("stories")
+            OfflineFeed.SECTION_FEED -> listOf("home")
+            else -> null
+        }
+        if (screens == null) { built.clear(); return }
+        screens.forEach { built.remove(it) }
+    }
+
     fun serve(request: WebResourceRequest): WebResourceResponse? {
         if (!enabled) return null
         if (!request.isForMainFrame) return null
