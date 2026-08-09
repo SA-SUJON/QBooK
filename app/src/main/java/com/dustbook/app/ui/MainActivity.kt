@@ -2431,8 +2431,9 @@ class MainActivity : AppCompatActivity() {
             // swipe settles, so it doubles as that missing signal.
             if (type == "reel" || type == "stories" || type == "story") {
                 runOnUiThread {
-                    recoverWindowSizeIfStale()
-                    forcePageRelayout(binding.webView)
+                    if (recoverWindowSizeIfStale()) {
+                        forcePageRelayout(binding.webView)
+                    }
                 }
             }
         }
