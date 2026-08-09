@@ -4165,6 +4165,179 @@ console.log('\nRound 25 - online order offline, every reel claims the frame, the
      vhSrc25.indexOf("t.closest('a,button,[role=\"button\"]") === -1);
 }
 
+// ======================================================================
+// Round 26 - the tap dead-zone (device verdict: "tap e kichu-i hoy na").
+//
+// His tap-to-pause produced NOTHING on device, while every lab tap
+// passed. The mechanism, verbatim in the pager's touchend: the moment
+// the 7px drag lock engages, the browser's native click is
+// preventDefault'ed - and the rescue that re-delivers it fired ONLY
+// when `peak <= 16`. A budget touch panel emits 5-15px of jitter on a
+// "still" press, so on his phone nearly every real tap became a
+// "drag", and any tap whose furthest wander crossed 16px lost its
+// click FOREVER: no commit, no click, no response - exactly his words.
+// The first reel paused for him on steady days (jitter staying under
+// 16); the rest never did. Clean 3px lab taps could never see this.
+//
+// The distinguisher a tap actually owns is where the finger ENDED, not
+// how far it trembled mid-press: rescue when the release point is
+// still within the slop of the touchstart point, and cap mid-gesture
+// travel at CANCEL_TRAVEL so a deliberate drag that returns to its
+// origin never becomes a fake tap (the round-13/16 lesson he taught:
+// no artificial gesture outcomes).
+console.log('\nRound 26 - a trembling tap is still a tap (the dead-zone)');
+{
+  const cp26 = require('child_process');
+  const tplOf26 = (src) => src.slice(src.indexOf('val main = """') + 14,
+    src.indexOf('""".trimIndent()', src.indexOf('val main = """')));
+  const tplNew26 = tplOf26(
+    fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8'));
+  // Old side pinned at 8ab929a (v5.2.24) - immutable, never HEAD.
+  const tplOld26 = tplOf26(cp26.execSync(
+    'git show 8ab929a:app/src/main/java/com/dustbook/app/offline/' +
+    'PageAssembly.kt', { cwd: ROOT }).toString());
+
+  function world26(tpl) {
+    let html = '<style id="__db_reels_snap">' +
+      'html,body{scroll-snap-type:y mandatory!important}' +
+      '#__db_cards>*{scroll-snap-align:start!important;' +
+      'scroll-snap-margin-top:128px!important}</style>' +
+      '<div data-type="vscroller"><div id="__db_cards" data-db-cards>' +
+      '<div class="rc" data-video-id="r0"><video></video></div>' +
+      '<div class="rc" data-video-id="r1"></div>' +
+      '<div class="rc" data-video-id="r2"></div>' +
+      '<div id="__db_snap_t" style="height:0"></div></div></div>';
+    const dom = new JSDOM(html, { url: 'https://m.facebook.com/',
+      runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    let now = 1000; const rafQ = [];
+    w.Date.now = () => now;
+    w.requestAnimationFrame = (cb) => { rafQ.push(cb); return rafQ.length; };
+    w.cancelAnimationFrame = (id) => { if (rafQ[id - 1]) rafQ[id - 1] = null; };
+    const box = w.document.querySelector('[data-type="vscroller"]');
+    Object.defineProperty(box, 'clientHeight', { value: 1000 });
+    Object.defineProperty(box, 'scrollHeight', { value: 3000 });
+    w.document.querySelectorAll('.rc').forEach((c, i) => {
+      c.getBoundingClientRect = () => ({
+        top: i * 1000 - box.scrollTop,
+        bottom: (i + 1) * 1000 - box.scrollTop,
+        left: 0, right: 300, width: 300, height: 1000 });
+    });
+    w.FBPro = { reportPosition: () => {} };
+    w.eval(tpl.split('__SEC__').join('reels'));
+    // the tap bridge, verbatim, on top of the same world
+    const vhSrc = fs.readFileSync(KT('utils/VideoHelper.kt'), 'utf8');
+    const vi = vhSrc.indexOf('fun getOfflineVideoAssistScript');
+    const vs = vhSrc.indexOf('"""', vi) + 3;
+    w.eval(vhSrc.slice(vs, vhSrc.indexOf('"""', vs)));
+    const v = w.document.querySelector('video');
+    const log = [];
+    let paused = false;
+    Object.defineProperty(v, 'paused', { get: () => paused });
+    v.play = () => { paused = false; log.push('play');
+      return { catch() {} }; };
+    v.pause = () => { paused = true; log.push('pause'); };
+    paused = false;                 // the reel is PLAYING on screen
+    function ev(type, x, y, dt) {
+      if (dt) now += dt;
+      const e = new w.Event(type, { bubbles: true, cancelable: true });
+      e.touches = type === 'touchend' ? [] : [{ clientX: x, clientY: y }];
+      e.changedTouches = type === 'touchend'
+        ? [{ clientX: x, clientY: y }] : [];
+      w.document.querySelector('.rc').dispatchEvent(e);
+      return e;
+    }
+    function pump() {
+      let g = 0;
+      while (rafQ.length && g++ < 400) {
+        now += 20;
+        const batch = rafQ.splice(0, rafQ.length);
+        for (const cb of batch) if (cb) cb();
+      }
+    }
+    return { w, box, ev, pump, log, v };
+  }
+
+  // THE DEAD ZONE, as the panel produces it: a pressed finger that
+  // wanders 30px mid-tap but is released 4px from where it landed.
+  {
+    const P = world26(tplOld26);
+    P.ev('touchstart', 100, 600);
+    P.ev('touchmove', 100, 585, 200);   // 7px lock engages here, peak 15
+    P.ev('touchmove', 100, 570, 200);   // trembles out to 30, peak 30
+    P.ev('touchmove', 100, 605, 200);   // and settles back
+    P.ev('touchend', 100, 604, 80);     // released near the start point
+    P.pump();
+    ok('v5.2.24 dead-zone: the 30px-tremor tap dies with zero response',
+       P.log.join(',') === '' && P.box.scrollTop === 0,
+       P.log.join(',') + ' @' + P.box.scrollTop);
+  }
+  {
+    const P = world26(tplNew26);
+    P.ev('touchstart', 100, 600);
+    P.ev('touchmove', 100, 585, 200);
+    P.ev('touchmove', 100, 570, 200);
+    P.ev('touchmove', 100, 605, 200);
+    P.ev('touchend', 100, 604, 80);
+    P.pump();
+    ok('the ended-where-it-began tremor is a tap again: the reel pauses',
+       P.log.join(',') === 'pause', P.log.join(','));
+  }
+  {
+    // A decisive little drag is NOT a tap: released 60px from origin.
+    const P = world26(tplNew26);
+    P.ev('touchstart', 100, 600);
+    P.ev('touchmove', 100, 555, 200);
+    P.ev('touchend', 100, 540, 200);
+    P.pump();
+    ok('released far from the start: no fake click, card snaps home',
+       P.log.join(',') === '' && P.box.scrollTop === 0,
+       P.log.join(',') + ' @' + P.box.scrollTop);
+  }
+  {
+    // A deliberate cancel-drag is NOT a tap either: out 120px and back,
+    // past the cancel band, released on the very spot it began.
+    const P = world26(tplNew26);
+    P.ev('touchstart', 100, 600);
+    P.ev('touchmove', 100, 500, 100);
+    P.ev('touchmove', 100, 480, 100);   // out 120
+    P.ev('touchmove', 100, 596, 100);   // back home
+    P.ev('touchend', 100, 598, 40);     // released at the origin point
+    P.pump();
+    ok('a drag that returns to its origin never becomes a click',
+       P.log.join(',') === '' && P.box.scrollTop === 0,
+       P.log.join(',') + ' @' + P.box.scrollTop);
+  }
+  {
+    // Parity: the quiet 10px wobble from round 20 still rescues once.
+    const P = world26(tplNew26);
+    P.ev('touchstart', 100, 600);
+    P.ev('touchmove', 100, 593, 200);
+    P.ev('touchend', 100, 592, 200);
+    P.pump();
+    ok('the round-20 wobble still pauses exactly once',
+       P.log.join(',') === 'pause', P.log.join(','));
+  }
+  {
+    // And a true fling-commit never manufactures a tap on arrival:
+    // the pause below is the commit's own departed-reel silence
+    // (v5.2.23), never a bridge toggle - there is no 'play' after it.
+    const P = world26(tplNew26);
+    P.ev('touchstart', 100, 600);
+    P.ev('touchmove', 100, 300, 12);
+    P.ev('touchend', 100, 140, 12);
+    P.pump();
+    ok('a fling commits and silences the departed reel, not a tap',
+       P.log.join(',') === 'pause' && P.box.scrollTop === 1000 - 128,
+       P.log.join(',') + ' @' + P.box.scrollTop);
+  }
+  const asmSrc26 = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
+  ok('the rescue keys on the RELEASE point, not mid-tap tremor (pin)',
+     /CANCEL_TRAVEL/.test(asmSrc26) &&
+     /endNear/.test(asmSrc26) &&
+     !/intent === startIdx && peak <= TAP_SLOP/.test(asmSrc26));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 
 process.exit(fail ? 1 : 0);

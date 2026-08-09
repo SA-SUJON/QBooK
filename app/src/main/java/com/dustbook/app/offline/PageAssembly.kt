@@ -920,6 +920,22 @@ object PageAssembly {
             var FLING_V = 0.45;   // px/ms finger speed that always commits
             var TAP_SLOP = 16;    // a tapped finger still wobbles this much
                                 // (the round-20 "pause hoina" lesson)
+            var CANCEL_TRAVEL = 40;
+                    // The dead-zone lesson (round 26, device verdict
+                    // "tap e kichu-i hoy na"): the rescue used to ask
+                    // that the finger's FURTHEST mid-tap wander stay
+                    // inside TAP_SLOP - but a budget touch panel emits
+                    // 5-15px of jitter on every "still" press, so on
+                    // the user's phone nearly every real tap locked
+                    // into a "drag", the browser's click was already
+                    // preventDefault'ed, and any tremor past 16px lost
+                    // its click forever: no commit, no click, nothing.
+                    // What separates a tap from a drag is where the
+                    // finger ENDED, not how far it trembled mid-press:
+                    // end-point within slop of the start = tap. Travel
+                    // is still capped here so a deliberate drag that
+                    // comes back home never becomes a fake tap (the
+                    // round-13/16 rejected-correction lesson).
 
             var active = false, locked = false;
             var tapX0 = 0, tapY0 = 0; // anchored at touchstart, never moved
@@ -1113,19 +1129,28 @@ object PageAssembly {
               if (intent < 0) intent = 0;
               if (intent > list.length - 1) intent = list.length - 1;
 
-              if (intent === startIdx && peak <= TAP_SLOP) {
-                // The gesture stayed inside tap slop: it was never a
-                // scroll, it was a tap with a shaking finger. But the
-                // moment the lock engaged, the move's preventDefault
-                // silently cancelled the browser's synthetic click - so
-                // a tap on a playing reel paused NOTHING on device
-                // (round 20: "offline reels pause kora jai na"), while
-                // a 3px lab tap kept passing the test. Every real pager
-                // treats a sub-slop touch as a tap, so we do it here by
+              var endNear = false;
+              try {
+                var cte = ev.changedTouches && ev.changedTouches[0];
+                if (cte) {
+                  endNear = Math.max(Math.abs(cte.clientX - tapX0),
+                                     Math.abs(cte.clientY - tapY0)) <= TAP_SLOP;
+                }
+              } catch (e) {}
+              if (intent === startIdx && endNear && peak <= CANCEL_TRAVEL) {
+                // The gesture never committed, the finger ended where
+                // it began, and it never travelled far in between: it
+                // was never a scroll, it was a tap with a shaking or
+                // jittery finger. But the moment the lock engaged, the
+                // move's preventDefault silently cancelled the browser's
+                // synthetic click - so taps on this panel died unseen
+                // (round 20 lab taps were clean; round 26 measured the
+                // dead-zone with a 30px tremor). Every real pager
+                // treats such a touch as a tap, so we deliver it by
                 // hand: the card drifts home through the normal commit,
-                // and the click the browser swallowed is delivered to
-                // whatever was under the finger (the tap bridge then
-                // pauses the video; links and buttons keep their jobs).
+                // and the click the browser swallowed goes to whatever
+                // was under the finger (the tap bridge then pauses the
+                // video; links and buttons keep their jobs).
                 commitTo(startIdx);
                 try {
                   var ct = ev.changedTouches && ev.changedTouches[0];

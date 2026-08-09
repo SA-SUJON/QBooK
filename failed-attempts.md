@@ -1296,3 +1296,38 @@ three verbatim proofs, no guesses.
   The offline fullscreen question is answered by the peek fix above;
   the WiFi (live renderer) variant still lacks proof of WHAT stops
   firing. No blind change stands.
+
+Round 26 (user, 22:07): tap dead-zone proven; two verdicts declared.
+- "Offline reels ekhono pause hoi na" + "tap e kichu-i hoy na" (his
+  answers: gesture = tap, symptom = NOTHING happens at all). Round 25's
+  role=button guard fix was real but not his blockade. The hole, proven
+  on the verbatim pager: once the 7px drag lock engages, the browser's
+  native click is preventDefault'ed, and the rescue re-delivered it
+  ONLY when the finger's FURTHEST mid-tap wander peaked under 16px. A
+  budget touch panel jitters 5-15px on every "still" press, so on his
+  phone most real taps lock into "drags", and any tremor past 16px
+  loses its click forever: no commit, no click, no response - his
+  exact words. Clean lab taps could never see it (round-20 lesson,
+  repeated). jsdom proof: a 30px-tremor tap ending 4px from origin =
+  zero response on the 8ab929a template, a pause on the fixed one.
+  The rescue now keys on the RELEASE point (end where it began AND
+  travel capped at CANCEL_TRAVEL=40): tremor taps live again, a
+  deliberate drag home is never a fake click, released-far is never a
+  click, the round-20 wobble parity and the fling-silence are pinned.
+- "Mobile data te download hocchei na" = BY DESIGN, not a bug: the
+  app's own "Download over" setting (offline_network) defaults to
+  "Wi-Fi only" (NetworkPolicy.canDownload), and the settings status
+  line says "Saving paused - waiting for Wi-Fi" when metered-blocked.
+  A full pass is hundreds of MB; the gate is deliberate. Flipping it
+  is the user's choice, not ours to make silently.
+- The duplicate wordmark block in his 22:07 offline home (with posts
+  below it): a recycled header twin moved into chrome - the dedup
+  (chromeKey) and first-row cap are byte-identical since v5.2.22, so
+  v5.2.24 did not add it; the 22:07 capture is provably a mid-load
+  one (skeleton tray). NO FIX SHIPPED: there is no real
+  wordmark-header-as-scroller-child fixture anywhere in the repo, so
+  any header-twin cap would be a fixture assumption (the banned
+  round-17 sin). Honest guidance given: the stored doc is replaced on
+  the next fully-loaded home capture (sendPage re-fires per page
+  load); if a full-load home visit does not clear it, the next step
+  needs the real captured markup, and only then a cap gets defined.
