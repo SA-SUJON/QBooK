@@ -29,6 +29,13 @@
             android:summary="@string/dev_dump_dom_sum"
             app:iconSpaceReserved="false" />
 
+        <!-- TEMPORARY diagnostic for the offline-download-never-starts bug.
+             Remove this entry once the bug is confirmed fixed. -->
+        <Preference android:key="sync_diagnostics"
+            android:title="Sync diagnostics"
+            android:summary="Why the last offline download did or did not start"
+            app:iconSpaceReserved="false" />
+
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/dev_cat_howto"
