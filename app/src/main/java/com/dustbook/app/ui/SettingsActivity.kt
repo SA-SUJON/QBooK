@@ -215,6 +215,14 @@ class SettingsActivity : AppCompatActivity() {
                 true
             }
 
+            // TEMPORARY diagnostic for the offline-download-never-starts
+            // bug. Remove this listener together with the preference entry
+            // once the bug is confirmed fixed.
+            findPreference<Preference>("sync_diagnostics")?.setOnPreferenceClickListener {
+                showSyncDiagnosticsDialog()
+                true
+            }
+
             // ---- blocking ----
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_AD_BLOCK)
                 ?.setOnPreferenceChangeListener { _, v ->
@@ -596,6 +604,34 @@ class SettingsActivity : AppCompatActivity() {
 
         private fun toast(m: String) =
             Toast.makeText(requireContext(), m, Toast.LENGTH_SHORT).show()
+
+        /**
+         * TEMPORARY diagnostic for the offline-download-never-starts bug.
+         * Shows why the last BackgroundSyncManager.start() / OfflineSync.run()
+         * call did or did not proceed, with a Copy button so the text can be
+         * pasted elsewhere without adb. Remove together with the
+         * "sync_diagnostics" preference and its click listener once the bug
+         * is confirmed fixed.
+         */
+        private fun showSyncDiagnosticsDialog() {
+            val ctx = requireContext()
+            val msg = "Pipeline (BackgroundSyncManager.start):\n" +
+                com.dustbook.app.utils.BackgroundSyncManager.lastBlockReason +
+                "\n\nWorker (OfflineSync.run):\n" +
+                com.dustbook.app.utils.OfflineSync.lastRunBlockReason
+            AlertDialog.Builder(ctx)
+                .setTitle("Sync diagnostics")
+                .setMessage(msg)
+                .setPositiveButton("Copy") { _, _ ->
+                    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText("Sync diagnostics", msg))
+                    toast("Copied")
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
 
         private fun showDeveloperDialog() {
             val ctx = requireContext()
