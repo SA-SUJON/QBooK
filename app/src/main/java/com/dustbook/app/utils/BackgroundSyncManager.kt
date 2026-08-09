@@ -47,6 +47,16 @@ object BackgroundSyncManager {
     @Volatile var currentStep = ""
         private set
 
+    /**
+     * DIAGNOSTIC — temporary. Records why the last start() call did or did
+     * not proceed past BackgroundSyncManager's own gates, with a timestamp,
+     * so "downloads never start" can be triaged from Settings → About →
+     * Developer Options without adb. Remove once the offline-download bug
+     * is confirmed fixed.
+     */
+    @Volatile var lastBlockReason: String = "not called yet"
+        private set
+
     private var ctx: Context? = null
     private var prefs: Prefs? = null
 
@@ -62,14 +72,40 @@ object BackgroundSyncManager {
      * and the home page has loaded. Runs entirely on background threads.
      */
     fun start() {
-        if (isRunning) return
-        val c = ctx ?: return
-        val p = prefs ?: return
-        if (!UrlHelper.isLoggedIn()) return
-        if (!p.offlineMode) return
+        val stamp = java.text.SimpleDateFormat(
+            "HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        if (isRunning) {
+            lastBlockReason = "$stamp already running"
+            return
+        }
+        val c = ctx
+        if (c == null) {
+            lastBlockReason = "$stamp init() never called (no context)"
+            return
+        }
+        val p = prefs
+        if (p == null) {
+            lastBlockReason = "$stamp init() never called (no prefs)"
+            return
+        }
+        if (!UrlHelper.isLoggedIn()) {
+            lastBlockReason = "$stamp isLoggedIn() == false"
+            return
+        }
+        if (!p.offlineMode) {
+            lastBlockReason = "$stamp offlineMode disabled in settings"
+            return
+        }
         // Saving pulls feed pages, reels and their video. Not on a metered
         // connection unless the user has said that is fine.
-        if (!NetworkPolicy.canDownload(c, p)) return
+        if (!NetworkPolicy.canDownload(c, p)) {
+            lastBlockReason = "$stamp canDownload() == false " +
+                "(wifiOnly=${p.offlineWifiOnly}, " +
+                "connected=${NetworkPolicy.isConnected(c)}, " +
+                "unmetered=${NetworkPolicy.isUnmetered(c)})"
+            return
+        }
+        lastBlockReason = "$stamp passed all gates, pipeline started"
 
         isRunning = true
         // Hard-ceiling bookkeeping BEFORE any fetching: the feed vault
