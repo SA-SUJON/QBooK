@@ -50,6 +50,15 @@ object OfflineSync {
     @Volatile var lastResult: Int = 0
         private set
 
+    /**
+     * DIAGNOSTIC — temporary. Why the last run() call did or did not reach
+     * the offscreen WebView. See BackgroundSyncManager.lastBlockReason for
+     * the matching note at the pipeline level. Remove once the
+     * offline-download bug is confirmed fixed.
+     */
+    @Volatile var lastRunBlockReason: String = "not called yet"
+        private set
+
     fun isRunning(): Boolean = running
 
     /**
@@ -151,12 +160,33 @@ object OfflineSync {
         exactTotal: Int? = null,
         onDone: (Int) -> Unit = {}
     ) {
-        if (target <= 0) return
-        if (!canRun(force)) return
-        if (!UrlHelper.isLoggedIn()) return
+        val stamp = java.text.SimpleDateFormat(
+            "HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        if (target <= 0) {
+            lastRunBlockReason = "$stamp target <= 0 ($target)"
+            return
+        }
+        if (!canRun(force)) {
+            lastRunBlockReason = "$stamp canRun() == false " +
+                "(running=$running, force=$force, " +
+                "msSinceLastRun=${System.currentTimeMillis() - lastRun})"
+            return
+        }
+        if (!UrlHelper.isLoggedIn()) {
+            lastRunBlockReason = "$stamp isLoggedIn() == false"
+            return
+        }
         // The offscreen WebView loads real Facebook pages, so this costs data
         // even before any media is fetched.
-        if (!NetworkPolicy.canDownload(context, Prefs(context))) return
+        val p = Prefs(context)
+        if (!NetworkPolicy.canDownload(context, p)) {
+            lastRunBlockReason = "$stamp canDownload() == false " +
+                "(wifiOnly=${p.offlineWifiOnly}, " +
+                "connected=${NetworkPolicy.isConnected(context)}, " +
+                "unmetered=${NetworkPolicy.isUnmetered(context)})"
+            return
+        }
+        lastRunBlockReason = "$stamp passed all gates, section=$section"
 
         running = true
         lastRun = System.currentTimeMillis()
