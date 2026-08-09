@@ -106,6 +106,18 @@ object OfflineNav {
           // Facebook's own handler tries to resolve a dead action id.
           document.addEventListener('click', function(ev){
             var el = ev.target;
+            // Navigation lives in the moved chrome - the tab bar, the
+            // tray teasers - never inside saved content. Every reel's
+            // player wrapper carries aria-label="Video player", and
+            // "video" is a reels/watch tab label matched by prefix, so
+            // from inside #__db_cards this climbup claimed the player's
+            // tap as a reels route and onOfflineNav loadUrl()'ed the
+            // SAME screen: every tap on the picture was a silent full
+            // rebuild instead of a pause ("reels play te ektai problem
+            // just pause hoi na tap korleo", round 27 - proven with the
+            // served script stack in served order). Content taps are
+            // never navigation.
+            if (el && el.closest && el.closest('#__db_cards')) return;
             for (var depth = 0; el && depth < 8; depth++) {
               if (el.getAttribute && el.getAttribute('aria-label')) {
                 var route = routeFor(el);

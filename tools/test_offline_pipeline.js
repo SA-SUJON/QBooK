@@ -4338,6 +4338,158 @@ console.log('\nRound 26 - a trembling tap is still a tap (the dead-zone)');
      !/intent === startIdx && peak <= TAP_SLOP/.test(asmSrc26));
 }
 
+// ======================================================================
+// Round 27 - the tap thief, in served order: OfflineNav vs the player.
+//
+// Device truth after rounds 24-26 (his words: "reels play te ektai
+// problem just pause hoi na tap korleo"). The missing piece was never
+// the bridge and never the pager rescue: it is OfflineNav, served
+// BEFORE the bridge, listening in the CAPTURE phase, and matching
+// aria-labels by PREFIX against route labels that include "video"
+// (reels/watch tabs). The player's own wrapper carries
+// aria-label="Video player" - "video player" STARTS WITH "video" -
+// so every tap on the picture was claimed as "navigate to reels",
+// preventDefault+stopPropagation, and the tap bridge never heard it.
+// The first reel paused for him on species whose player label does
+// not start with a route word; the rest never could. Harness history:
+// the bridge was always tested WITHOUT the served script stack in
+// front of it - the gap, honestly owned.
+//
+// The claim boundary is where navigation actually lives: the moved
+// chrome (tab bar, tray teasers). Saved content is inside #__db_cards,
+// and from a card a tap is never navigation - that kills the whole
+// class (the "video"-prefixed player today, a "Notifications are off"
+// banner inside a post tomorrow) while the real bar keeps routing.
+console.log('\nRound 27 - navigation stops at the cards boundary');
+{
+  const cp27 = require('child_process');
+  const navOf = (src) => {
+    const i = src.indexOf('fun script(');
+    const a = src.indexOf('return """', i) + 'return """'.length;
+    const b = src.indexOf('""".trimIndent()', a);
+    let s = src.slice(a, b);
+    // Rebuild the two template slots from the production ROUTES const,
+    // so the test can never drift from the shipped label lists.
+    const rm = /"(\w+)" to listOf\(([^)]*)\)/g;
+    const routes = [];
+    const rc = src.slice(src.indexOf('private val ROUTES'),
+                         src.indexOf('fun script'));
+    let m;
+    while ((m = rm.exec(rc)) !== null) {
+      const labels = m[2].match(/"([^"]*)"/g).join(',');
+      routes.push('{s:"' + m[1] + '",l:[' + labels + ']}');
+    }
+    s = s.replace('[$saved]', '["home","reels","stories","watch"]')
+         .replace('[$routes]', '[' + routes.join(',') + ']');
+    return s;
+  };
+  const assistOf27 = (src) => {
+    const vi = src.indexOf('fun getOfflineVideoAssistScript');
+    const vs = src.indexOf('"""', vi) + 3;
+    return src.slice(vs, src.indexOf('"""', vs));
+  };
+  const navKtNew = fs.readFileSync(KT('utils/OfflineNav.kt'), 'utf8');
+  const navKtOld = cp27.execSync(
+    'git show c60e957:app/src/main/java/com/dustbook/app/utils/' +
+    'OfflineNav.kt', { cwd: ROOT }).toString();
+  const vhSrc27 = fs.readFileSync(KT('utils/VideoHelper.kt'), 'utf8');
+
+  function navAssistWorld(navKt) {
+    // The served stack, in served order: OfflineNav first, then the
+    // bridge, his real species inside the cards, the real bar in chrome.
+    const dom = new JSDOM(
+      '<div id="__db_chrome"><div id="bar">' +
+      '<div role="button" aria-label="Reels, 3 new">3</div></div></div>' +
+      '<div id="__db_cards" data-db-cards>' +
+      '<div class="rc" data-video-id="r0">' +
+      '<div role="button" aria-label="Video player"' +
+      ' data-video-id="1452526892980986">' +
+      '<span class="ovl"></span><video></video></div>' +
+      '<div id="nb" aria-label="Notifications are off for this post">' +
+      'muted</div>' +
+      '</div></div>',
+      { url: 'https://m.facebook.com/reel/', runScripts: 'outside-only',
+        pretendToBeVisual: true });
+    const w = dom.window;
+    const navCalls = [], log = [];
+    w.FBPro = { onOfflineNav: (...a) => navCalls.push(['NAV', ...a]),
+                onOfflineNavMissing: (...a) => navCalls.push(['MISS', ...a]),
+                markViewed: () => {}, reportPosition: () => {} };
+    const v = w.document.querySelector('video');
+    let paused = false;
+    Object.defineProperty(v, 'paused', { get: () => paused });
+    v.play = () => { paused = false; log.push('play');
+      return { catch() {} }; };
+    v.pause = () => { paused = true; log.push('pause'); };
+    paused = false;                 // the reel is PLAYING on screen
+    w.eval(navOf(navKt));           // served FIRST, capture phase
+    w.eval(assistOf27(vhSrc27));    // served SECOND
+    return { w, v, log, navCalls };
+  }
+
+  {
+    const A = navAssistWorld(navKtOld);
+    // The honest old-side chain, as the code actually runs it: the tap
+    // is claimed (defaultPrevented) and handed to FBPro.onOfflineNav -
+    // whose Kotlin body is binding.webView.loadUrl(url) with no same-URL
+    // guard, i.e. a FULL REBUILD of the page on every tap on the player.
+    // (stopPropagation is not a same-node wall - the bridge still runs
+    // in jsdom, and on the dead document; the toggle dies with it.
+    // That is "tap korleo pause hoi na": every tap IS a silent reload.)
+    const ev0 = new A.w.MouseEvent('click',
+      { bubbles: true, cancelable: true });
+    A.w.document.querySelector('.ovl').dispatchEvent(ev0);
+    ok('v5.2.25: every player tap was claimed into a full-page loadUrl' +
+       ' ("Video player" starts with the reels route label "video")',
+       ev0.defaultPrevented && A.navCalls.length === 1 &&
+       A.navCalls[0][0] === 'NAV' && A.navCalls[0][1] === 'reels' &&
+       A.navCalls[0][2] === 'https://m.facebook.com/reel/',
+       JSON.stringify(A.navCalls));
+  }
+  {
+    const A = navAssistWorld(navKtNew);
+    A.w.document.querySelector('.ovl').dispatchEvent(
+      new A.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('now the player tap reaches the bridge: the reel pauses',
+       A.navCalls.length === 0 && A.log.join(',') === 'pause',
+       JSON.stringify(A.navCalls) + ' / ' + A.log.join(','));
+    A.w.document.querySelector('.ovl').dispatchEvent(
+      new A.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('and a second tap plays it again, the online toggle',
+       A.log.join(',') === 'pause,play', A.log.join(','));
+  }
+  {
+    // The whole class: content carrying a route-PREFIXED label inside
+    // a card must not be claimed as navigation either (it was, before).
+    // The distinguisher is the route call - an in-card tap may also
+    // hit the bridge's card-surface toggle, which preventDefaults by
+    // design, so defaultPrevented alone cannot tell the two apart.
+    const O = navAssistWorld(navKtOld);
+    O.w.document.getElementById('nb').dispatchEvent(
+      new O.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    const N = navAssistWorld(navKtNew);
+    N.w.document.getElementById('nb').dispatchEvent(
+      new N.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('a nav-prefixed label inside a card was claimed before,' +
+       ' and is content now',
+       O.navCalls.length === 1 && N.navCalls.length === 0,
+       'old=' + JSON.stringify(O.navCalls) +
+       ' new=' + JSON.stringify(N.navCalls));
+  }
+  {
+    // The real bar is untouched: the prefix-labeled tab still routes.
+    const B = navAssistWorld(navKtNew);
+    B.w.document.querySelector('#bar [role="button"]').dispatchEvent(
+      new B.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('the tab bar still routes (Reels, 3 new -> reels)',
+       B.navCalls.length === 1 && B.navCalls[0][0] === 'NAV' &&
+       B.navCalls[0][1] === 'reels',
+       JSON.stringify(B.navCalls));
+  }
+  ok('navigation is refused from saved content (structure pin)',
+     /el\.closest\('#__db_cards'\)\) return/.test(navKtNew));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 
 process.exit(fail ? 1 : 0);

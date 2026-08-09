@@ -1331,3 +1331,39 @@ Round 26 (user, 22:07): tap dead-zone proven; two verdicts declared.
   the next fully-loaded home capture (sendPage re-fires per page
   load); if a full-load home visit does not clear it, the next step
   needs the real captured markup, and only then a cap gets defined.
+
+Round 27 (user, post-5.2.25): the tap thief FOUND, in served order.
+- Device truth after three harness-proven-but-insufficient fixes:
+  "reels play te ektai problem just pause hoi na tap korleo". The
+  missing piece was never the bridge guard (r25) and never the dead
+  zone (r26): it is OfflineNav, served BEFORE the bridge, listening
+  in the capture phase, matching aria-labels BY PREFIX against route
+  labels that include "video" (reels/watch tabs). The player's own
+  wrapper carries aria-label="Video player" - and "video player"
+  starts with "video" - so every tap on the picture was claimed as
+  "navigate to reels", then FBPro.onOfflineNav ->
+  binding.webView.loadUrl(url) with NO same-URL guard: a FULL REBUILD
+  of the page on every tap. stopPropagation is not a same-node wall
+  (the first harness draft proved it - the bridge still ran, on a
+  document that was about to die), so the toggle died with the page
+  and the reload resumed the same reel: "tap korleo pause hoi na,
+  tap e kichu hoy na". Two lessons owned: (1) the bridge was always
+  tested WITHOUT the served script stack in front of it; (2) my r27
+  first RED draft wrongly expected old-side silence, and the harness
+  itself corrected me into the loadUrl discovery. Trust the harness,
+  not the narrative.
+- Fix (one line of boundary, structurally honest): the OfflineNav
+  climbup returns at once when the tap target is inside #__db_cards -
+  navigation lives in the moved chrome only. The "video" label list
+  stays for the real tab bar (routing proven intact in harness). The
+  whole claimed class dies with it (player today, any route-PREFIXED
+  label inside a post tomorrow - old side claimed a "Notifications are
+  off" banner too, proven).
+- Home feed: declared LOCKED at the user's word this round - the
+  frozen state is protected by the feed-guard suite; no home-feed
+  scroll/UI/chrome code changes without his explicit ask.
+- Still open (unchanged): duplicate wordmark/skeleton twin = mid-load
+  capture swap (guidance: fully-loaded home visit re-captures and
+  replaces); WiFi live-renderer strip (needs swap-event evidence);
+  reels-tab ejection (OOM theory unverified, instrumentation needs a
+  device trace).
