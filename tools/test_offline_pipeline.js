@@ -397,8 +397,9 @@ console.log('\nVideo sound');
      /t\.closest\('#__db_cards>\*'\)/.test(vh) &&
      /vs\[0\]\.play\(\)/.test(vh) && /vs\[j\]\.pause\(\)/.test(vh));
   ok('real links, buttons and form fields keep their own jobs',
-     /t\.closest\('a,button,\[role="button"\],input,textarea,select'\)/
-       .test(vh));
+     /t\.closest\('a,button,input,textarea,select'\)/.test(vh) &&
+     /var rb = t\.closest\('\[role="button"\]'\)/.test(vh) &&
+     /rb\.querySelector\('video'\)/.test(vh));
   ok('the story pager is never hijacked',
      /__db_story_overlay/.test(vh));
   ok('one sound at a time: a new play pauses the rest',
@@ -3723,9 +3724,9 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
      H521.classify('<div role="button" aria-label="Notifications, 4">4' +
        '<div role="button" aria-label="Home, 1 new">15+</div>') === 1);
   ok('now the badge form surfaces as the single navigation bar',
-     !!chromeNew && chromeNew.firstElementChild.id === 'navB2' &&
+     !!chromeNew && chromeNew.querySelectorAll('#navB2').length === 1 &&
      /Notifications, 4/.test(chromeNew.innerHTML),
-     chromeNew ? chromeNew.firstElementChild.id : 'no chrome');
+     chromeNew ? chromeNew.children.length + ' units' : 'no chrome');
 
   // The actual duplicate mechanism from bug-report-v2: a recycled twin
   // whose badge text differs dodges the text-key dedup. Cap = one row.
@@ -3849,6 +3850,319 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
      /isTabRowMarkup/.test(asmSrc));
   ok('the capture mirrors the prefix/href tier with its post guard',
      /preNames/.test(capSrc) && /navHrefCount/.test(capSrc));
+}
+
+// ======================================================================
+// Round 25 - the 17:12 side-by-side: three offline bugs, three proofs.
+//
+//   A. Offline home parked the nav row ABOVE the wordmark header - the
+//      user's own screenshots: online the wordmark sits first and the
+//      tab row under it; offline the row sat on top, wordmark below.
+//      Mechanism, verbatim in compose(): chrome walked the scroller in
+//      DOM order but emitted "tabs + moved" - the row always jumped
+//      ahead of everything. On this device the wordmark header is a
+//      scroller child too (else the offline page would show the pinned
+//      one TWICE, or none - it shows exactly one, moved, after the
+//      row), so the inversion put navigation first every time.
+//   B. Offline reels never became fullscreen - the next reel's slice
+//      always peeked in at the bottom ("niche arekta video er kichu
+//      onsho chole asche"). Mechanism: NOTHING offline sizes a saved
+//      reel to the frame (online the page's own stylesheet classes do;
+//      offline the <link>s are dead), snap CSS only aligns, the pager
+//      only scrolls. A 736px card on an 852px frame shows the next
+//      card's top 116px at every rest.
+//   C. "ekhon to pause o hoi na" - a tap on the playing reel pauses
+//      nothing. Mechanism, verbatim in the tap bridge: the guard that
+//      protects real buttons (Follow, share, links) returned on ANY
+//      [role="button"] ancestor - and on the real captured species the
+//      PLAYER ITSELF is one: <div role="button" aria-label="Video
+//      player" data-video-id="1452526892980986"> wrapping the <video>
+//      (the stored fixture above, from this device's own captures).
+//      Every tap on the picture died in that guard; pausing was only
+//      ever possible on species whose player carries no button role -
+//      which is why "just 1st ta pause hoto" and the rest never did.
+console.log('\nRound 25 - online order offline, every reel claims the frame, the player button pauses');
+{
+  const Hnew = require('./offline_vault_harness.js');
+  const cp25 = require('child_process');
+  // Old sides pinned by HASH, never HEAD: 43c9649 = v5.2.23, the build
+  // whose screenshots this round answers. Reachable in CI (fetch-depth 0).
+  const H523 = (() => {
+    const oldSrc = cp25.execSync(
+      'git show 43c9649:tools/offline_vault_harness.js',
+      { cwd: ROOT }).toString();
+    const tmp = path.join(ROOT, 'tools', '.harness_523_tmp.js');
+    fs.writeFileSync(tmp, oldSrc);
+    const m = require('./.harness_523_tmp.js');
+    fs.unlinkSync(tmp);
+    return m;
+  })();
+  const asmSrc25 = fs.readFileSync(KT('offline/PageAssembly.kt'), 'utf8');
+  const vhSrc25 = fs.readFileSync(KT('utils/VideoHelper.kt'), 'utf8');
+  const asmOld25 = cp25.execSync(
+    'git show 43c9649:app/src/main/java/com/dustbook/app/offline/' +
+    'PageAssembly.kt', { cwd: ROOT }).toString();
+  const vhOld25 = cp25.execSync(
+    'git show 43c9649:app/src/main/java/com/dustbook/app/utils/' +
+    'VideoHelper.kt', { cwd: ROOT }).toString();
+
+  // ---- Bug A fixture: his scroller's own order, from the online shot --
+  // wordmark (offset 0), tab row (56, the badge-in-label species his
+  // device carries), composer (108), stories tray (168), then posts.
+  // The wordmark carries ONE nav-prefix label ("Search") - two would
+  // have promoted it to the tab tier and hidden the real row, and the
+  // device screenshot shows the row alive, so one it is.
+  const wordmarkU =
+    '<div id="hdrU" style="margin-top:0px; height:56px;">' +
+    '<img alt="facebook"/>' +
+    '<div role="button" aria-label="Search">s</div>' +
+    '<div>m</div></div>';
+  const badgeRowU =
+    '<div id="navU" style="margin-top:56px; height:52px;">' +
+    '<div role="button" aria-label="Home, 15+">15+</div>' +
+    '<div role="button" aria-label="Notifications, 15+ notifications">' +
+    '15+</div></div>';
+  const composerU =
+    '<div id="cmpU" style="margin-top:108px; height:60px;">' +
+    '<span>What&#39;s on your mind?</span></div>';
+  const trayUU =
+    '<div id="tryU" style="margin-top:168px; height:232px;">' +
+    '<a href="/stories/11/">Rony</a>' +
+    '<a href="/stories/22/">Shuvo</a></div>';
+  const postU =
+    '<div data-tracking-duration-id="k25">' +
+    '<div><span>ANDROID ROOTED USERS PLUS - a genuine post with long' +
+    ' enough text here</span></div>' +
+    '<a href="https://m.facebook.com/story.php?story_fbid=25">Full</a>' +
+    '</div>';
+  const orderDoc =
+    '<div data-mcomponent="MScreen" class="m bg-s2">' +
+    '<div data-type="vscroller" class="m vscroller">' +
+    wordmarkU + badgeRowU + composerU + trayUU + postU + '</div></div>';
+  const chromeIds = (h) => {
+    const d = new JSDOM('<html><body>' + h.compose(orderDoc, [postU]) +
+      '</body></html>', { url: 'https://m.facebook.com/' }).window.document;
+    const ch = d.getElementById('__db_chrome');
+    return ch ? Array.from(ch.children).map((c) => c.id).join(',') : 'none';
+  };
+  ok('v5.2.23 parked the nav row ABOVE the wordmark (the 17:12 offline shot)',
+     chromeIds(H523) === 'navU,hdrU,cmpU,tryU', chromeIds(H523));
+  ok('chrome now keeps the online walk order: wordmark, row, composer, tray',
+     chromeIds(Hnew) === 'hdrU,navU,cmpU,tryU', chromeIds(Hnew));
+  {
+    // The first-row cap met the row AFTER the header this whole time:
+    // a recycled badge twin still stays hidden, order unbroken.
+    const twinU =
+      '<div id="navT25" style="margin-top:280px; height:52px;">' +
+      '<div role="button" aria-label="Home, 3 new">7</div>' +
+      '<div role="button" aria-label="Reels, 9 new">4</div></div>';
+    const docT =
+      '<div data-mcomponent="MScreen" class="m bg-s2">' +
+      '<div data-type="vscroller" class="m vscroller">' +
+      wordmarkU + badgeRowU + twinU + composerU + postU + '</div></div>';
+    const d = new JSDOM('<html><body>' + Hnew.compose(docT, [postU]) +
+      '</body></html>', { url: 'https://m.facebook.com/' }).window.document;
+    const ids = Array.from(d.getElementById('__db_chrome').children)
+      .map((c) => c.id).join(',');
+    ok('after the header: first row wins, its badge twin stays hidden',
+       ids === 'hdrU,navU,cmpU' &&
+       !!d.querySelector('[data-type="vscroller"] #navT25'), ids);
+  }
+  ok('compose emits one chrome list in walk order (structure pin)',
+     /val seq = chromeUnits/.test(asmSrc25) && /var rowMoved = false/.test(asmSrc25) &&
+     !/val seq = tabs \+ moved/.test(asmSrc25));
+
+  // ---- Bug B: nothing sized a saved reel to the frame ------------------
+  const tplOf = (src) => src.slice(src.indexOf('val main = """') + 14,
+    src.indexOf('""".trimIndent()', src.indexOf('val main = """')));
+  const tplNew25 = tplOf(asmSrc25), tplOld25 = tplOf(asmOld25);
+  function world25(tpl, viewH, cardH, pad) {
+    let html = '<style id="__db_reels_snap">' +
+      'html,body{scroll-snap-type:y mandatory!important}' +
+      '#__db_cards>*{scroll-snap-align:start!important;' +
+      'scroll-snap-margin-top:' + pad + 'px!important}</style>' +
+      '<div data-type="vscroller"><div id="__db_cards" data-db-cards>';
+    for (let i = 0; i < 3; i++) {
+      html += '<div class="rc" data-video-id="r' + i + '"></div>';
+    }
+    html += '<div id="__db_snap_t" style="height:0"></div></div></div>';
+    const dom = new JSDOM(html, { url: 'https://m.facebook.com/',
+      runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    let now = 1000; const rafQ = [];
+    w.Date.now = () => now;
+    w.requestAnimationFrame = (cb) => { rafQ.push(cb); return rafQ.length; };
+    w.cancelAnimationFrame = (id) => { if (rafQ[id - 1]) rafQ[id - 1] = null; };
+    const box = w.document.querySelector('[data-type="vscroller"]');
+    Object.defineProperty(box, 'clientHeight', { value: viewH });
+    Object.defineProperty(box, 'scrollHeight', { value: 3 * cardH });
+    w.document.querySelectorAll('.rc').forEach((c, i) => {
+      c.getBoundingClientRect = () => ({
+        top: i * cardH - box.scrollTop,
+        bottom: (i + 1) * cardH - box.scrollTop,
+        left: 0, right: 300, width: 300, height: cardH });
+    });
+    w.FBPro = { reportPosition: () => {} };
+    w.eval(tpl.split('__SEC__').join('reels'));
+    function ev(type, x, y, dt) {
+      if (dt) now += dt;
+      const e = new w.Event(type, { bubbles: true, cancelable: true });
+      e.touches = type === 'touchend' ? [] : [{ clientX: x, clientY: y }];
+      e.changedTouches = type === 'touchend'
+        ? [{ clientX: x, clientY: y }] : [];
+      w.document.querySelector('.rc').dispatchEvent(e);
+      return e;
+    }
+    function pump() {
+      let g = 0;
+      while (rafQ.length && g++ < 400) {
+        now += 20;
+        const batch = rafQ.splice(0, rafQ.length);
+        for (const cb of batch) if (cb) cb();
+      }
+    }
+    return { w, box, ev, pump };
+  }
+  {
+    // His frame, his reel: an 852px view holding a 736px card, the same
+    // shortfall the 17:12:08 screenshot shows (next reel's slice below).
+    const P = world25(tplOld25, 852, 736, 0);
+    ok('v5.2.23 sized nothing: 116px of the next reel stayed on screen',
+       (P.w.document.querySelector('.rc').style.minHeight || '') === '' &&
+       852 - 736 === 116);
+  }
+  {
+    const P = world25(tplNew25, 852, 736, 0);
+    const cards = P.w.document.querySelectorAll('.rc');
+    ok('now every saved reel claims the whole frame at serve (852px)',
+       Array.from(cards).every((c) => c.style.minHeight === '852px'),
+       cards[0].style.minHeight);
+    ok('the zero-height snap sentinel is never stretched',
+       (P.w.document.getElementById('__db_snap_t').style.minHeight ||
+        '') === '');
+    P.ev('touchstart', 100, 800);
+    P.ev('touchmove', 100, 710, 200);
+    P.ev('touchmove', 100, 620, 200);
+    P.ev('touchmove', 100, 500, 200);
+    P.ev('touchend', 100, 500, 200);
+    P.pump();
+    ok('and the one-reel commit is untouched by the sizing',
+       P.box.scrollTop === 736, 'final=' + P.box.scrollTop);
+  }
+  {
+    // Facebook's stamped bar offset, when one exists, reserves the top:
+    // 852px frame with a 48px bar fits an 804px card, never more.
+    const P = world25(tplNew25, 852, 736, 48);
+    ok('a stamped bar offset reserves its own rows (852-48=804)',
+       P.w.document.querySelector('.rc').style.minHeight === '804px',
+       P.w.document.querySelector('.rc').style.minHeight);
+  }
+  {
+    // If the frame cannot be measured at all, fail OPEN: today's
+    // behavior, not a guessed zero.
+    const P = world25(tplNew25, 0, 736, 0);
+    ok('an unmeasurable frame leaves every card exactly as stored',
+       (P.w.document.querySelector('.rc').style.minHeight || '') === '');
+  }
+
+  // ---- Bug C: the player surface is a button, and taps died there -----
+  const assistOf25 = (src) => {
+    const vi = src.indexOf('fun getOfflineVideoAssistScript');
+    const vs = src.indexOf('"""', vi) + 3;
+    return src.slice(vs, src.indexOf('"""', vs));
+  };
+  function assistWorld25() {
+    // The real captured species - the player itself carries the button
+    // role (the stored fixture from this device's own captures, above).
+    const dom = new JSDOM(
+      '<div id="__db_cards" data-db-cards>' +
+      '<div class="rc" data-video-id="r0">' +
+      '<div role="button" aria-label="Video player"' +
+      ' data-video-id="1452526892980986">' +
+      '<span class="ovl"></span><video></video></div>' +
+      '<div role="button" id="followB">Follow</div>' +
+      '<a href="https://m.facebook.com/reel/1452526892980986">HIRA</a>' +
+      '</div></div>',
+      { url: 'https://m.facebook.com/', runScripts: 'outside-only',
+        pretendToBeVisual: true });
+    const w = dom.window;
+    const v = w.document.querySelector('video');
+    let paused = false; const log = [];
+    Object.defineProperty(v, 'paused', { get: () => paused });
+    v.play = () => { paused = false; log.push('play');
+      return { catch() {} }; };
+    v.pause = () => { paused = true; log.push('pause'); };
+    return { w, v, log, isPaused: () => paused };
+  }
+  {
+    const A = assistWorld25();
+    A.w.eval(assistOf25(vhOld25));
+    A.w.document.querySelector('.ovl').dispatchEvent(
+      new A.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('v5.2.23 ate the tap on the player: guard returned, no pause',
+       A.log.join(',') === '' && !A.isPaused(), A.log.join(','));
+  }
+  {
+    const A = assistWorld25();
+    A.w.eval(assistOf25(vhSrc25));
+    A.w.document.querySelector('.ovl').dispatchEvent(
+      new A.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('now the same tap on the player surface pauses the video',
+       A.log.join(',') === 'pause' && A.isPaused(), A.log.join(','));
+    A.w.document.querySelector('video').dispatchEvent(
+      new A.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('and tapping the video itself plays it again (the online toggle)',
+       A.log.join(',') === 'pause,play' && !A.isPaused(), A.log.join(','));
+  }
+  {
+    // Real controls keep their own jobs: a button that HOLDS NO player
+    // still refuses the bridge, links stay links, the story overlay
+    // swallows everything as before.
+    const A = assistWorld25();
+    A.w.eval(assistOf25(vhSrc25));
+    A.w.document.getElementById('followB').dispatchEvent(
+      new A.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    A.w.document.querySelector('a[href]').dispatchEvent(
+      new A.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('Follow and the author link are never hijacked by the bridge',
+       A.log.join(',') === '' && !A.isPaused(), A.log.join(','));
+    const ov = A.w.document.createElement('div');
+    ov.id = '__db_story_overlay';
+    A.w.document.body.appendChild(ov);
+    A.w.document.querySelector('.ovl').dispatchEvent(
+      new A.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('the story viewer overlay still owns its own taps',
+       A.log.join(',') === '', A.log.join(','));
+  }
+  {
+    // Multi-player card INSIDE the button species: v5.2.23's pause-all
+    // must survive the widened door.
+    const dom = new JSDOM(
+      '<div id="__db_cards" data-db-cards><div class="rc">' +
+      '<div role="button" aria-label="Video player">' +
+      '<video id="va"></video><video id="vb"></video></div></div></div>',
+      { url: 'https://m.facebook.com/', runScripts: 'outside-only',
+        pretendToBeVisual: true });
+    const w = dom.window;
+    const log = [];
+    for (const id of ['va', 'vb']) {
+      const v = w.document.getElementById(id);
+      let paused = false;
+      Object.defineProperty(v, 'paused', { get: () => paused });
+      v.play = () => { paused = false; log.push(id + ':play');
+        return { catch() {} }; };
+      v.pause = () => { paused = true; log.push(id + ':pause'); };
+    }
+    w.eval(assistOf25(vhSrc25));
+    w.document.getElementById('va').dispatchEvent(
+      new w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('one tap on the button species pauses EVERY player it holds',
+       log.join(',') === 'va:pause,vb:pause', log.join(','));
+  }
+  ok('the bridge guard spares only controls holding no player (pin)',
+     /var rb = t\.closest\('\[role="button"\]'\)/.test(vhSrc25) &&
+     /rb\.querySelector\('video'\)/.test(vhSrc25) &&
+     vhSrc25.indexOf("t.closest('a,button,[role=\"button\"]") === -1);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

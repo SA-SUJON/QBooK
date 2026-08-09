@@ -1253,3 +1253,46 @@ Round 24 (user, post-5.2.22): pause-audio + the strip, act on evidence.
   mechanism candidates (composed-page layout vs renderer height), and
   no fixture showed it. No blind change; asked exactly which offline
   screen shows it.
+
+Round 25 (user, post-5.2.23, the 17:12 side-by-side): three offline bugs,
+three verbatim proofs, no guesses.
+- Order inversion, PROVEN: online home = wordmark, tab row, composer,
+  tray; offline home = tab row FIRST, wordmark under it. Mechanism in
+  compose(): chrome walked the scroller in DOM order but emitted
+  "tabs + moved", forcing the row ahead of everything - written under
+  the belief (three releases old) that the wordmark header was pinned
+  OUTSIDE the scroller. The offline screenshot falsified the belief:
+  exactly ONE wordmark shows, moved, AFTER the row - so the header is a
+  scroller child on this device too. Old harness (43c9649, immutable)
+  reproduces his exact offline order [navU,hdrU,cmpU,tryU] on his
+  fixture; the walk-order emission (one list, first-row cap intact)
+  yields the online stack [hdrU,navU,cmpU,tryU]. Gap math unchanged:
+  Facebook's own offsets, first unit takes padTop.
+- The peek, PROVEN: offline reels show the next reel's slice at the
+  bottom ("niche arekta video er kichu onsho chole asche"). NOTHING
+  offline ever sized a saved reel to the frame: the snap CSS only
+  aligns (and is removed at pager init), the pager only scrolls, and
+  the page's own sizing lives in <link>ed stylesheets that never load
+  offline. Old template (43c9649) leaves min-height empty on an 852px
+  frame holding a 736px card = 116px of the next reel visible. The
+  pager now claims the frame once at init: min-height = clientHeight -
+  PAD, sentinel untouched by construction (reelCards skips it),
+  unmeasurable frame fails open, taller cards keep their height, the
+  one-reel commit is untouched (harness asserts all four).
+- "ekhon to pause o hoi na", PROVEN: the tap bridge's control guard
+  returned on ANY [role="button"] ancestor - and on the captured
+  species the PLAYER ITSELF is one ("Video player",
+  data-video-id=1452526892980986, the stored fixture from this
+  device). Every tap on the picture died in the guard; only species
+  without the role could ever pause ("just 1st ta pause hoto"). Old
+  assist (43c9649): tap in the player button = zero pause calls. The
+  guard now spares only buttons holding NO player: tap on the player
+  pauses, tap again plays, Follow/links/story-overlay keep their own
+  jobs, two-player cards inside the button species still pause both.
+  Old harness/asserts that pinned the blanket guard were re-pinned to
+  the same intent (controls keep jobs) with the video-holding
+  exception, one stale first-position assert re-pointed at identity.
+- Wifi strip: untouched again - no new device evidence this round.
+  The offline fullscreen question is answered by the peek fix above;
+  the WiFi (live renderer) variant still lacks proof of WHAT stops
+  firing. No blind change stands.

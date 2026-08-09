@@ -288,13 +288,17 @@ function compose(doc, cards, snap) {
       const vsStartB = vsStart + shift, vsOpenEndB = vsOpenEnd + shift;
 
       const children = topLevelChildren(base, vsOpenEndB);
-      const moved = [], tabs = [];
+      // One list in walk order (= the online stack). The old two-list
+      // "tabs first" emission put the row above the wordmark offline -
+      // the 17:12 side-by-side. 43c9649 keeps that behavior pinned.
+      const chromeUnits = [];
+      let rowMoved = false;
       const chromeSeen = new Set();
       let bytes = 0;
       let cursor = vsOpenEndB;
       let inner = '';
       for (let i = 0; i < children.length; i++) {
-        if (moved.length + tabs.length >= MAX_CHROME_UNITS ||
+        if (chromeUnits.length >= MAX_CHROME_UNITS ||
             bytes >= MAX_CHROME_BYTES) break;
         const c = children[i];
         const slice = base.slice(c.start, c.end);
@@ -306,20 +310,25 @@ function compose(doc, cards, snap) {
         if (kind === MOVE || kind === MOVE_TAB) chromeSeen.add(chromeKey(slice));
         // One navigation bar: the first row moves, later row-shaped
         // units stay hidden - badge ticks make twin text dodge the
-        // dedup above (the v2 duplicate). First copy wins.
-        if (kind === MOVE_TAB && tabs.length > 0) continue;
+        // dedup above (the v2 duplicate). First copy wins, where the
+        // walk met it.
+        if (kind === MOVE_TAB) {
+          if (rowMoved) continue;
+          rowMoved = true;
+        }
         if (kind === MOVE || kind === MOVE_TAB) {
           inner += base.slice(cursor, c.start);
           cursor = c.end;
           // [unit without virtual margin, own absolute offset, own height]
-          (kind === MOVE_TAB ? tabs : moved).push(
+          chromeUnits.push(
             [stripVirtualMargin(slice), ownMargin(slice), ownHeight(slice)]);
           bytes += slice.length;
         }
       }
       // Facebook's margins are absolute y offsets; rebuilt as gaps they
-      // reconstruct the online layout with Facebook's own numbers.
-      const seq = tabs.concat(moved);
+      // reconstruct the online layout with Facebook's own numbers. The
+      // order is the walk's own - top to bottom, exactly as online.
+      const seq = chromeUnits;
       const padTopI = (seq.length && seq[0][1] != null) ? seq[0][1]
         : (children.length ? stolenOffset(base, children) : null);
       const pad = padTopI != null && padTopI > 0 ? padTopI + 'px' : null;

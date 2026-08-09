@@ -101,16 +101,28 @@ object VideoHelper {
           // met a dead handler and NOTHING ever started (the round-11
           // report: "reels Play hoi na"). Tapping a saved card now
           // toggles its video - exactly what a tap does online. Real
-          // links and buttons (comments, share, the poster's name) keep
-          // their own jobs, and the story pager's zones are left alone:
-          // a story advances left/right instead of pausing mid-way.
+          // links, buttons and controls (comments, share, the poster's
+          // name) keep their own jobs, and the story pager's zones are
+          // left alone: a story advances left/right instead of pausing
+          // mid-way. One judgment call below: on the captured player
+          // species the PLAYER ITSELF carries role="button" ("Video
+          // player", the stored fixture data-video-id=1452526892980986),
+          // so a blanket button-guard spent every tap on the picture as
+          // a control press and offline video could never be paused by
+          // touch on those cards at all (17:12: "ekhon to pause o hoi
+          // na offline er video te"; overnight: "just 1st ta pause
+          // hoto" - the first reel was the species WITHOUT this role).
+          // A button is only a control when it holds no player.
           document.addEventListener('click', function(e) {
             try {
               if (document.getElementById('__db_story_overlay')) return;
               var t = e.target;
               if (!t || !t.closest) return;
-              if (t.closest('a,button,[role="button"],input,textarea,select'))
+              if (t.closest('a,button,input,textarea,select')) return;
+              var rb = t.closest('[role="button"]');
+              if (rb && !(rb.querySelector && rb.querySelector('video'))) {
                 return;
+              }
               var card = t.closest ? t.closest('#__db_cards>*') : null;
               var vs = card && card.querySelectorAll ?
                 card.querySelectorAll('video') : null;

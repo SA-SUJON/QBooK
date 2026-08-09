@@ -77,10 +77,17 @@ package com.dustbook.app.offline
  * stale post screen above the home header. And the tab row is not part
  * of the header on this device at all: it floats INSIDE the scroller as
  * a badge-carrying unit - hiding the scroller therefore hid navigation.
- * So now: the screen that owns the scroller is marked and kept, every
- * OTHER screen and every stale scroller hides whole, and a tab-row unit
- * found in the scroller is moved out with the composer and stories tray -
- * before them, because navigation goes first.
+ *  So now: the screen that owns the scroller is marked and kept, every
+ *  OTHER screen and every stale scroller hides whole, and a tab-row unit
+ *  found in the scroller is moved out with everything else - IN THE
+ *  ORDER THE WALK READ THEM, top to bottom, exactly the stack online
+ *  shows. It was forced ahead of every other unit for three releases
+ *  ("navigation goes first"), under the belief that the wordmark header
+ *  was pinned outside the scroller; the user's 17:12 side-by-side
+ *  proved the header moves too, and the forced first place parked the
+ *  nav row ABOVE the wordmark offline. Only one thing about the row is
+ *  still special: the FIRST one wins, later row-shaped twins stay
+ *  hidden.
  */
 object PageAssembly {
 
@@ -635,8 +642,18 @@ object PageAssembly {
                 val vsOpenEndB = vsOpenEnd + shift
 
                 val children = topLevelChildren(base, vsOpenEndB)
-                val moved = ArrayList<Triple<String, Int?, Int?>>()
-                val tabs = ArrayList<Triple<String, Int?, Int?>>()
+                // ONE list, in the walk's own order. The walk reads the
+                // scroller top to bottom - the same order the online
+                // page paints - so emitting it unchanged rebuilds the
+                // online stack by construction. It used to be two lists
+                // (tabs first, then everything else) under the belief
+                // that the wordmark header was pinned OUTSIDE the
+                // scroller. The user's 17:12 side-by-side falsified it:
+                // on this device the header is a scroller child like
+                // everything else, and "tabs + moved" parked the nav row
+                // ABOVE the wordmark offline while online it sits below.
+                val chromeUnits = ArrayList<Triple<String, Int?, Int?>>()
+                var rowMoved = false
                 var bytes = 0
 
                 // Rebuild the scroller with the moved units excised. A
@@ -647,7 +664,7 @@ object PageAssembly {
                 var inner = ""
                 val chromeSeen = HashSet<String>()
                 for (c in children) {
-                    if (moved.size + tabs.size >= MAX_CHROME_UNITS ||
+                    if (chromeUnits.size >= MAX_CHROME_UNITS ||
                         bytes >= MAX_CHROME_BYTES) break
                     val slice = base.substring(c.start, c.end)
                     val kind = classify(slice)
@@ -663,17 +680,19 @@ object PageAssembly {
                     // stays hidden with the scroller (LEAVE-equivalent).
                     // Text keyed twins dodge the dedup above whenever a
                     // badge tick flips - that is the exact "duplicate
-                    // nav row" from bug-report-v2. First copy wins.
-                    if (kind == MOVE_TAB && tabs.isNotEmpty()) continue
+                    // nav row" from bug-report-v2. First copy wins -
+                    // where the WALK met it, not ahead of everything.
+                    if (kind == MOVE_TAB) {
+                        if (rowMoved) continue
+                        rowMoved = true
+                    }
                     if (kind == MOVE || kind == MOVE_TAB) {
                         inner += base.substring(cursor, c.start)
                         cursor = c.end
                         // Triple: unit without its virtual margin, the
                         // absolute offset it carried, its declared height.
-                        val entry = Triple(stripVirtualMargin(slice),
-                            ownMargin(slice), ownHeight(slice))
-                        if (kind == MOVE_TAB) tabs.add(entry)
-                        else moved.add(entry)
+                        chromeUnits.add(Triple(stripVirtualMargin(slice),
+                            ownMargin(slice), ownHeight(slice)))
                         bytes += slice.length
                     }
                     // LEAVE: junk stays hidden with the scroller it belongs to.
@@ -684,9 +703,10 @@ object PageAssembly {
                 // as-is in normal flow. Turned into gaps they rebuild the
                 // online layout exactly, with Facebook's own numbers:
                 // each unit keeps (own offset - previous offset -
-                // previous height) above itself, and the row lands under
-                // the pinned header at Facebook's own first offset.
-                val seq = tabs + moved
+                // previous height) above itself, and the first unit lands
+                // at Facebook's own first offset. The order is the walk's
+                // own - top to bottom, exactly as online.
+                val seq = chromeUnits
                 val padTop = seq.firstOrNull()?.second ?: stolenOffset(base, children)
                 val pad = if (padTop != null && padTop > 0) "${padTop}px" else null
                 val parts = ArrayList<String>(seq.size)
@@ -704,7 +724,10 @@ object PageAssembly {
                 val padCss = "<style id=\"__db_top_pad\">" +
                     (if (seq.isNotEmpty()) "#__db_chrome" else "#__db_cards") +
                     "{padding-top:" + (pad ?: "0") + "!important}</style>"
-                // The tab row is navigation: before the composer and tray.
+                // The tab row is navigation, but the walk already placed
+                // it: below the wordmark when the header moved too, first
+                // when nothing else did. Forcing it ahead of every unit
+                // was the 17:12 inversion.
                 val chromeBody = parts.joinToString("\n")
                 val chrome =
                     if (chromeBody.isEmpty()) ""
@@ -973,6 +996,33 @@ object PageAssembly {
               };
               raf = requestAnimationFrame(step);
             }
+
+            // Online, the page's own stylesheet stretches a reel unit
+            // to the frame; offline those <link>ed sheets never load,
+            // so a saved reel renders at whatever height its stored
+            // inline stamps happen to give - and every pixel it falls
+            // short of the frame shows the NEXT reel's slice at the
+            // bottom (the 17:12 reels screenshot: "niche arekta video
+            // er kichu onsho chole asche"). The snap CSS could never
+            // fix that: it only aligns. The pager claims the frame
+            // here, once, from the one measurement offline code can
+            // trust - the scroller's own client height, minus the same
+            // stamped bar offset the snap margin reserved and the
+            // commit math aligns to. min-height, never height: a card
+            // taller than the frame keeps its own size. An
+            // unmeasurable frame (fitH <= 48) fails OPEN: everything
+            // stays exactly as stored. The zero-height snap sentinel
+            // is never touched - reelCards skips it by id.
+            try {
+              var boxFit = scroller();
+              var fitH = (boxFit ? (boxFit.clientHeight || 0) : 0) - PAD;
+              if (fitH > 48) {
+                var fitList = reelCards();
+                for (var fi = 0; fi < fitList.length; fi++) {
+                  fitList[fi].style.minHeight = fitH + 'px';
+                }
+              }
+            } catch (e) {}
 
             document.addEventListener('touchstart', function(ev) {
               if (!ev.touches || ev.touches.length !== 1) return;
