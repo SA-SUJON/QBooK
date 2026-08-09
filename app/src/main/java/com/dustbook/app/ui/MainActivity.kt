@@ -2424,6 +2424,17 @@ class MainActivity : AppCompatActivity() {
                 "stories", "story" -> if (id.isNotBlank()) prefs.offlineResumeStories = id
                 "feed" -> prefs.offlineResumeFeed = "SCROLL:$id"
             }
+            // Offline reel/story swipes never change the URL or push
+            // history, so doUpdateVisitedHistory's SPA-swap hook - the
+            // only other place this recovery runs - never fires for them.
+            // This report already arrives reliably ~600ms after each
+            // swipe settles, so it doubles as that missing signal.
+            if (type == "reel" || type == "stories" || type == "story") {
+                runOnUiThread {
+                    recoverWindowSizeIfStale()
+                    forcePageRelayout(binding.webView)
+                }
+            }
         }
 
         /**
