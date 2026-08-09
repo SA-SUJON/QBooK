@@ -272,7 +272,9 @@ open class SectionVault(
             if (tmp.renameTo(f)) {
                 // The assembled offline pages embed these cards, so they
                 // are stale now and must rebuild on the next request.
-                OfflineDocs.invalidate()
+                // Scoped to this section: a reel markViewed write must not
+                // also throw away the home feed's already-built cache.
+                OfflineDocs.invalidate(section)
                 true
             } else {
                 tmp.delete()
