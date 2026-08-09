@@ -57,6 +57,17 @@ object BackgroundSyncManager {
     @Volatile var lastBlockReason: String = "not called yet"
         private set
 
+    private fun stampedNote(msg: String): String {
+        val stamp = java.text.SimpleDateFormat(
+            "HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        return "$stamp $msg"
+    }
+
+    /** Records the reason and returns Unit, so it can sit in `return note(...)`. */
+    private fun note(msg: String) {
+        lastBlockReason = stampedNote(msg)
+    }
+
     private var ctx: Context? = null
     private var prefs: Prefs? = null
 
@@ -72,40 +83,19 @@ object BackgroundSyncManager {
      * and the home page has loaded. Runs entirely on background threads.
      */
     fun start() {
-        val stamp = java.text.SimpleDateFormat(
-            "HH:mm:ss", java.util.Locale.US).format(java.util.Date())
-        if (isRunning) {
-            lastBlockReason = "$stamp already running"
-            return
-        }
-        val c = ctx
-        if (c == null) {
-            lastBlockReason = "$stamp init() never called (no context)"
-            return
-        }
-        val p = prefs
-        if (p == null) {
-            lastBlockReason = "$stamp init() never called (no prefs)"
-            return
-        }
-        if (!UrlHelper.isLoggedIn()) {
-            lastBlockReason = "$stamp isLoggedIn() == false"
-            return
-        }
-        if (!p.offlineMode) {
-            lastBlockReason = "$stamp offlineMode disabled in settings"
-            return
-        }
+        if (isRunning) return note("already running")
+        val c = ctx ?: return note("init() never called (no context)")
+        val p = prefs ?: return note("init() never called (no prefs)")
+        if (!UrlHelper.isLoggedIn()) return note("isLoggedIn() == false")
+        if (!p.offlineMode) return note("offlineMode disabled in settings")
         // Saving pulls feed pages, reels and their video. Not on a metered
         // connection unless the user has said that is fine.
-        if (!NetworkPolicy.canDownload(c, p)) {
-            lastBlockReason = "$stamp canDownload() == false " +
+        if (!NetworkPolicy.canDownload(c, p)) return note(
+            "canDownload() == false " +
                 "(wifiOnly=${p.offlineWifiOnly}, " +
                 "connected=${NetworkPolicy.isConnected(c)}, " +
-                "unmetered=${NetworkPolicy.isUnmetered(c)})"
-            return
-        }
-        lastBlockReason = "$stamp passed all gates, pipeline started"
+                "unmetered=${NetworkPolicy.isUnmetered(c)})")
+        lastBlockReason = stampedNote("passed all gates, pipeline started")
 
         isRunning = true
         // Hard-ceiling bookkeeping BEFORE any fetching: the feed vault
