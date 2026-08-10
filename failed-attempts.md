@@ -1409,3 +1409,36 @@ dispatching a window resize. That is the round-29 question.
 > 5.2.27 commit 8c5557d is now reverted; structural test
 > that pinned the fix is deleted. Diagnostic log and other
 > round-28 infrastructure remain in place.
+
+## Addendum 10 (2026-08-11, 05:35): round 29 probe - capture scrollTop, not just height
+
+The user shared another Story log. The smoking-gun line is:
+
+  05:19:18.292 ... js="808x808"     (story open)
+  05:19:18.853 ... js="808x4900"    (story close)
+
+Same clientHeight=808, but body.getBoundingClientRect().height
+went from 808 to 4900. forcePageRelayout was firing in both
+directions and dispatching the resize event, but the page
+still returned 808. The bug is therefore not at the resize
+event - it is at the lite renderer's commit: the player DOM
+position is fixed in the 808-px frame the lite renderer
+holds internally, and the vscroller scrollTop is what
+matters, not the WebView's viewport.
+
+Round 29 expands the JS so the next log carries:
+  - body.scrollTop (page-level fallback)
+  - vscroller.scrollTop (the actual scroll container; the
+    selector falls back to body if the lite renderer has
+    changed its data-type or data-pagelet attribute)
+  - the getBoundingClientRect().top of the first
+    [data-video-id] or [data-story-id] card on the page (the
+    symptom the user reports)
+  - the tag the vscroller was found under, so the absence
+    of a vscroller is visible in the log
+
+The next user-side step is the same as before: open a Story,
+wait a few seconds, close it, share the diagnostic log. The
+new fields will tell us where the lite renderer's scrollTop
+sits at every transition and whether the symptom (ftop
+far from 0 on exit) shows up in the data.

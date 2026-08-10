@@ -2002,17 +2002,40 @@ class MainActivity : AppCompatActivity() {
               try {
                 var de = document.documentElement;
                 var b = document.body;
+                // Round 29 probe: capture scrollTop values that
+                // forcePageRelayout was missing. vscroller is the
+                // lite renderer's scroll container; body.scrollTop
+                // is the page-level fallback. We do not assume the
+                // container is called 'vscroller' on every version of
+                // the bundle - if it is not there, the field stays
+                // 'none' and the log line makes the absence obvious.
+                var vsc = document.querySelector('[data-type="vscroller"]') ||
+                           document.querySelector('[data-pagelet="StoriesApp"]') ||
+                           b;
+                var vscTag = vsc === b ? "body" :
+                             (vsc.getAttribute('data-type') ||
+                              vsc.getAttribute('data-pagelet') ||
+                              vsc.tagName);
                 // The read is the work. Assigning it to nothing would let a
                 // minifier or the JIT drop the whole statement, so the values
                 // are kept and handed back.
                 var h = de ? de.clientHeight : 0;
                 var bh = b ? b.getBoundingClientRect().height : 0;
+                var bst = b ? b.scrollTop : -1;
+                var vst = vsc ? vsc.scrollTop : -1;
+                // First card with [data-video-id] or [data-story-id], if
+                // any - its getBoundingClientRect().top is the symptom
+                // the user reports (player shifted off-frame).
+                var first = document.querySelector('[data-video-id],[data-story-id]');
+                var ftop = first ? Math.round(first.getBoundingClientRect().top) : 'none';
                 // Tell the page as well. The lite renderer listens for resize
                 // to recompute its screen height, and coming out of immersive
                 // the viewport really has changed size - it just was not
                 // always told.
                 try { window.dispatchEvent(new Event('resize')); } catch (e) {}
-                return h + 'x' + Math.round(bh);
+                return h + 'x' + Math.round(bh) +
+                       ' bst=' + bst + ' vst=' + vst + ' vscTag=' + vscTag +
+                       ' ftop=' + ftop;
               } catch (e) { return 'err'; }
             })();
             """.trimIndent()
