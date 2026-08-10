@@ -49,7 +49,7 @@ console.log('');
 console.log('=== R1: reportPosition runs forcePageRelayout UNGATED (v5.2.27 fix) ===');
 ok('reportPosition body exists', !!reportPosition);
 ok('UNGATED: forcePageRelayout runs without recoverWindowSizeIfStale check',
-   /if \(type == "reel" \|\| type == "stories" \|\| type == "story"\) \{\s*\n\s*runOnUiThread \{\s*\n\s*forcePageRelayout\(binding\.webView\)/.test(reportPosition) &&
+   /if \(type == "reel" \|\| type == "stories" \|\| type == "story"\) \{\s*\n\s*runOnUiThread \{\s*\n\s*forcePageRelayout\(binding\.webView, "offline-swipe"\)/.test(reportPosition) &&
    !/runOnUiThread \{\s*\n\s*if \(recoverWindowSizeIfStale\(\)\)/.test(reportPosition));
 
 console.log('');
@@ -77,7 +77,7 @@ ok('main code (excluding PageAssembly) has NO reportPosition calls',
 console.log('');
 console.log('=== R5: the SPA-swap hook runs forcePageRelayout UNGATED (v5.2.27 fix) ===');
 ok('doUpdateVisitedHistory runs forcePageRelayout on reel/story only',
-   /doUpdateVisitedHistory[\s\S]{0,1800}if \(isReelOrStoryUrl\(url\)\) \{\s*\n\s*forcePageRelayout\(view\)/.test(code));
+   /doUpdateVisitedHistory[\s\S]{0,1800}if \(isReelOrStoryUrl\(url\)\) \{\s*\n\s*forcePageRelayout\(view, "online-spa"\)/.test(code));
 
 console.log('');
 console.log('=== STRUCTURAL DEFECT (the bug) AND FIX (v5.2.27) ===');

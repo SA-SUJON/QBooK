@@ -26,6 +26,23 @@ function ok(name, cond, extra) {
   else { fail++; console.log('  FAIL ' + name + (extra ? ' :: ' + extra : '')); }
 }
 
+/** Brace-counted extraction. The regex was matching the inner `}` of a
+ *  postDelayed block instead of the function close, so any test that
+ *  checked for content past that block failed silently. The pattern
+ *  repeats across the file (onPageFinished, onShowCustomView, the
+ *  JsBridge methods), so a single helper that walks the brace depth
+ *  is more reliable than anchored regexes. */
+const extractFunction = (src, marker) => {
+  const i = src.indexOf(marker);
+  if (i < 0) return '';
+  let depth = 0, j = src.indexOf('{', i), started = false;
+  for (; j < src.length; j++) {
+    if (src[j] === '{') { depth++; started = true; }
+    else if (src[j] === '}') { depth--; if (started && depth === 0) break; }
+  }
+  return src.substring(i, j + 1);
+};
+
 /** Pull the Kotlin raw string out of a `fun x(...): String = """ ... """`. */
 function rawString(file, marker) {
   const src = fs.readFileSync(file, 'utf8');
@@ -1512,7 +1529,7 @@ console.log('\nBackground audio is for Reels, and only when audible');
       ok('and does it before asking the page to re-measure',
          iRecover > -1 && iReflow > -1 && iRecover < iReflow);
       ok('the delayed pass re-checks as well, since the bars settle later',
-         /postDelayed\(\{[\s\S]{0,240}recoverWindowSizeIfStale\(\)[\s\S]{0,120}forcePageRelayout/.test(hide));
+         /postDelayed\(\{[\s\S]{0,240}recoverWindowSizeIfStale\(\)[\s\S]{0,160}forcePageRelayout/.test(hide));
     }
 
     // Leaving the app with the keyboard up and coming back is the other way
@@ -1545,10 +1562,10 @@ console.log('\nBackground audio is for Reels, and only when audible');
     const ma = read(KT('ui/MainActivity.kt'));
 
     ok('there is a way to make the page re-measure itself',
-       /private fun forcePageRelayout\(view: WebView\?\)/.test(ma));
+       /private fun forcePageRelayout\(view: WebView\?(, context: String = "default")?\)/.test(ma));
 
-    const body = (/private fun forcePageRelayout\(view: WebView\?\)[\s\S]{0,1400}?\n    }/
-      .exec(ma) || [''])[0];
+    const body = extractFunction(ma,
+      'private fun forcePageRelayout(view: WebView?, context: String = "default")');
 
     // Reading a layout property is the whole mechanism. Without a read
     // nothing is forced and the call is decoration.
@@ -1564,8 +1581,7 @@ console.log('\nBackground audio is for Reels, and only when audible');
     // Leaving fullscreen is the moment the page is stale.
     // The window has to be wide enough to hold the whole method: it has
     // grown, and a window that stops short would pass by not looking.
-    const hide = (/override fun onHideCustomView\(\)[\s\S]{0,3000}?\n            }/
-      .exec(ma) || [''])[0];
+    const hide = extractFunction(ma, 'override fun onHideCustomView()');
     ok('the whole method is under test, not just its opening',
        /injectAll/.test(hide));
     ok('it runs on leaving fullscreen', /forcePageRelayout/.test(hide));
@@ -1575,7 +1591,7 @@ console.log('\nBackground audio is for Reels, and only when audible');
     // been resized yet.
     ok('once straight away, and once after the bars have settled',
        (hide.match(/forcePageRelayout/g) || []).length === 2 &&
-       /postDelayed\(\{[\s\S]{0,140}forcePageRelayout[\s\S]{0,60}\}, 650\)/.test(hide));
+       /postDelayed\(\{[\s\S]{0,200}forcePageRelayout[\s\S]{0,60}\}, 650\)/.test(hide));
     ok('the delayed one checks the activity is still alive',
        /if \(!isFinishing && !isDestroyed\) \{[\s\S]{0,200}forcePageRelayout/.test(hide) ||
        /if \(!isFinishing && !isDestroyed\) forcePageRelayout/.test(hide));
@@ -1687,7 +1703,7 @@ console.log('\nBackground audio is for Reels, and only when audible');
     // forcePageRelayout never fired. The URL family gate
     // (isReelOrStoryUrl) is the only one left.
     ok('the SPA swap runs forcePageRelayout on reel/story only (gate removed)',
-       /doUpdateVisitedHistory[\s\S]{0,1800}if \(isReelOrStoryUrl\(url\)\) \{\s*\n\s*forcePageRelayout\(view\)\s*\n\s*\}/.test(ma2));
+       /doUpdateVisitedHistory[\s\S]{0,1800}if \(isReelOrStoryUrl\(url\)\) \{\s*\n\s*forcePageRelayout\(view, "online-spa"\)\s*\n\s*\}/.test(ma2));
     ok('the gate covers the exact reel/story families, nothing else',
        /fun isReelOrStoryUrl[\s\S]{0,300}contains\("\/reel"\)[\s\S]{0,300}contains\("\/stories\/"\)[\s\S]{0,120}contains\("\/story\/"\)/.test(ma2) &&
        !/isReelOrStoryUrl[\s\S]{0,400}(home|feed)/.test(ma2));
@@ -1707,7 +1723,7 @@ console.log('\nBackground audio is for Reels, and only when audible');
     // 800 chars), so the bridge is pinned at the actual call site
     // rather than the function header.
     ok('offline swipes run forcePageRelayout (gate removed) at reportPosition',
-       /@JavascriptInterface\s*\n\s*fun reportPosition\(type: String, id: String\)[\s\S]{0,3000}if \(type == "reel" \|\| type == "stories" \|\| type == "story"\) \{\s*\n\s*runOnUiThread \{\s*\n\s*forcePageRelayout\(binding\.webView\)/.test(ma2));
+       /@JavascriptInterface\s*\n\s*fun reportPosition\(type: String, id: String\)[\s\S]{0,3000}if \(type == "reel" \|\| type == "stories" \|\| type == "story"\) \{\s*\n\s*runOnUiThread \{\s*\n\s*forcePageRelayout\(binding\.webView, "offline-swipe"\)/.test(ma2));
     ok('recoverWindowSizeIfStale still returns Boolean for the lifecycle sites',
        /private fun recoverWindowSizeIfStale\(\): Boolean/.test(ma2) &&
        /return true\s*\n\s*\}\s*\n\s*return false/.test(ma2));

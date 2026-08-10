@@ -1545,3 +1545,68 @@ agreeing frames or 40 max).
 > | Source diff: +44/-22 across MainActivity.kt and
 > test_native_behaviour.js, plus 119 new lines for the diagnostic
 > test in test_fullscreen_positioning.js. CI green.
+
+## Addendum (2026-08-11, 02:10): the v5.2.27 fix did not fix the bug
+
+The user installed the v5.2.27 APK (built by the post-commit CI on
+8c5557d, downloaded as a workflow artifact and side-loaded onto the
+device) and reported the same fullscreen positioning bug as before.
+The structural pin still passes in source - the gate really is
+removed at both call sites, the URL family gate still keeps the home
+feed out, the JS settle loop still self-terminates. So one of three
+things is true and we don't yet know which:
+
+1. `forcePageRelayout` fires (proved by removing the gate) but the
+   page does not respond to its `resize` event in the way the theory
+   claimed. The lite renderer might have switched to a different
+   signal since the round-22 observations (Facebook ships a new
+   bundle every few weeks; a CSS-in-JS recompute on a CSS variable
+   change, or a ResizeObserver, or a `visualViewport` listener).
+2. The fullscreen-bug root cause is somewhere else entirely, and the
+   `forcePageRelayout`-missing path was only a contributing factor.
+   The "WiFi-only" symptom in the report might point to a network
+   race that the resize dispatch does not address.
+3. The fix is correct but the user is testing on a build that did
+   not pick up the new code. The build.gradle.kts version was not
+   bumped (still 5.2.26 / versionCode 136), so a downloaded APK
+   artifact could be either the old or the new build depending on
+   which CI run produced it.
+
+To rule (3) out and pick between (1) and (2) the next step is a
+short round of device instrumentation. The follow-up commit adds
+four `BuildConfig.DEBUG`-gated logcat lines, dead-stripped in
+release builds by R8:
+
+- `forcePageRelayout[$context] #N` on every entry
+- `recoverWindowSizeIfStale: windowH=... screenH=... short=...` on
+  every call (so we can confirm the gate really is false in
+  fullscreen, which is the load-bearing claim of the 5.2.27 theory)
+- `forcePageRelayout[$context] #N url=... js=...` on every JS
+  return value (so we can read the page's actual `clientHeight`
+  and `body.getBoundingClientRect().height` at the moment the page
+  is told to re-measure)
+- A counter (one per process, on the companion object) so the test
+  can see whether the function is firing once per swipe, zero times,
+  or many times
+
+The four call sites pass a context string: `"online-spa"` for the
+`doUpdateVisitedHistory` hook, `"offline-swipe"` for the
+`reportPosition` hook, `"fs-exit-immediate"` and `"fs-exit-delayed"`
+for the two passes in `onHideCustomView`. That way the next
+logcat can answer "did the SPA-swap hook actually fire on this
+device" in one read.
+
+Filter logcat with: `adb logcat -s DBPro:*`
+
+BuildConfig.DEBUG is final, the if branches are the only reachable
+ones in debug, R8 strips them in release. No production user is
+affected.
+
+> 2026-08-11, 02:15 | Tests: 1295 passed, 0 failed (12 suites)
+> | Source diff: +80/-25 across MainActivity.kt, build.gradle.kts,
+> test_native_behaviour.js, test_fullscreen_positioning.js. The
+> helper `extractFunction` in test_native_behaviour.js replaces a
+> regex that was matching the inner `}` of a postDelayed block
+> instead of the function close - it was passing by accident
+> before the instrumentation added more body, and is now correct
+> by construction.

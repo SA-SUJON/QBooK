@@ -88,7 +88,14 @@ android {
 
     kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures { viewBinding = true }
+    buildFeatures {
+        viewBinding = true
+        // BuildConfig.DEBUG gates a one-off set of logcat prints added in
+        // round 28 to investigate the fullscreen positioning bug on a real
+        // device. The class itself is auto-generated and adds nothing at
+        // runtime; the gated code is dead-stripped by R8 in release builds.
+        buildConfig = true
+    }
 
     lint {
         abortOnError = false

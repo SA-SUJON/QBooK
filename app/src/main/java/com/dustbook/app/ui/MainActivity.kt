@@ -19,6 +19,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.util.Base64
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -51,6 +52,7 @@ import androidx.core.view.updatePadding
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.dustbook.app.BuildConfig
 import com.dustbook.app.R
 import com.dustbook.app.databinding.ActivityMainBinding
 import com.dustbook.app.utils.AdBlocker
@@ -1396,7 +1398,7 @@ class MainActivity : AppCompatActivity() {
                 // the home feed this whole branch is never taken
                 // (the URL family gate).
                 if (isReelOrStoryUrl(url)) {
-                    forcePageRelayout(view)
+                    forcePageRelayout(view, "online-spa")
                 }
             }
 
@@ -1845,13 +1847,13 @@ class MainActivity : AppCompatActivity() {
                 // The later one runs after that inset pass has resized the
                 // WebView, and is the one that leaves it correct. Cheap
                 // enough to do both: two layout reads, once per exit.
-                forcePageRelayout(binding.webView)
-                binding.root.postDelayed({
-                    if (!isFinishing && !isDestroyed) {
-                        recoverWindowSizeIfStale()
-                        forcePageRelayout(binding.webView)
-                    }
-                }, 650)
+        forcePageRelayout(binding.webView, "fs-exit-immediate")
+        binding.root.postDelayed({
+            if (!isFinishing && !isDestroyed) {
+                recoverWindowSizeIfStale()
+                forcePageRelayout(binding.webView, "fs-exit-delayed")
+            }
+        }, 650)
 
                 // V4 Step 3: Re-inject after exiting fullscreen (helps restore feed state)
                 binding.root.postDelayed({
@@ -1939,8 +1941,18 @@ class MainActivity : AppCompatActivity() {
      * runs out. Unlike the tracer this cannot run forever: it is only ever
      * started from a fullscreen exit, and it terminates itself.
      */
-    private fun forcePageRelayout(view: WebView?) {
+    private fun forcePageRelayout(view: WebView?, context: String = "default") {
         view ?: return
+        if (BuildConfig.DEBUG) {
+            // Round 28 instrumentation: count the call, record who fired it,
+            // and capture the page's actual height on the way back. The whole
+            // block is dead-stripped in release builds by R8 (BuildConfig.DEBUG
+            // is final, the call site is gated, the if branch is the only
+            // reachable one in debug). Filter logcat with: adb logcat -s
+            // DBPro:*. Output: one line on entry, one on JS return.
+            forcePageRelayoutCount++
+            Log.d(TAG, "forcePageRelayout[$context] #${forcePageRelayoutCount}")
+        }
         view.evaluateJavascript(
             """
             (function() {
@@ -1960,9 +1972,16 @@ class MainActivity : AppCompatActivity() {
                 return h + 'x' + Math.round(bh);
               } catch (e) { return 'err'; }
             })();
-            """.trimIndent(),
-            null
-        )
+            """.trimIndent()
+        ) { result ->
+            if (BuildConfig.DEBUG) {
+                // rAF also fires here; not gated because the JS callback is
+                // already the "after the read" moment.
+                val url = view.url ?: "no-url"
+                Log.d(TAG, "forcePageRelayout[$context] #$forcePageRelayoutCount " +
+                    "url=${url.takeLast(60)} js=${result ?: "null"}")
+            }
+        }
         settleRelayout(view)
     }
 
@@ -2065,6 +2084,13 @@ class MainActivity : AppCompatActivity() {
         // alone, so only a shortfall in the range a keyboard leaves counts.
         // A tolerance keeps rounding and a cutout from triggering it.
         val short = screenH - windowH
+        if (BuildConfig.DEBUG) {
+            // Round 28 instrumentation: log the actual numbers so the
+            // fullscreen-suspect moment can be confirmed (short=0 means the
+            // gate is permanently false and forcePageRelayout is dead, which
+            // is exactly what the 5.2.27 theory predicted).
+            Log.d(TAG, "recoverWindowSizeIfStale: windowH=$windowH screenH=$screenH short=$short")
+        }
         if (short > 24 && short < screenH / 2) {
             ViewCompat.requestApplyInsets(root)
             root.requestLayout()
@@ -2457,7 +2483,7 @@ class MainActivity : AppCompatActivity() {
             // size; the JS settle loop self-terminates.
             if (type == "reel" || type == "stories" || type == "story") {
                 runOnUiThread {
-                    forcePageRelayout(binding.webView)
+                    forcePageRelayout(binding.webView, "offline-swipe")
                 }
             }
         }
@@ -2803,6 +2829,12 @@ class MainActivity : AppCompatActivity() {
         /** Root of the currently-resumed activity so developer tools can reach it. */
         @Volatile var resumed: MainActivity? = null
             private set
+
+        /** Round 28 instrumentation: visible only in debug builds (R8-stripped
+         *  in release), used to verify how often forcePageRelayout fires and
+         *  what the page returns when it does. Reset on every cold start. */
+        const val TAG = "DBPro"
+        private var forcePageRelayoutCount: Int = 0
 
         /** Silent ring buffer — last 10 unique video CDN URLs captured while
          *  Log reel video URLs is ON.  Flushed to clipboard only on long-press
