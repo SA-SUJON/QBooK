@@ -49,14 +49,17 @@ class DiagnosticLog(private val appContext: Context) {
             try {
                 val f = file()
                 f.appendText(line, Charsets.UTF_8)
-                if (f.length() > MAX_BYTES) trim()
+                if (f.length() > MAX_BYTES) {
+                    trim()
+                }
             } catch (e: Exception) {
-                // Logging must never crash the app. If the file write
-                // fails (full disk, permission revoked, etc.), drop
-                // the entry silently. A developer who turns the
-                // switch on and sees no output will notice.
+                // Catch body must match the try body's type. The try
+                // body yields Unit (the if-without-else) so the catch
+                // body must also yield Unit; Log.w's Int return is
+                // discarded by the trailing Unit statement.
                 Log.w(TAG, "write failed", e)
             }
+            Unit
         }
     }
 
@@ -65,9 +68,14 @@ class DiagnosticLog(private val appContext: Context) {
     fun readAll(): String = lock.withLock {
         try {
             val f = file()
-            if (!f.exists()) return@withLock ""
-            f.readText(Charsets.UTF_8)
+            if (f.exists()) {
+                f.readText(Charsets.UTF_8)
+            } else {
+                ""
+            }
         } catch (e: Exception) {
+            // Both branches yield String. Log.w's Int return is
+            // discarded by the trailing "" literal.
             Log.w(TAG, "readAll failed", e)
             ""
         }
@@ -77,10 +85,13 @@ class DiagnosticLog(private val appContext: Context) {
     fun clear() {
         lock.withLock {
             try {
-                if (file().exists()) file().delete()
+                val f = file()
+                if (f.exists()) f.delete()
             } catch (e: Exception) {
+                // Same as write: catch body must yield Unit.
                 Log.w(TAG, "clear failed", e)
             }
+            Unit
         }
     }
 

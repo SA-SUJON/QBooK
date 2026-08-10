@@ -1713,3 +1713,27 @@ compiler invocation in the lint step is.
 
 > 2026-08-11, 04:25 | Tests: 1320 passed, 0 failed (13 suites)
 > | Source: 4 files changed, ~15 lines of diff against d2b77b2.
+
+## Addendum 4 (2026-08-11, 04:30): try-catch type mismatch (second attempt)
+
+The first fix (5d5b556) compiled fine locally in my head but failed
+CI again on the same two `if` errors. The cause: the if-without-else
+yields Unit and Log.w yields Int, so the try-catch itself - not
+just the lambda - is a type mismatch regardless of where it sits in
+the enclosing function. Adding a Unit literal after the try-catch
+was not enough; the catch body's last expression had to also be
+Unit.
+
+The pattern across the codebase (AppExecutors.kt uses the same
+shape inside Runnable.run, but Runnable.run is a Java SAM so
+Kotlin absorbs the mismatch) is the trap. ReentrantLock.withLock
+is a Kotlin extension returning a generic T inferred from the
+lambda's last expression, so the type rules apply strictly.
+
+Fix: a Unit literal at the end of every catch body in
+DiagnosticLog, with a comment explaining the constraint. Same
+shape as before but with the catch body now ending in
+`Log.w(...); Unit` rather than just `Log.w(...)`.
+
+> 2026-08-11, 04:32 | Tests: 1320/1320 pass locally, CI re-running.
+> | Source: 1 file changed, 9 lines of diff against 5d5b556.
