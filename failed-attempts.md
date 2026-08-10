@@ -1442,3 +1442,49 @@ wait a few seconds, close it, share the diagnostic log. The
 new fields will tell us where the lite renderer's scrollTop
 sits at every transition and whether the symptom (ftop
 far from 0 on exit) shows up in the data.
+
+## Addendum 11 (2026-08-11, 05:35): the bug is not reproducing
+
+The user shared another Story log after the round-29 instrumentation
+went live. Every Story transition reported:
+
+  bst=0 vst=0 vscTag=vscroller ftop=0
+
+Both on Story open (line 12) and Story close (line 19). vscroller
+selector worked (vscTag=vscroller, not 'body'). The ftop=0
+says the first video/story card's getBoundingClientRect().top is
+zero on both transitions, which is what a correctly placed
+player would look like.
+
+The user's earlier screenshots of Stories (round 22 onward) all
+showed the player centred, the header at the top, the composer
+at the bottom - the standard Story player layout. The "shifting"
+I described in the round-22/23/24 analysis was reconstructed
+from log data ("player top=50->34->50->-28->50") and was not
+visible in the screenshots themselves.
+
+Honest re-reading: the round-22 bug report from the user said
+"video vertically shifted inside the fullscreen view". The
+screenshot they shared (2:10:37 SA AT story) shows a normal
+Story layout. The "shifting" was my interpretation, not the
+user's report. The user reported it, the screenshot did not
+show it, and the latest log says ftop=0 throughout.
+
+This means one of:
+  1. The bug existed in an older Facebook bundle and is no
+     longer reproducible after a bundle update.
+  2. The bug exists but is much rarer than the user thought
+     and the log caught one of its absent moments.
+  3. The bug was never a positioning bug at all - the
+     observation was about something else (audio, autoplay,
+     rotation) that I read as position.
+
+In all three cases, the 5.2.27 commit (8c5557d) was not a
+validated fix; it was a structural change I pushed without
+device verification. The 81b4742 revert is the right state.
+
+I have spent five commits and two CI cycles chasing a bug
+that the user's own data now says is not present. I owe the
+user a clear stop here rather than another speculative push.
+The round-28 infrastructure (diagnostic log, instrumentation,
+addenda) stays in place for the next real bug.
