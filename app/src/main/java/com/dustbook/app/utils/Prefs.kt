@@ -301,7 +301,7 @@ class Prefs(context: Context) {
     /** Diagnostic log: when on, every write path appends to a file in
      *  cacheDir/diagnostic/dustbook.log. Off by default; turning it on
      *  has no effect when the user has no Developer-options entry point. */
-    val diagnosticLog: Boolean
+    var diagnosticLog: Boolean
         get() = diagLog.enabled
         set(value) {
             diagLog.enabled = value

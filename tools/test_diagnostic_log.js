@@ -68,7 +68,7 @@ console.log('=== Thread safety ===');
 ok('uses a ReentrantLock',
    /private val lock = ReentrantLock\(\)/.test(code));
 ok('write takes the lock',
-   /lock\.withLock \{[\s\S]{0,200}file\(\)\.appendText/.test(code));
+   /lock\.withLock \{[\s\S]{0,200}f\.appendText/.test(code));
 ok('readAll takes the lock',
    /fun readAll\(\): String = lock\.withLock/.test(code));
 ok('clear takes the lock',
@@ -77,7 +77,7 @@ ok('clear takes the lock',
 console.log('');
 console.log('=== Safety: never crash the app ===');
 ok('appendText is wrapped in try/catch',
-   /file\(\)\.appendText\(line, Charsets\.UTF_8\)[\s\S]{0,200}catch \(e: Exception\)/.test(code));
+   /f\.appendText\(line, Charsets\.UTF_8\)[\s\S]{0,200}catch \(e: Exception\)/.test(code));
 ok('readAll is wrapped in try/catch',
    /fun readAll[\s\S]{0,300}catch \(e: Exception\)/.test(code));
 ok('clear is wrapped in try/catch',
@@ -94,8 +94,8 @@ ok('newlines in the message are replaced with spaces',
 
 console.log('');
 console.log('=== Wiring ===');
-ok('Prefs exposes diagnosticLog accessor',
-   /val diagnosticLog: Boolean[\s\S]{0,200}diagLog\.enabled/.test(
+ok('Prefs exposes diagnosticLog accessor (must be var, with a setter that updates diagLog.enabled and the shared preference)',
+   /var diagnosticLog: Boolean[\s\S]{0,200}diagLog\.enabled = value[\s\S]{0,150}sp\.edit\(\)\.putBoolean\(KEY_DIAGNOSTIC_LOG, value\)\.apply\(\)/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
 ok('Settings wires the switch to prefs.diagnosticLog',
@@ -103,10 +103,10 @@ ok('Settings wires the switch to prefs.diagnosticLog',
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('Settings wires the three buttons',
-   /view_diagnostic_log[\s\S]{0,200}DiagnosticLogActivity/.test(
+   /view_diagnostic_log[\s\S]{0,200}requireContext\(\), DiagnosticLogActivity::class\.java/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ) &&
-   /share_diagnostic_log[\s\S]{0,500}ACTION_SEND/.test(
+   /share_diagnostic_log[\s\S]{0,1500}ACTION_SEND/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ) &&
    /clear_diagnostic_log[\s\S]{0,200}prefs\.diagLog\.clear/.test(

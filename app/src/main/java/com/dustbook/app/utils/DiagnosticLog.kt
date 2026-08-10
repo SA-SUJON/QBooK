@@ -47,8 +47,9 @@ class DiagnosticLog(private val appContext: Context) {
         val line = formatLine(tag, message)
         lock.withLock {
             try {
-                file().appendText(line, Charsets.UTF_8)
-                if (file().length() > MAX_BYTES) trim()
+                val f = file()
+                f.appendText(line, Charsets.UTF_8)
+                if (f.length() > MAX_BYTES) trim()
             } catch (e: Exception) {
                 // Logging must never crash the app. If the file write
                 // fails (full disk, permission revoked, etc.), drop
@@ -63,8 +64,9 @@ class DiagnosticLog(private val appContext: Context) {
      *  the developer-options screen and the share intent. */
     fun readAll(): String = lock.withLock {
         try {
-            if (!file().exists()) return@withLock ""
-            file().readText(Charsets.UTF_8)
+            val f = file()
+            if (!f.exists()) return@withLock ""
+            f.readText(Charsets.UTF_8)
         } catch (e: Exception) {
             Log.w(TAG, "readAll failed", e)
             ""

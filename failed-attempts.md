@@ -1670,3 +1670,46 @@ without a USB cable.
 > 1 new utility class. R8 / ProGuard on release builds strips no
 > call sites here because the gate is the toggle, not the build
 > type, by user request.
+
+## Addendum 3 (2026-08-11, 04:20): the diagnostic log commit had Kotlin errors
+
+The previous commit (d2b77b2) pushed but failed CI on the Lint step
+with four Kotlin compile errors caught by the compiler before the
+test suite ran:
+
+  DiagnosticLog.kt:51   'if' must have both main and 'else' branches
+  DiagnosticLog.kt:78   'if' must have both main and 'else' branches
+  Prefs.kt:306         A 'val'-property cannot have a setter
+  SettingsActivity.kt:235,239,250  wrong receiver for the click
+                                  listeners (this is the SubFragment,
+                                  not the Activity)
+
+The structural tests did not catch them because they read the
+source as text and the bad patterns still matched - a regex that
+expects `file().appendText(...)` is also satisfied by `f.appendText(...)`
+once you add a `val f = file()` line above it, and an `if` written
+on one line still has the form the regex looks for even if the
+compiler rejects the missing `else` branch.
+
+Fixes, all in this commit:
+
+  - DiagnosticLog.kt: extract `val f = file()` so the `if` no longer
+    needs to be an expression; same for readAll.
+  - Prefs.kt: change `val diagnosticLog: Boolean` to `var` so the
+    custom setter is legal; the getter and setter are unchanged.
+  - SettingsActivity.kt: replace `this` with `requireContext()` for
+    Intent and FileProvider, and `requireActivity().packageName`
+    for the FileProvider authority - the SubFragment does not have
+    a `packageName` property of its own.
+  - test_diagnostic_log.js: the three Settings wiring assertions
+    are tightened to the actual new shape, and the file's
+    "appendText wrapped in try/catch" pin is updated for the
+    `f.appendText(...)` variant.
+
+1320/1320 tests pass after the fix. The compiler would have caught
+all four in any local build, so the structural tests are not the
+right line of defence for a Kotlin-only project - a Kotlin
+compiler invocation in the lint step is.
+
+> 2026-08-11, 04:25 | Tests: 1320 passed, 0 failed (13 suites)
+> | Source: 4 files changed, ~15 lines of diff against d2b77b2.

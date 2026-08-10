@@ -236,7 +236,7 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 }
             findPreference<Preference>("view_diagnostic_log")?.setOnPreferenceClickListener {
-                startActivity(Intent(this, DiagnosticLogActivity::class.java))
+                startActivity(Intent(requireContext(), DiagnosticLogActivity::class.java))
                 true
             }
             findPreference<Preference>("share_diagnostic_log")?.setOnPreferenceClickListener {
@@ -246,8 +246,12 @@ class SettingsActivity : AppCompatActivity() {
                     toast(getString(R.string.diagnostic_log_empty))
                     return@setOnPreferenceClickListener true
                 }
+                // FileProvider is keyed off the application package; on a
+                // SubFragment the packageName lives on the activity, not
+                // on `this` (which is the fragment).
+                val pkg = requireActivity().packageName
                 val uri = FileProvider.getUriForFile(
-                    this, "$packageName.fileprovider", file)
+                    requireContext(), "$pkg.fileprovider", file)
                 val share = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_STREAM, uri)
