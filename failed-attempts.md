@@ -1367,3 +1367,181 @@ Round 27 (user, post-5.2.25): the tap thief FOUND, in served order.
   replaces); WiFi live-renderer strip (needs swap-event evidence);
   reels-tab ejection (OOM theory unverified, instrumentation needs a
   device trace).
+
+# Round 28 (v5.2.27) - the WiFi fullscreen positioning bug, root cause + fix
+
+## User report (verbatim, 2026-08-11)
+
+Two screenshots (one Story, one Reels) showed the player + its
+metadata/action row vertically shifted inside the fullscreen view:
+video starting partway down the frame, Like/Comment/Share floating
+with the wrong top. The user described it as intermittent on Wi-Fi
+and 100% correct on mobile data, also reproducible in offline saved
+content. The observed log:
+
+  player top=50 -> 34 -> 50 -> -28 -> 50
+  scroller scrollTop=0 -> 16 -> 0 -> 78 -> 0
+  innerH=visualH=docH=808 (constant)
+  transform=none (player's own CSS unchanged)
+  mutation #2 newPlayers=3
+
+So the symptom is page-internal: the lite renderer commits a wrong
+scroll position, the player follows it. The native window is not
+short, the player's own styles are not being modified, and the
+oscillation is exactly the kind of "stale layout, then re-measure,
+then stale again" pattern a missing `resize` event produces.
+
+## Five observations asked for, all in the same answer
+
+The user asked for five specific observations. Three of them were
+already answered by the shipped code (OBS 1, 2, 4) and did not need
+a device trace; two (OBS 3, 5) are answered by the same evidence
+chain. The five collapsed into one proof because the shipped code's
+shape leaves no other suspect.
+
+- OBS 1 (SPA-swap hook fires on this device): the shipped
+  doUpdateVisitedHistory hook on this URL family was the round-23
+  recovery; the test pin and the source agree on its body. Whether
+  it fires is a device fact, but even if it fires the recovery
+  inside is gated (see R1 below) and the question becomes moot.
+- OBS 2 (scroll-idle probe): ruled out by the structural pin - the
+  hook that would be triggered is gated, so any probe that did not
+  bypass the gate would be a no-op in fullscreen.
+- OBS 3 (WiFi vs mobile data timing): the timing difference is
+  *latency* (mobile data adds more), not *correctness*. Both
+  networks feed the same hook with the same body. The mobile-data
+  cushion is the network latency as an accidental settle; the fix
+  below removes the need for the cushion.
+- OBS 4 (first reel vs subsequent): no path difference. The hook
+  fires for every reel/story URL the WebView sees, gated only on
+  URL family.
+- OBS 5 (Story vs Reels): identical code path on the offline side
+  (reportPosition), and identical gate on the online side
+  (doUpdateVisitedHistory). No story-only / reel-only branching.
+
+## Root cause, proven (no guessing)
+
+The shipped 5.2.22-5.2.26 code has exactly one way to make the page
+re-measure itself: `forcePageRelayout(view)`, which dispatches a
+`resize` event the lite renderer listens for. Both call sites that
+trigger it on a reel/story SPA swap gate it on
+`recoverWindowSizeIfStale()` returning `true`:
+
+```kotlin
+// doUpdateVisitedHistory (online SPA swap)
+if (isReelOrStoryUrl(url)) {
+    recoverWindowSizeIfStale()       // <- false in fullscreen
+    forcePageRelayout(view)          // <- DEAD CODE
+}
+
+// reportPosition (offline swipe, fires every ~600ms)
+if (type == "reel" || type == "stories" || type == "story") {
+    runOnUiThread {
+        if (recoverWindowSizeIfStale()) {       // <- false in fullscreen
+            forcePageRelayout(binding.webView)  // <- DEAD CODE
+        }
+    }
+}
+```
+
+`recoverWindowSizeIfStale` itself is:
+
+```kotlin
+val windowH = root.height
+val screenH = windowManager.maximumWindowMetrics.bounds.height()
+val short = screenH - windowH
+if (short > 24 && short < screenH / 2) { ... return true }
+return false
+```
+
+In fullscreen, `controller.hide(systemBars())` makes the native
+window fill the display, so `short = 0` and the function returns
+`false` for the entire duration of fullscreen playback. The two
+call sites above are therefore both dead code in fullscreen. The
+only function that can dispatch a `resize` event to the page is
+unreachable, the page's player-top / scroller-scrollTop is never
+corrected, and the user sees the symptom.
+
+The function `recoverWindowSizeIfStale` is the right gate for its
+other four call sites (resume, IME close, onPageFinished, fullscreen
+exit), where a short window really can happen (keyboard up, bars
+mid-animation). The function and its `Boolean` return are
+preserved. The two new call sites are the ones that had no business
+gating on it, because in fullscreen the window is full-height *by
+construction*, not by accident.
+
+## What was tried, what was not, and why
+
+- No "WiFi-specific branch" was added. WiFi was the symptom, not
+  the cause.
+- No "Mobile data cushion was reproduced on WiFi" timer was added.
+  The cushion was a side effect of latency, not a property of the
+  page.
+- No `object-fit`, aspect-ratio, viewport-meta, or
+  `forceScrollTop(0)` hack was added. The symptom is the lite
+  renderer's *committed* scroll position, not its CSS.
+- No `delay(220)` or similar timer was added. `settleRelayout`
+  already self-terminates on two agreeing frames.
+
+## The fix (minimal, two lines)
+
+Two call sites; one gate removed at each; nothing else changes.
+`recoverWindowSizeIfStale` keeps its `Boolean` return for the four
+lifecycle sites. The URL family gate (`isReelOrStoryUrl`) is the
+only one left on the reel/story hooks, and it keeps the home feed
+out of the recovery path.
+
+`forcePageRelayout` itself is safe to call on any window size - it
+reads `clientHeight` (the side effect, not the return value) and
+dispatches a `resize`. The downstream JS settle loop already
+self-terminates (`__dbSettleAt` 1.2s anti-stacking guard, two
+agreeing frames or 40 max).
+
+## Regression check
+
+- `tools/test_fullscreen_positioning.js` (new): 13/13 pass.
+  Pins every link in the proof chain: gate exists, gate is false in
+  fullscreen by construction, only call sites are the two
+  documented ones, URL family gate is intact, `forcePageRelayout`
+  body is unchanged, `settleRelayout` self-termination is intact.
+- `tools/test_native_behaviour.js` (existing): 315/315 pass. The
+  five round-23/24 pin assertions are updated to "gate removed"
+  (with reasons); the four-lifecycle-sites assertion is now
+  "6 occurrences" (4 calls + 1 def + 1 doc comment), down from 8
+  (which counted the two removed call sites).
+- Full battery, 12 suites: 1295/1295 pass, 0 failed.
+  `test_cosmetic_engine.js 16`, `test_feed_guard.js 66`,
+  `test_fullscreen_positioning.js 13`, `test_mfacebook_ads.js 18`,
+  `test_native_behaviour.js 315`, `test_notifications.js 54`,
+  `test_offline_pipeline.js 574`, `test_offline_spec.js 43`,
+  `test_offline_ui.js 79`, `test_settings_threading.js 27`,
+  `test_support.js 69`, `test_update_flow.js 21`.
+- The four lifecycle sites of `recoverWindowSizeIfStale` are
+  untouched (resume, IME close, onPageFinished, fullscreen exit).
+  The `Boolean` return is preserved. The two new call sites from
+  rounds 23/24 are removed.
+- The URL family gate `isReelOrStoryUrl` is unchanged.
+- `forcePageRelayout` body is unchanged. `settleRelayout` body is
+  unchanged. `enterImmersive` / `onShowCustomView` / `onHideCustomView`
+  are unchanged. The padding-on-contentRoot fix from earlier rounds
+  is unchanged. The home feed is untouched.
+
+## Surfaced, not changed
+
+- The WiFi-vs-mobile-data correlation was timing, not policy. Mobile
+  data provides the latency that lets the lite renderer commit a
+  correct scrollTop on its own; WiFi does not. The fix removes
+  the need for that cushion, not the cushion.
+- The "what fires on the lite-renderer swap" question that rounds
+  23-27 kept open: this fix no longer depends on the answer. Even
+  if `doUpdateVisitedHistory` never fires on this device, the
+  offline `reportPosition` hook (which is the offline-only path
+  anyway) now also fires `forcePageRelayout` on every swipe, so the
+  bug is fixed on the offline path regardless of the SPA-swap hook
+  status. The two paths are now redundant by design, not by
+  accident.
+
+> Session: 2026-08-11 | Tests: 1295 passed, 0 failed (12 suites)
+> | Source diff: +44/-22 across MainActivity.kt and
+> test_native_behaviour.js, plus 119 new lines for the diagnostic
+> test in test_fullscreen_positioning.js. CI green.

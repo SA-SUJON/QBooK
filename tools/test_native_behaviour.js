@@ -1681,9 +1681,13 @@ console.log('\nBackground audio is for Reels, and only when audible');
     ok('v5.2.21 gated the reflow behind a measured short window (pinned)',
        /isReelOrStoryUrl\(url\) && recoverWindowSizeIfStale\(\)\) \{\s*\n\s*forcePageRelayout\(view\)/.test(ma521));
 
-    // New side: one gate (the URL family), then the same pair, in order.
-    ok('the SPA swap now runs the fullscreen-exit pair on reel/story only',
-       /doUpdateVisitedHistory[\s\S]{0,1800}if \(isReelOrStoryUrl\(url\)\) \{\s*\n\s*recoverWindowSizeIfStale\(\)\s*\n\s*forcePageRelayout\(view\)\s*\n\s*\}/.test(ma2));
+    // v5.2.27: the recoverWindowSizeIfStale() gate is removed. In
+    // fullscreen the native window is full-height by construction, so
+    // the gate was permanently false here and the page-side
+    // forcePageRelayout never fired. The URL family gate
+    // (isReelOrStoryUrl) is the only one left.
+    ok('the SPA swap runs forcePageRelayout on reel/story only (gate removed)',
+       /doUpdateVisitedHistory[\s\S]{0,1800}if \(isReelOrStoryUrl\(url\)\) \{\s*\n\s*forcePageRelayout\(view\)\s*\n\s*\}/.test(ma2));
     ok('the gate covers the exact reel/story families, nothing else',
        /fun isReelOrStoryUrl[\s\S]{0,300}contains\("\/reel"\)[\s\S]{0,300}contains\("\/stories\/"\)[\s\S]{0,120}contains\("\/story\/"\)/.test(ma2) &&
        !/isReelOrStoryUrl[\s\S]{0,400}(home|feed)/.test(ma2));
@@ -1697,18 +1701,24 @@ console.log('\nBackground audio is for Reels, and only when audible');
     // swipe), which needed the function to report back whether it acted,
     // so forcePageRelayout only runs when a real shortfall was measured -
     // hence the Boolean return this round adds.
-    ok('offline swipes are covered at reportPosition, since the URL never changes there',
-       /fun reportPosition\(type: String, id: String\)[\s\S]{0,800}if \(type == "reel" \|\| type == "stories" \|\| type == "story"\) \{\s*\n\s*runOnUiThread \{\s*\n\s*if \(recoverWindowSizeIfStale\(\)\) \{\s*\n\s*forcePageRelayout\(binding\.webView\)/.test(ma2));
-    ok('recoverWindowSizeIfStale reports back whether it acted, so callers can gate on it',
+    // v5.2.27: same gate removal at reportPosition. The Boolean return
+    // is preserved because the four lifecycle call sites still use it.
+    // The body is long (the reportPosition docs alone are bigger than
+    // 800 chars), so the bridge is pinned at the actual call site
+    // rather than the function header.
+    ok('offline swipes run forcePageRelayout (gate removed) at reportPosition',
+       /@JavascriptInterface\s*\n\s*fun reportPosition\(type: String, id: String\)[\s\S]{0,3000}if \(type == "reel" \|\| type == "stories" \|\| type == "story"\) \{\s*\n\s*runOnUiThread \{\s*\n\s*forcePageRelayout\(binding\.webView\)/.test(ma2));
+    ok('recoverWindowSizeIfStale still returns Boolean for the lifecycle sites',
        /private fun recoverWindowSizeIfStale\(\): Boolean/.test(ma2) &&
        /return true\s*\n\s*\}\s*\n\s*return false/.test(ma2));
     // Literal `recoverWindowSizeIfStale()` occurrences: 4 lifecycle call
-    // sites + 1 doc comment + 1 definition on the shipped build (6);
-    // the SPA-swap call from round 23 (7); round 24 adds one more at
-    // reportPosition for the offline case (8).
-    ok('the four lifecycle call sites are all still there, plus the two new',
+    // sites + 1 doc comment + 1 definition on the shipped baseline (6).
+    // v5.2.27 removes the two new ones (round 23 SPA-swap, round 24
+    // offline) - both were dead in fullscreen. The function itself is
+    // unchanged; the four lifecycle sites still use it correctly.
+    ok('the four lifecycle call sites are all still there, the two new are gone',
        (maOld.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 6 &&
-       (ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 8,
+       (ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length === 6,
        String((ma2.match(/recoverWindowSizeIfStale\(\)/g) || []).length));
     // Bound: the settle loop still self-terminates and still dispatches
     // resize only while the measured height is moving (tracer on purpose).

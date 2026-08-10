@@ -1382,17 +1382,20 @@ class MainActivity : AppCompatActivity() {
                 // along). v5.2.21 gated the reflow behind a measured
                 // short window; the device answered with the same strip
                 // on v5.2.21 - so the strip is page-side staleness, not
-                // a short window, and the right dose is the page-side
-                // half of the pair, exactly what leaving fullscreen
-                // uses, gated to this family only. The settle loop is
+                // a short window. v5.2.27 removes the gate: in
+                // fullscreen the native window is full-height by
+                // construction (system bars hidden), so
+                // recoverWindowSizeIfStale is permanently false here
+                // and the only thing that could fire the page-side
+                // forcePageRelayout never did. forcePageRelayout itself
+                // is safe at any window size - it reads clientHeight and
+                // dispatches a resize; the JS settle loop is
                 // self-terminating (two agreeing frames or ~40 max,
                 // 1.2s anti-stacking guard) and only ever dispatches a
-                // resize while the measured height is still moving -
-                // the tracer's healing read, on purpose. The window
-                // check stays first: it no-ops on a healthy window, and
-                // on the home feed this whole branch is never taken.
+                // resize while the measured height is still moving. On
+                // the home feed this whole branch is never taken
+                // (the URL family gate).
                 if (isReelOrStoryUrl(url)) {
-                    recoverWindowSizeIfStale()
                     forcePageRelayout(view)
                 }
             }
@@ -2441,11 +2444,20 @@ class MainActivity : AppCompatActivity() {
             // only other place this recovery runs - never fires for them.
             // This report already arrives reliably ~600ms after each
             // swipe settles, so it doubles as that missing signal.
+            //
+            // v5.2.27 removes the recoverWindowSizeIfStale gate that
+            // guarded this on v5.2.22-5.2.26. That gate was right for the
+            // keyboard-short-window bug (the four lifecycle call sites
+            // still use it correctly), but in fullscreen the native
+            // window is full-height by construction (system bars hidden),
+            // so the gate was permanently false here and forcePageRelayout
+            // never ran - the page's player top / scroller scrollTop was
+            // never corrected, which is the WiFi fullscreen positioning
+            // bug. forcePageRelayout itself is safe to call on any window
+            // size; the JS settle loop self-terminates.
             if (type == "reel" || type == "stories" || type == "story") {
                 runOnUiThread {
-                    if (recoverWindowSizeIfStale()) {
-                        forcePageRelayout(binding.webView)
-                    }
+                    forcePageRelayout(binding.webView)
                 }
             }
         }
