@@ -1536,6 +1536,16 @@ class MainActivity : AppCompatActivity() {
 
     /** @return true if the app consumed the navigation. */
     private fun handleUrl(url: String): Boolean {
+        // 0. A direct media link (the CDN URL behind Facebook's own "Save"
+        //    option) must be downloaded, not navigated to. Left to fall
+        //    through to the internal-host check below, fbcdn.net URLs were
+        //    treated as "stay inside the app" and the WebView silently
+        //    navigated to the raw image/video instead of firing the
+        //    DownloadListener - so "Save" from the ⋮ menu did nothing.
+        if (UrlHelper.isDirectMediaLink(url)) {
+            enqueueDownload(url, binding.webView.settings.userAgentString, null, null)
+            return true
+        }
         // 1. Play Store / app install links are killed outright.
         if (prefs.blockAppPromo && UrlHelper.isAppStoreLink(url)) {
             return true // swallow silently, no store, no chooser

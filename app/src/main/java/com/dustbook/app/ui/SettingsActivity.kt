@@ -700,27 +700,54 @@ class SettingsActivity : AppCompatActivity() {
             val values = resources.getStringArray(R.array.icon_values)
             val d = resources.displayMetrics.density
 
-            // Compact grid, 4 per row, no labels - the icon itself is the
-            // only thing being chosen between, so nothing else needs to
-            // compete for attention. Selection is shown as a ring rather
-            // than a name, so it reads at a glance instead of being read.
-            val cellSize = (64 * d).toInt()
-            val cellMargin = (6 * d).toInt()
-            val ringPadding = (6 * d).toInt()
+            // 3 per row so 9 of the 13 icons are visible without scrolling;
+            // the rest reachable by scrolling the grid itself. Selection is
+            // shown as a ring rather than a name, so it reads at a glance
+            // instead of being read. Tapping an icon moves the ring there
+            // immediately and zooms the icon slightly - a live preview of
+            // the pending choice - but nothing is applied until OK; Cancel
+            // leaves the real selection untouched.
+            val cellSize = (52 * d).toInt()
+            val cellBox = (84 * d).toInt()
+            val cellMargin = (3 * d).toInt()
+            val ringSize = (62 * d).toInt()
 
             val grid = android.widget.GridLayout(ctx).apply {
-                columnCount = 4
-                setPadding((20 * d).toInt(), (16 * d).toInt(), (20 * d).toInt(), (8 * d).toInt())
+                columnCount = 3
+                setPadding((10 * d).toInt(), (12 * d).toInt(), (10 * d).toInt(), (4 * d).toInt())
             }
 
             val scroll = android.widget.ScrollView(ctx).apply {
                 addView(grid)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    (264 * d).toInt()
+                )
+            }
+
+            var pendingIdx = currentIdx
+            val rings = HashMap<Int, android.view.View>()
+            val icons = HashMap<Int, android.widget.ImageView>()
+
+            fun selectPending(i: Int) {
+                pendingIdx = i
+                for ((idx, ring) in rings) {
+                    ring.visibility = if (idx == i)
+                        android.view.View.VISIBLE else android.view.View.INVISIBLE
+                }
+                for ((idx, iv) in icons) {
+                    iv.scaleX = if (idx == i) 1.12f else 1f
+                    iv.scaleY = if (idx == i) 1.12f else 1f
+                }
             }
 
             val dialog = AlertDialog.Builder(ctx)
                 .setTitle(getString(R.string.pref_icon))
                 .setView(scroll)
-                .setPositiveButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    applyAppIcon(pendingIdx)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
                 .create()
 
             for (vi in values.indices) {
@@ -733,7 +760,7 @@ class SettingsActivity : AppCompatActivity() {
                         android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
                     ).apply {
                         width = 0
-                        height = cellSize + ringPadding * 2
+                        height = cellBox
                         setMargins(cellMargin, cellMargin, cellMargin, cellMargin)
                     }
                     foreground = android.graphics.drawable.RippleDrawable(
@@ -747,28 +774,29 @@ class SettingsActivity : AppCompatActivity() {
                     isFocusable = true
                 }
 
+                val ring = android.view.View(ctx).apply {
+                    layoutParams = android.widget.FrameLayout.LayoutParams(
+                        ringSize, ringSize, android.view.Gravity.CENTER
+                    )
+                    setBackgroundResource(R.drawable.bg_icon_selected_ring)
+                    visibility = if (i == currentIdx)
+                        android.view.View.VISIBLE else android.view.View.INVISIBLE
+                }
+                rings[i] = ring
+
                 val img = android.widget.ImageView(ctx).apply {
                     setImageResource(iconRes(i))
                     layoutParams = android.widget.FrameLayout.LayoutParams(
                         cellSize, cellSize, android.view.Gravity.CENTER
                     )
                     scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    if (i == currentIdx) { scaleX = 1.12f; scaleY = 1.12f }
                 }
-
-                val ring = android.view.View(ctx).apply {
-                    layoutParams = android.widget.FrameLayout.LayoutParams(
-                        cellSize + ringPadding, cellSize + ringPadding, android.view.Gravity.CENTER
-                    )
-                    setBackgroundResource(R.drawable.bg_icon_selected_ring)
-                    visibility = if (i == currentIdx) android.view.View.VISIBLE else android.view.View.INVISIBLE
-                }
+                icons[i] = img
 
                 cell.addView(ring)
                 cell.addView(img)
-                cell.setOnClickListener {
-                    applyAppIcon(i)
-                    dialog.dismiss()
-                }
+                cell.setOnClickListener { selectPending(i) }
                 grid.addView(cell)
             }
 
