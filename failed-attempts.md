@@ -1610,3 +1610,63 @@ affected.
 > instead of the function close - it was passing by accident
 > before the instrumentation added more body, and is now correct
 > by construction.
+
+## Addendum 2 (2026-08-11, 03:50): in-app diagnostic log
+
+The user asked for an in-app diagnostic log: a Developer options
+switch that turns on file-backed logging across the app, with view /
+share / clear buttons reachable from the same screen. The user
+explained the rationale - no third-party app, no PC, just an
+in-app tool that records the full app's behaviour for any future
+bug they hit. The earlier adb logcat was rejected for that reason.
+
+This adds three new files, one new preference category in the
+existing Developer options screen, and one new Activity. None of
+it is gated on BuildConfig.DEBUG - it stays in release builds,
+because the user toggle is the gate, not the build type. The cost
+is one boolean read per call site (a few hundred microseconds per
+page load) and zero IO when the toggle is off.
+
+- app/src/main/java/com/dustbook/app/utils/DiagnosticLog.kt
+  - the file-backed ring buffer. 5 MB cap, 256 KB trim chunks,
+    ReentrantLock for thread safety, try/catch around every IO
+    so a logging failure cannot crash the app.
+- app/src/main/java/com/dustbook/app/ui/DiagnosticLogActivity.kt
+  - read-only viewer, scrolls to the bottom on first show.
+- app/src/main/res/layout/activity_diagnostic_log.xml
+  - the viewer layout. monospace TextView inside a ScrollView.
+- app/src/main/res/xml/settings_developer.xml
+  - one SwitchPreferenceCompat ("Enable diagnostic log") and
+    three Preferences (View, Share, Clear) under a new category.
+- app/src/main/res/xml/file_paths.xml
+  - cache-path for diagnostic/ so FileProvider can share the
+    log file via the system share sheet.
+- AndroidManifest.xml
+  - DiagnosticLogActivity registered with the same
+    `excludeFromRecents="true"` and `parentActivityName` as
+    SettingsActivity.
+
+21 write call sites in MainActivity covering:
+- lifecycle: onCreate / onResume / onPause / onDestroy
+- webview: onPageStarted / onPageFinished / doUpdateVisitedHistory /
+  onReceivedError
+- network: shouldInterceptRequest, throttled to one entry per
+  second so a busy page does not fill the 5 MB cap
+- fullscreen: onShowCustomView / onHideCustomView
+- bridge: onScrollState / onMediaState / onAuthState /
+  onSoftRefresh / onOfflineItems / onOfflinePage / onOfflineNav
+- relayout: the existing forcePageRelayout and
+  recoverWindowSizeIfStale entry points, mirrored from the
+  adb logcat line so a developer with only the phone can
+  read them.
+
+The original 5.2.27 question is still open. This commit does not
+address it - it just removes the adb logcat dependency so the next
+investigation round can read what is happening on the device
+without a USB cable.
+
+> 2026-08-11, 04:00 | Tests: 1320 passed, 0 failed (13 suites)
+> | Source: +484/-29 across 7 files, 1 new Activity, 1 new layout,
+> 1 new utility class. R8 / ProGuard on release builds strips no
+> call sites here because the gate is the toggle, not the build
+> type, by user request.

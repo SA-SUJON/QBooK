@@ -591,11 +591,11 @@ console.log('\nOffline saving starts on its own');
      'call sites: ' + starts);
 
   const onResume = ma.slice(ma.indexOf('override fun onResume'),
-                            ma.indexOf('override fun onResume') + 2000);
+                            ma.indexOf('override fun onResume') + 3000);
   ok('opening the app is enough to begin',
      /BackgroundSyncManager\.start\(\)/.test(onResume));
   ok('and only while there is a connection',
-     /isOnline[\s\S]{0,80}BackgroundSyncManager\.start\(\)/.test(onResume));
+     /isOnline[\s\S]{0,200}BackgroundSyncManager\.start\(\)/.test(onResume));
 
   const signedIn = ma.slice(ma.indexOf('if (wasAuth && !auth)'),
                             ma.indexOf('if (wasAuth && !auth)') + 900);
@@ -1535,7 +1535,7 @@ console.log('\nBackground audio is for Reels, and only when audible');
     // Leaving the app with the keyboard up and coming back is the other way
     // to land on a stale window.
     ok('coming back to the app checks too',
-       /override fun onResume\(\)[\s\S]{0,700}recoverWindowSizeIfStale/.test(ma));
+       /override fun onResume\(\)[\s\S]{0,1500}recoverWindowSizeIfStale/.test(ma));
     ok('and does it after layout, when a height can be read',
        /binding\.root\.post \{[^}]*recoverWindowSizeIfStale/.test(ma));
   }

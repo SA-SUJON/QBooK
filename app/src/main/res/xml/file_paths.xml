@@ -6,4 +6,7 @@
          must be external app storage rather than the private cache. -->
     <external-files-path name="updates" path="updates/" />
     <files-path name="updates_internal" path="updates/" />
+    <!-- in-app diagnostic log file, written by DiagnosticLog and shared
+         via Settings -> Developer options -> Share log. -->
+    <cache-path name="diagnostic" path="diagnostic/" />
 </paths>

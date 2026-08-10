@@ -11,6 +11,7 @@ import androidx.preference.PreferenceManager
 class Prefs(context: Context) {
 
     val sp: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+    val diagLog: DiagnosticLog = DiagnosticLog(context.applicationContext)
 
     companion object {
         // Blocking
@@ -80,6 +81,7 @@ class Prefs(context: Context) {
         const val KEY_HAPTICS = "haptics_enabled"
         const val KEY_INSPECT_ADS = "inspect_ads"
         const val KEY_LOG_VIDEOS = "log_video_urls"
+        const val KEY_DIAGNOSTIC_LOG = "diagnostic_log"
         const val KEY_HOMEPAGE = "homepage_url"
 
         // Data
@@ -296,6 +298,15 @@ class Prefs(context: Context) {
     /** Debug: long-press an ad to capture its markup. Off by default. */
     val inspectAds: Boolean get() = sp.getBoolean(KEY_INSPECT_ADS, false)
     val logVideoUrls: Boolean get() = sp.getBoolean(KEY_LOG_VIDEOS, false)
+    /** Diagnostic log: when on, every write path appends to a file in
+     *  cacheDir/diagnostic/dustbook.log. Off by default; turning it on
+     *  has no effect when the user has no Developer-options entry point. */
+    val diagnosticLog: Boolean
+        get() = diagLog.enabled
+        set(value) {
+            diagLog.enabled = value
+            sp.edit().putBoolean(KEY_DIAGNOSTIC_LOG, value).apply()
+        }
     val saveSession: Boolean get() = sp.getBoolean(KEY_SAVE_SESSION, false)
 
     val homepage: String

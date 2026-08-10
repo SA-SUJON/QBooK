@@ -159,6 +159,10 @@ class MainActivity : AppCompatActivity() {
     /** True while a soft refresh is waiting for the page to answer. */
     @Volatile private var softRefreshPending: Boolean = false
 
+    /** Throttles the diagnostic-log network entry to one per second.
+     *  Read/written from the WebView resource thread, hence @Volatile. */
+    @Volatile private var lastNetworkLogSecond: Long = 0
+
     private val gestureDetector by lazy {
         ThreeFingerDoubleTapDetector { openHiddenSettings() }
     }
@@ -218,6 +222,13 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs(this)
+        // Wire the in-process DiagnosticLog to the persisted toggle. The
+        // setting has its own getter and a setter that updates both the
+        // volatile flag (read by every write call site) and the shared
+        // preference (read at next cold start). The wiring here just
+        // makes the volatile flag track the saved value on startup.
+        prefs.diagLog.enabled = prefs.diagnosticLog
+        prefs.diagLog.write("lifecycle", "onCreate savedInstanceState=$savedInstanceState")
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode())
         if (prefs.amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
         super.onCreate(savedInstanceState)
@@ -395,6 +406,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        prefs.diagLog.write("lifecycle", "onResume")
         stopBgAudioService()
         // Back in front: let the framework manage visibility normally again,
         // so a WebView the user has finished with is still suspended.
@@ -476,6 +488,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        prefs.diagLog.write("lifecycle", "onPause isFinishing=$isFinishing")
         if (resumed == this) resumed = null
 
         saveOfflinePosition()
@@ -531,6 +544,7 @@ class MainActivity : AppCompatActivity() {
      * bootstrap, which is the difference between an app and a browser tab.
      */
     override fun onDestroy() {
+        prefs.diagLog.write("lifecycle", "onDestroy isFinishing=$isFinishing")
         connectivityCallback?.let {
             try {
                 (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
@@ -1297,6 +1311,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
+                prefs.diagLog.write("webview", "onPageStarted url=${url?.take(120)}")
                 // Counted, so finishing this load cannot lift a hold that a
                 // fullscreen transition is still relying on.
                 if (!pageLoadHoldsInsets) { pageLoadHoldsInsets = true; holdInsets() }
@@ -1345,6 +1360,7 @@ class MainActivity : AppCompatActivity() {
             // reuses the same settle already used on the fullscreen-exit path.
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                prefs.diagLog.write("webview", "onPageFinished url=${url?.take(120)}")
                 if (pageLoadHoldsInsets) { pageLoadHoldsInsets = false; releaseInsets() }
                 binding.swipeRefresh.isRefreshing = false
                 mainFrameRetries = 0
@@ -1372,6 +1388,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                 super.doUpdateVisitedHistory(view, url, isReload)
+                prefs.diagLog.write("webview", "doUpdateVisitedHistory isReload=$isReload url=${url?.take(120)}")
                 // SPA navigation - re-run the blocker.
                 injectAll(view)
                 scheduleAuthProbes(view)
@@ -1408,6 +1425,9 @@ class MainActivity : AppCompatActivity() {
                 error: WebResourceError?
             ) {
                 super.onReceivedError(view, request, error)
+                prefs.diagLog.write("webview",
+                    "onReceivedError code=${error?.errorCode} mainFrame=${request?.isForMainFrame} " +
+                    "url=${request?.url?.toString()?.take(120)}")
                 binding.swipeRefresh.isRefreshing = false
                 if (request?.isForMainFrame != true) return
 
@@ -1470,6 +1490,20 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): WebResourceResponse? {
                 request ?: return null
+                // Throttled network log: write only the first request of each
+                // second, so a busy page produces ~1 entry/sec instead of
+                // hundreds. The "throttle" counter is a single Int on the
+                // Activity; it resets only on process restart, so very long
+                // sessions could in theory see drift, but the difference
+                // between minute 1 and minute 1440 is what matters and the
+                // modulus is 1000, not 1440.
+                val throttleMs = System.currentTimeMillis() / 1000
+                if (throttleMs != lastNetworkLogSecond) {
+                    lastNetworkLogSecond = throttleMs
+                    prefs.diagLog.write("network",
+                        "intercept mainFrame=${request.isForMainFrame} " +
+                        "url=${request.url.toString().take(150)}")
+                }
 
                 // Every new main-frame navigation leaves the offline
                 // document behind unless serve() says otherwise below -
@@ -1752,6 +1786,7 @@ class MainActivity : AppCompatActivity() {
                 customView = view
                 customViewCallback = callback
                 originalOrientation = requestedOrientation
+                prefs.diagLog.write("fullscreen", "onShowCustomView originalOrientation=$originalOrientation")
 
                 // The system's default video poster (the large play-triangle-in-a-ring
                 // icon) is drawn by the platform's VideoView/MediaPlayer before the
@@ -1815,6 +1850,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onHideCustomView() {
                 if (customView == null) return
+                prefs.diagLog.write("fullscreen", "onHideCustomView")
                 beginFullscreenTransition()
                 binding.customViewContainer.apply {
                     removeAllViews()
@@ -1952,6 +1988,12 @@ class MainActivity : AppCompatActivity() {
             // DBPro:*. Output: one line on entry, one on JS return.
             forcePageRelayoutCount++
             Log.d(TAG, "forcePageRelayout[$context] #${forcePageRelayoutCount}")
+            // In-app log: also written when the diagnostic switch is on,
+            // independent of the adb logcat line above. The two readers
+            // are different audiences - a developer with a USB cable vs a
+            // developer with only the phone - so the same line lives in
+            // both.
+            prefs.diagLog.write("relayout", "forcePageRelayout[$context] #${forcePageRelayoutCount}")
         }
         view.evaluateJavascript(
             """
@@ -1979,6 +2021,9 @@ class MainActivity : AppCompatActivity() {
                 // already the "after the read" moment.
                 val url = view.url ?: "no-url"
                 Log.d(TAG, "forcePageRelayout[$context] #$forcePageRelayoutCount " +
+                    "url=${url.takeLast(60)} js=${result ?: "null"}")
+                prefs.diagLog.write("relayout",
+                    "forcePageRelayout[$context] #$forcePageRelayoutCount " +
                     "url=${url.takeLast(60)} js=${result ?: "null"}")
             }
         }
@@ -2091,6 +2136,10 @@ class MainActivity : AppCompatActivity() {
             // is exactly what the 5.2.27 theory predicted).
             Log.d(TAG, "recoverWindowSizeIfStale: windowH=$windowH screenH=$screenH short=$short")
         }
+        // Mirror to the in-app log: same line, gated on the user's
+        // diagnostic-log switch instead of the build type.
+        prefs.diagLog.write("relayout",
+            "recoverWindowSizeIfStale: windowH=$windowH screenH=$screenH short=$short")
         if (short > 24 && short < screenH / 2) {
             ViewCompat.requestApplyInsets(root)
             root.requestLayout()
@@ -2252,6 +2301,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun onScrollState(atTop: Boolean) {
             pageAtTop = atTop
+            this@MainActivity.prefs.diagLog.write("bridge", "onScrollState atTop=$atTop")
         }
 
         /**
@@ -2299,6 +2349,7 @@ class MainActivity : AppCompatActivity() {
          */
         @JavascriptInterface
         fun onSoftRefresh(handled: Boolean) {
+            this@MainActivity.prefs.diagLog.write("bridge", "onSoftRefresh handled=$handled pending=$softRefreshPending")
             if (!softRefreshPending) return
             softRefreshPending = false
             runOnUiThread {
@@ -2316,6 +2367,8 @@ class MainActivity : AppCompatActivity() {
          */
         @JavascriptInterface
         fun onOfflineItems(section: String, json: String, done: Boolean) {
+            this@MainActivity.prefs.diagLog.write("bridge",
+                "onOfflineItems section=$section jsonLen=${json.length} done=$done online=$isOnline mode=${prefs.offlineMode}")
             if (!prefs.offlineMode || !isOnline) return
             val target = prefs.offlineReelTarget.coerceAtLeast(30)
             val items = OfflineSync.parseItems(json)
@@ -2375,6 +2428,8 @@ class MainActivity : AppCompatActivity() {
          */
         @JavascriptInterface
         fun onOfflinePage(section: String, html: String) {
+            this@MainActivity.prefs.diagLog.write("bridge",
+                "onOfflinePage section=$section htmlLen=${html.length}")
             if (!prefs.offlineMode || !isOnline) return
             AppExecutors.background.execute {
                 OfflineDocs.storeFromPage(
@@ -2396,6 +2451,7 @@ class MainActivity : AppCompatActivity() {
          */
         @JavascriptInterface
         fun onOfflineNav(screen: String, url: String) {
+            this@MainActivity.prefs.diagLog.write("bridge", "onOfflineNav screen=$screen url=${url.take(120)}")
             runOnUiThread { binding.webView.loadUrl(url) }
         }
 
@@ -2422,6 +2478,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun onMediaState(playing: Boolean) {
             mediaPlaying = playing
+            this@MainActivity.prefs.diagLog.write("bridge", "onMediaState playing=$playing")
         }
 
         /**
@@ -2442,6 +2499,7 @@ class MainActivity : AppCompatActivity() {
         fun onAuthState(loggedOut: Boolean) {
             if (domSaysLoggedOut == loggedOut) return
             domSaysLoggedOut = loggedOut
+            this@MainActivity.prefs.diagLog.write("bridge", "onAuthState loggedOut=$loggedOut")
             runOnUiThread { evaluateAuthState(binding.webView.url) }
         }
 

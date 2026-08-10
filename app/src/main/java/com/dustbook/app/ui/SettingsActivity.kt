@@ -3,10 +3,12 @@ package com.dustbook.app.ui
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import java.io.File
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -220,6 +222,43 @@ class SettingsActivity : AppCompatActivity() {
             // once the bug is confirmed fixed.
             findPreference<Preference>("sync_diagnostics")?.setOnPreferenceClickListener {
                 showSyncDiagnosticsDialog()
+                true
+            }
+
+            // ---- diagnostic log: switch drives the in-process logger; the
+            // three buttons open the file in a reader, share it, or clear
+            // it. The reader is its own Activity so the Settings screen
+            // stays single-page and the file can be much larger than any
+            // dialog body.
+            findPreference<SwitchPreferenceCompat>(Prefs.KEY_DIAGNOSTIC_LOG)
+                ?.setOnPreferenceChangeListener { _, v ->
+                    prefs.diagnosticLog = v as Boolean
+                    true
+                }
+            findPreference<Preference>("view_diagnostic_log")?.setOnPreferenceClickListener {
+                startActivity(Intent(this, DiagnosticLogActivity::class.java))
+                true
+            }
+            findPreference<Preference>("share_diagnostic_log")?.setOnPreferenceClickListener {
+                val path = prefs.diagLog.path()
+                val file = File(path)
+                if (!file.exists()) {
+                    toast(getString(R.string.diagnostic_log_empty))
+                    return@setOnPreferenceClickListener true
+                }
+                val uri = FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", file)
+                val share = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(share, getString(R.string.diagnostic_share_chooser)))
+                true
+            }
+            findPreference<Preference>("clear_diagnostic_log")?.setOnPreferenceClickListener {
+                prefs.diagLog.clear()
+                toast(getString(R.string.diagnostic_log_cleared))
                 true
             }
 

@@ -265,6 +265,14 @@
             android:parentActivityName=".ui.MainActivity"
             android:theme="@style/Theme.Dustbook" />
 
+        <activity
+            android:name=".ui.DiagnosticLogActivity"
+            android:exported="false"
+            android:label="@string/diagnostic_log_title"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".ui.SettingsActivity"
+            android:theme="@style/Theme.Dustbook" />
+
         <service
             android:name=".ui.AudioService"
             android:foregroundServiceType="mediaPlayback"

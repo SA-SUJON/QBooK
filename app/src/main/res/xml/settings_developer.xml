@@ -38,6 +38,32 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="@string/dev_cat_log"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat android:key="diagnostic_log"
+            android:title="@string/pref_diagnostic_log"
+            android:summary="@string/pref_diagnostic_log_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+
+        <Preference android:key="view_diagnostic_log"
+            android:title="@string/pref_diagnostic_view"
+            android:summary="@string/pref_diagnostic_view_sum"
+            app:iconSpaceReserved="false" />
+
+        <Preference android:key="share_diagnostic_log"
+            android:title="@string/pref_diagnostic_share"
+            android:summary="@string/pref_diagnostic_share_sum"
+            app:iconSpaceReserved="false" />
+
+        <Preference android:key="clear_diagnostic_log"
+            android:title="@string/pref_diagnostic_clear"
+            android:summary="@string/pref_diagnostic_clear_sum"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/dev_cat_howto"
         app:iconSpaceReserved="false">
 
