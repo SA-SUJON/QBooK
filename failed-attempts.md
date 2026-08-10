@@ -1780,3 +1780,115 @@ The new test pin covers both directions:
 
 > 2026-08-11, 04:55 | Tests: 1322/1322 pass locally.
 > | Source: Prefs.kt, MainActivity.kt, test_diagnostic_log.js.
+
+## Addendum 6 (2026-08-11, 05:00): first device log received
+
+The user shared a 50-line log from the diagnostic-log feature
+running in a live Reels session. Key observations:
+
+1. recoverWindowSizeIfStale: windowH=2400 screenH=2400 short=0
+   The "in fullscreen the window is full-height" claim from 5.2.27
+   is true in the regular case too - this was logged on onResume
+   (no fullscreen yet). The threshold 24 < short < screenH/2 is
+   permanently false in any state where the system bars are not
+   genuinely displayed (which is the entire normal lifecycle).
+
+2. forcePageRelayout[online-spa] fires 8 times in the session.
+   This is the 5.2.27 gate removal actually doing what it was
+   supposed to do: every reel/story URL change now runs the
+   page-side measure. The fix is real on the SPA-swap path.
+
+3. The page returns js="808x808" every time. clientHeight=808
+   and body.getBoundingClientRect().height=808. This is the
+   device's fullscreen height in CSS px (2400 physical / 2.97 dpr).
+   The lite renderer is operating in a 808-CSS-px viewport
+   even before fullscreen.
+
+4. NO fullscreen transition in the captured log. The user
+   scrolled Reels, never tapped a video to fullscreen. The
+   fs-exit-immediate / fs-exit-delayed / offline-swipe contexts
+   do not appear at all in this session.
+
+5. doUpdateVisitedHistory fires repeatedly for the same URL
+   (https://www.facebook.com/ and story/reel URLs) without an
+   onPageFinished between them. The lite renderer is pushing
+   history updates from the in-place SPA swap, the WebView is
+   running forcePageRelayout on each one. The fact that this
+   fires 4+ times for the same URL suggests lite renderer's
+   "view committed" callback is not idempotent.
+
+Open question that the next log needs to answer: does the
+js="808x808" return value CHANGE when a Reel is opened
+fullscreen? If it does, the lite renderer is responsive to
+the resize event; if it does not, the fix is firing the resize
+into a renderer that has already locked to 808px. Either
+answer rewrites the round-28 story.
+
+> 2026-08-11, 05:00 | Tests: 1322/1322 pass. Log received from
+> device, awaiting fullscreen scenario.
+
+## Addendum 7 (2026-08-11, 05:05): Reels has no native fullscreen
+
+The user pointed out: "Facebook Reels Fullscreen button thake?"
+(Does Facebook Reels have a Fullscreen button?). The answer is
+no. Reels expands inline inside its own scroll container; it
+never calls onShowCustomView. The "fullscreen positioning bug"
+is therefore not reachable via the Reels fullscreen path - the
+WebView is never in immersive mode for a Reel.
+
+The user's bug report screenshots from earlier (round 22-27
+and round 28) were all Stories, which DO go native fullscreen
+via onShowCustomView. The probe directions issued in the
+previous addendum were therefore aimed at the wrong surface:
+asking the user to tap a Reel video "to fullscreen" cannot
+reproduce the bug because no such transition exists for Reels.
+
+The Story fullscreen path is the one to probe:
+  1. Open a Story (the avatar+time header, full bleed video,
+     send-message composer at the bottom).
+  2. Wait 3-5 seconds for the video to play.
+  3. Tap the X in the top-right (or system back) to exit.
+  4. Wait 2 seconds.
+  5. View the diagnostic log.
+
+Expected log lines if the path is wired:
+  fullscreen: onShowCustomView originalOrientation=...
+  ... onMediaState playing=true
+  fullscreen: onHideCustomView
+  relayout: forcePageRelayout[fs-exit-immediate] #N
+  relayout: forcePageRelayout[fs-exit-delayed] #N
+  relayout: recoverWindowSizeIfStale: windowH=... short=...
+
+The 5.2.27 fix's test is whether the new forcePageRelayout
+calls (which were previously dead) actually run, and whether
+their return value js="XxY" shows a viewport change.
+
+A separate investigation is needed for the Reels inline-expansion
+case, which goes through a different code path entirely (the
+lite renderer's own resize, not Android's onShowCustomView).
+
+> 2026-08-11, 05:05 | Tests: 1322/1322 pass. User correction
+> on the test surface recorded; next probe is a Story.
+
+## Addendum 8 (2026-08-11, 05:08): Reels DOES have a fullscreen, and the bug is shared
+
+The user is right and I was wrong. Reels has its own fullscreen
+behaviour - tapping a Reel opens a vertically-scrolling player
+in a view that looks like fullscreen even though the WebView
+is never in immersive mode. doUpdateVisitedHistory fires for
+both Story and Reel URLs, and the round-23 isReelOrStoryUrl
+gate covers both.
+
+The earlier analysis that "Reels has no native fullscreen"
+was based on the wrong mental model. Lite renderer's scroll-
+snap on Reels is visually the same surface as Story's
+onShowCustomView fullscreen for the purposes of this bug -
+the WebView URL changes, the body of the page is replaced,
+the player top / scroller scrollTop is whatever the renderer
+committed. The 5.2.27 fix's fire point is the same for both.
+
+I told the user to probe a Reel and they rightly pushed back.
+Trust the user's observation, not my code reading.
+
+> 2026-08-11, 05:08 | Tests: 1322/1322 pass. Probe direction
+> corrected. No code change.
