@@ -38,6 +38,29 @@ object UrlHelper {
         return matches(h, internalHosts) || matches(h, authHosts)
     }
 
+    /**
+     * A raw media file on Facebook's own CDN - the URL behind the ⋮ menu's
+     * "Save" option for a photo or video. These hosts are also in
+     * [internalHosts] (so ordinary Facebook pages stay in the WebView), but
+     * a file link among them must be downloaded, not navigated to, or
+     * "Save" silently opens the image in place of the feed instead of
+     * putting a file in Downloads.
+     */
+    fun isDirectMediaLink(url: String?): Boolean {
+        val h = hostOf(url) ?: return false
+        // scontent*.fbcdn.net (photos/video) and video.*.fbcdn.net both
+        // serve raw media, never an HTML page.
+        val onMediaCdn = h == "fbcdn.net" || h.endsWith(".fbcdn.net")
+        if (!onMediaCdn) return false
+        val path = try { Uri.parse(url).path?.lowercase(Locale.ROOT) } catch (e: Exception) { null }
+            ?: return false
+        val mediaExt = setOf(
+            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic",
+            ".mp4", ".mov", ".m4v", ".webm"
+        )
+        return mediaExt.any { path.endsWith(it) }
+    }
+
     /** Play Store / App Store / app-install links that must never open. */
     fun isAppStoreLink(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
