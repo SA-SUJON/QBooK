@@ -1367,3 +1367,45 @@ Round 27 (user, post-5.2.25): the tap thief FOUND, in served order.
   replaces); WiFi live-renderer strip (needs swap-event evidence);
   reels-tab ejection (OOM theory unverified, instrumentation needs a
   device trace).
+
+## Addendum 9 (2026-08-11, 05:25): the 5.2.27 fix is reverted
+
+The user shared a Story fullscreen log: the page reports
+clientHeight=808 and body.getBoundingClientRect().height=808
+when the Story is in fullscreen, and the same measurements
+return 808x4439 when the Story is closed. forcePageRelayout
+fires in both directions and the resize event is dispatched,
+but the lite renderer's content stays where it was committed
+in the 808-px viewport - so on exit, the player is misplaced
+in the 4439-px viewport. The fix as implemented (dispatch a
+resize) does not change the lite renderer's committed scroll.
+
+Reverted 8c5557d. tools/test_fullscreen_positioning.js is
+deleted - it pinned the broken v5.2.27 shape, and re-pinning
+it to the pre-fix shape would be pinning a known-bad state.
+A new probe direction is needed.
+
+What the data did prove in the meantime:
+  - recoverWindowSizeIfStale short=0 in fullscreen is real
+  - forcePageRelayout firing on every SPA swap is real
+  - the resize event is dispatched to the page is real
+  - the lite renderer does not respond to that resize is the
+    actual mechanism of the bug
+
+The 808-vs-4439 viewport split is the smoking gun: the page
+has two distinct heights depending on whether the Story is
+expanded, and the lite renderer keeps the player DOM
+position from the 808-px frame when it draws into the 4439-px
+frame. forcePageRelayout does not help because the resize
+event is at the wrong layer; the lite renderer's own
+vscroller is what holds the 808 commit.
+
+A real fix needs to find the lite renderer's vscroller and
+set its scrollTop to a known-good value (probably 0) on
+every Story/Reel swap, in addition to or instead of
+dispatching a window resize. That is the round-29 question.
+
+> 2026-08-11, 05:25 | Tests: 1320/1320 pass (revert done).
+> 5.2.27 commit 8c5557d is now reverted; structural test
+> that pinned the fix is deleted. Diagnostic log and other
+> round-28 infrastructure remain in place.
