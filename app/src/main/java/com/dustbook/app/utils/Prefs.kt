@@ -300,9 +300,18 @@ class Prefs(context: Context) {
     val logVideoUrls: Boolean get() = sp.getBoolean(KEY_LOG_VIDEOS, false)
     /** Diagnostic log: when on, every write path appends to a file in
      *  cacheDir/diagnostic/dustbook.log. Off by default; turning it on
-     *  has no effect when the user has no Developer-options entry point. */
+     *  has no effect when the user has no Developer-options entry point.
+     *
+     *  Two pieces of state: the persisted boolean (what the user
+     *  asked for, survives process restart) and the volatile
+     *  diagLog.enabled (what every write call site reads, must
+     *  be set on every process start). The getter returns the
+     *  persisted value, not the volatile one - otherwise cold
+     *  start would always see `false` because the in-memory flag
+     *  has just been constructed. The setter is the only path
+     *  that touches the volatile flag. */
     var diagnosticLog: Boolean
-        get() = diagLog.enabled
+        get() = sp.getBoolean(KEY_DIAGNOSTIC_LOG, false)
         set(value) {
             diagLog.enabled = value
             sp.edit().putBoolean(KEY_DIAGNOSTIC_LOG, value).apply()

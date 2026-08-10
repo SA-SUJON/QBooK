@@ -94,8 +94,8 @@ ok('newlines in the message are replaced with spaces',
 
 console.log('');
 console.log('=== Wiring ===');
-ok('Prefs exposes diagnosticLog accessor (must be var, with a setter that updates diagLog.enabled and the shared preference)',
-   /var diagnosticLog: Boolean[\s\S]{0,200}diagLog\.enabled = value[\s\S]{0,150}sp\.edit\(\)\.putBoolean\(KEY_DIAGNOSTIC_LOG, value\)\.apply\(\)/.test(
+ok('Prefs exposes diagnosticLog accessor (must be var, with a setter that updates diagLog.enabled and the shared preference, AND a getter that reads the persisted value, not the in-memory enabled flag - cold start would otherwise always see false)',
+   /var diagnosticLog: Boolean[\s\S]{0,200}get\(\) = sp\.getBoolean\(KEY_DIAGNOSTIC_LOG, false\)[\s\S]{0,300}diagLog\.enabled = value[\s\S]{0,150}sp\.edit\(\)\.putBoolean\(KEY_DIAGNOSTIC_LOG, value\)\.apply\(\)/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
 ok('Settings wires the switch to prefs.diagnosticLog',
@@ -112,6 +112,15 @@ ok('Settings wires the three buttons',
    /clear_diagnostic_log[\s\S]{0,200}prefs\.diagLog\.clear/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
+
+console.log('');
+console.log('=== onCreate reads the persisted value (cold-start path) ===');
+const mainSrc = fs.readFileSync(
+  path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/MainActivity.kt'), 'utf8');
+ok('onCreate assigns prefs.diagLog.enabled from prefs.diagnosticLog (the persisted getter)',
+   /override fun onCreate[\s\S]{0,1500}prefs\.diagLog\.enabled = prefs\.diagnosticLog/.test(mainSrc));
+ok('onCreate writes a log line that includes the persisted value, so the device can confirm the right state was read',
+   /onCreate[\s\S]{0,1500}prefs\.diagLog\.write\("lifecycle"[\s\S]{0,400}diagnosticLog=/.test(mainSrc));
 
 console.log('');
 console.log('=== Write-site count (sanity, not a contract) ===');

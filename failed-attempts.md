@@ -1737,3 +1737,46 @@ shape as before but with the catch body now ending in
 
 > 2026-08-11, 04:32 | Tests: 1320/1320 pass locally, CI re-running.
 > | Source: 1 file changed, 9 lines of diff against 5d5b556.
+
+## Addendum 5 (2026-08-11, 04:50): the diagnostic log was empty even when toggled on
+
+The user installed b5a0d7c, toggled "Enable diagnostic log" on
+in Developer options, opened Reels/Story, and the View log
+screen reported "The diagnostic log is empty". The feature was
+on, the activity was warm, write call sites were reached, and
+nothing was written to the file.
+
+Two bugs, both my own:
+
+1. The getter for `Prefs.diagnosticLog` was:
+       get() = diagLog.enabled
+   That reads the volatile in-memory flag, which is constructed
+   to `false` and only updated by the setter. Cold start always
+   saw `false`, regardless of what the user had toggled. The
+   `prefs.diagLog.enabled = prefs.diagnosticLog` line in
+   onCreate then propagated that `false` straight into the
+   volatile flag, so writes were correctly no-op'd.
+   The fix is to read the persisted value:
+       get() = sp.getBoolean(KEY_DIAGNOSTIC_LOG, false)
+
+2. The onCreate write line recorded `prefs.diagnosticLog` in
+   the message, but the getter returned the wrong value, so the
+   log line lied. The fix is the getter itself; the onCreate
+   line is now also `prefs.diagLog.write("lifecycle",
+   "...diagnosticLog=${prefs.diagnosticLog}")` so the device
+   can confirm at a glance which value the activity actually
+   read.
+
+The structural tests added a getter-pin for diagnosticLog
+before the fix, and would have caught the first bug. They
+did not - the test only checked the setter, not the getter.
+The new test pin covers both directions:
+
+  - getter reads the persisted value, not the in-memory flag
+  - onCreate reads prefs.diagnosticLog (not prefs.diagLog.enabled)
+  - onCreate writes a log line carrying the persisted value
+
+1322/1322 tests pass after the fix.
+
+> 2026-08-11, 04:55 | Tests: 1322/1322 pass locally.
+> | Source: Prefs.kt, MainActivity.kt, test_diagnostic_log.js.

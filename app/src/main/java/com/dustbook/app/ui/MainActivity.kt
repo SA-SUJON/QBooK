@@ -223,12 +223,16 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs(this)
         // Wire the in-process DiagnosticLog to the persisted toggle. The
-        // setting has its own getter and a setter that updates both the
-        // volatile flag (read by every write call site) and the shared
-        // preference (read at next cold start). The wiring here just
-        // makes the volatile flag track the saved value on startup.
+        // setting has its own getter (reads the persisted value, not the
+        // in-memory enabled flag - cold start must see what the user
+        // actually saved) and a setter that updates both the volatile
+        // flag (read by every write call site) and the shared
+        // preference. Reading prefs.diagnosticLog here is the only place
+        // the persisted value is read; every later read of
+        // prefs.diagnosticLog returns the same persisted value, while
+        // diagLog.enabled stays in sync.
         prefs.diagLog.enabled = prefs.diagnosticLog
-        prefs.diagLog.write("lifecycle", "onCreate savedInstanceState=$savedInstanceState")
+        prefs.diagLog.write("lifecycle", "onCreate savedInstanceState=$savedInstanceState diagnosticLog=${prefs.diagnosticLog}")
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode())
         if (prefs.amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
         super.onCreate(savedInstanceState)
