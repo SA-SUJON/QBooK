@@ -252,11 +252,9 @@ class SettingsActivity : AppCompatActivity() {
                         // re-inflated. Removing and re-adding the
                         // preference with isVisible=true is the
                         // documented way to get an immediate redraw.
-                        // The dev view may not be inflated yet because
-                        // the entry was visibility="gone", so we
-                        // always post the mutation rather than relying
-                        // on dev.view.post().
-                        sevenTap.view?.post {
+                        // Posted to the main thread so the click event
+                        // finishes before the tree mutates.
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
                             if (dev.parent === screen) {
                                 screen.removePreference(dev)
                             }
