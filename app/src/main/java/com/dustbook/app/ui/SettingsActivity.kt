@@ -751,21 +751,30 @@ class SettingsActivity : AppCompatActivity() {
             // immediately and zooms the icon slightly - a live preview of
             // the pending choice - but nothing is applied until OK; Cancel
             // leaves the real selection untouched.
-            val cellSize = (52 * d).toInt()
-            val cellBox = (84 * d).toInt()
-            val cellMargin = (3 * d).toInt()
-            val ringSize = (62 * d).toInt()
+            // Round 28: bigger preview. The old sizes (52dp icon, 84dp
+            // cell) read as a grid of thumbnails in the dialog, not as
+            // previews; a user picking a launcher icon wants to see
+            // what the icon will actually look like in their launcher
+            // drawer. Roughly 1.5x on the icon and the cell, the ring
+            // and the dialog height scaled to match, two cells per row
+            // (so the user can see fewer rows in better detail than
+            // three cramped ones). The ring scales with the icon so the
+            // selected-vs-not distinction still reads at a glance.
+            val cellSize = (80 * d).toInt()
+            val cellBox = (120 * d).toInt()
+            val cellMargin = (4 * d).toInt()
+            val ringSize = (96 * d).toInt()
 
             val grid = android.widget.GridLayout(ctx).apply {
-                columnCount = 3
-                setPadding((10 * d).toInt(), (12 * d).toInt(), (10 * d).toInt(), (4 * d).toInt())
+                columnCount = 2
+                setPadding((16 * d).toInt(), (16 * d).toInt(), (16 * d).toInt(), (8 * d).toInt())
             }
 
             val scroll = android.widget.ScrollView(ctx).apply {
                 addView(grid)
                 layoutParams = android.widget.FrameLayout.LayoutParams(
-                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                    (264 * d).toInt()
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    (440 * d).toInt()
                 )
             }
 

@@ -1439,20 +1439,29 @@ object AdBlocker {
                   // old one-shot flag the sweep would otherwise undo their
                   // own mute a second later, every second.
                   if (v.__dbUserMuted) return;
+                  // Round 28: do not eagerly unmute a paused or
+                  // unstarted video. The previous code cleared muted on
+                  // every sweep for any video that was paused or had
+                  // currentTime===0, which made the home-feed autoplay
+                  // pause at random: the browser's autoplay policy says
+                  // a play() is only allowed while the clip is muted,
+                  // and clearing muted on a paused clip caused
+                  // Facebook's own player to pause it (it would
+                  // otherwise have resumed with sound once the user
+                  // tapped to start it). Now the unmute is only run
+                  // when the user has gestured recently - the same
+                  // gesture that authorised play() also authorises
+                  // sound. Without a recent gesture, the sweep just
+                  // remembers the muted state and leaves it alone.
+                  if (v.paused || v.currentTime === 0) {
+                    if (Date.now() - lastGesture > 1500) return;
+                  }
                   try {
                     if (v.paused || v.currentTime === 0) {
-                      // Not yet playing: safe to clear now.
+                      // User gestured recently; safe to clear now.
                       v.muted = false;
                       v.defaultMuted = false;
                       v.removeAttribute('muted');
-                      // Deliberately not latched. Facebook's feed player sets
-                      // muted straight back on when it starts an autoplay -
-                      // browsers only permit an unattended play() while the
-                      // clip is silent - so a one-shot flag meant the sweep
-                      // gave up after the first attempt and feed video stayed
-                      // silent for the rest of the session. Reels seemed to
-                      // work only because the user taps those, and the tap
-                      // authorises audible playback through onGesture below.
                     } else if (v.muted) {
                       // Already running and muted. Touching it here would
                       // pause it, so defer to the next real interaction.
