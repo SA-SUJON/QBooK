@@ -114,6 +114,26 @@ ok('the developer_unlocked preference is exposed',
    /KEY_DEVELOPER_UNLOCKED = "developer_unlocked"/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
+ok('the developer_enabled preference is exposed (the page-top switch on the Developer options screen)',
+   /KEY_DEVELOPER_ENABLED = "developer_enabled"/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+   ));
+ok('the seven-tap unlock sets both developerUnlocked and developerEnabled (so the entry is revealed immediately)',
+   /sevenTap[\s\S]{0,2500}prefs\.developerUnlocked = true[\s\S]{0,200}prefs\.developerEnabled = true/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ));
+ok('the About entry\'s visibility is gated on developerEnabled (not developerUnlocked) so the page-top switch can re-hide it)',
+   /nav_developer"\)\s*\?\s*\.isVisible\s*=\s*prefs\.developerEnabled/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ));
+ok('the page-top developer_enabled switch is wired in the developer sub-screen',
+   /KEY_DEVELOPER_ENABLED[\s\S]{0,400}prefs\.developerEnabled = on/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ));
+ok('the developer_enabled switch is the first entry in settings_developer.xml (page-top placement)',
+   /<PreferenceScreen[\s\S]{0,400}<SwitchPreferenceCompat\s+android:key="developer_enabled"/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/res/xml/settings_developer.xml'), 'utf8')
+   ));
 
 console.log('');
 console.log('=== onCreate reads the persisted value (cold-start path) ===');

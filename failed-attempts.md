@@ -1934,3 +1934,145 @@ test_diagnostic_log.js (path, format, cap, lock,
 write sites in MainActivity).
 
 No push yet.
+
+### Addendum 17 — round 28 layered developer-options gate
+
+#### What the user pointed out
+
+After addendum 16, the Developer options entry was
+unlocked by seven taps on the About / version entry
+but was visible the moment the user opened About
+even before the taps. The seven taps did nothing
+useful: the entry was already there, the user could
+just tap it. The user asked for the entry to be
+hidden until the gesture, and for a second switch
+on the Developer options page itself to re-hide it
+later.
+
+#### What was wrong
+
+The seven-tap logic in addendum 13 set
+`prefs.developerUnlocked = true` and made the
+"nav_developer" entry visible. Both the
+"is this unlocked?" check and the "is the entry
+visible?" check were reading the same boolean, so
+they were tied. The entry was visible if and only
+if the seven-tap gesture had happened - and
+because the gesture was one-way (it never reset
+developerUnlocked), there was no way to hide the
+entry again.
+
+The fix is to separate the two concerns. One
+boolean (`developerUnlocked`) records that the
+seven-tap gesture has happened - it never resets,
+so the user only ever has to do the gesture once
+per install. A second boolean (`developerEnabled`)
+records whether the user wants the entry visible
+right now. The seven-tap gesture sets both to
+true. The page-top switch on the Developer options
+screen lets the user flip `developerEnabled` to
+false, which re-hides the entry. The About
+fragment's wire() reads `developerEnabled` on every
+inflation, so the next time the user returns to
+About the entry is gone.
+
+#### Files changed
+
+- `app/src/main/java/com/dustbook/app/utils/Prefs.kt`:
+  added `KEY_DEVELOPER_ENABLED = "developer_enabled"`
+  and a `developerEnabled` property next to the
+  existing `developerUnlocked`. Both are persisted
+  in shared preferences.
+
+- `app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt`:
+  the seven-tap handler now sets both
+  `developerUnlocked` and `developerEnabled` to
+  true, instead of just the former. The "is the
+  About entry visible" line at the bottom of the
+  seven-tap block now reads `prefs.developerEnabled`
+  rather than `prefs.developerUnlocked`, so the
+  page-top switch can re-hide the entry. A new
+  listener for the `KEY_DEVELOPER_ENABLED` switch
+  on the Developer options sub-screen sets
+  `prefs.developerEnabled` from the switch value
+  and shows a toast on every flip.
+
+- `app/src/main/res/xml/settings_developer.xml`:
+  a new `SwitchPreferenceCompat` keyed on
+  `developer_enabled` is the first child of the
+  screen, above the existing logcat switch. The
+  logcat switch and the three buttons (View /
+  Share / Clear) are unchanged.
+
+- `app/src/main/res/values/strings.xml`:
+  `pref_developer_enabled`, `pref_developer_enabled_sum`,
+  `dev_unlocked_toast`, `dev_enabled_toast`,
+  `dev_disabled_toast`. The previous hard-coded
+  "Developer options unlocked" string is gone.
+
+- `tools/test_diagnostic_log.js`: five new
+  assertions cover the new wiring: the
+  `developer_enabled` preference is exposed, the
+  seven-tap unlock sets both booleans together,
+  the About entry's visibility is gated on
+  `developerEnabled` (not `developerUnlocked`),
+  the page-top switch is wired in the developer
+  sub-screen, and the page-top switch is the
+  first entry in `settings_developer.xml`.
+
+#### Behaviour
+
+1. Fresh install, no seven taps: `developerUnlocked`
+   and `developerEnabled` are both false. The
+   entry is hidden in About (the layout has
+   `android:visibility="gone"` and the wire()
+   function does not flip it).
+2. User taps the version entry seven times
+   (within five minutes). The seventh tap sets
+   both booleans to true. The entry appears in
+   About immediately (wire() is re-run on the
+   next inflation - the user navigates away
+   and back). Toast: "Developer options
+   unlocked".
+3. User opens Developer options, sees the
+   page-top switch on (because developerEnabled
+   is true). Below it: Enable logcat, View log,
+   Share log file, Clear log. User can flip the
+   page-top switch off to re-hide the entry.
+4. User goes back to About. The entry is gone.
+   `developerUnlocked` is still true (the gesture
+   never resets), so the user does not have to
+   re-tap seven times; flipping the page-top
+   switch on again reveals the entry.
+5. Process restart: both booleans are persisted,
+   so the visible / hidden state survives a
+   restart and the user only ever has to do the
+   seven-tap gesture once.
+
+#### What is intentionally NOT changed
+
+- The logcat switch and the View / Share / Clear
+  buttons from addendum 16 are unchanged.
+- The icon picker sizing and the offline video
+  pause guard (addendum 14) are not touched.
+- `developerUnlocked` is one-way on purpose. The
+  user might want to "re-lock" the gesture as
+  well; that is a follow-up if it ever comes up.
+  For now, the page-top switch is the only way
+  to hide the entry, and that is what the user
+  asked for.
+- `MainActivity` still reads `prefs.inspectAds`
+  and `prefs.logVideoUrls` (for the long-press
+  inspector and the Reels video URL logger). The
+  values they hold are still meaningful (the user
+  may have set them before round 28 wiped the
+  switches from the UI). The constants in Prefs
+  are kept.
+
+#### Tests
+
+1316/1316 pass (the five new assertions raise
+the test_diagnostic_log.js count from 29 to 34;
+the other eleven test files are unchanged).
+
+No push yet.

@@ -279,6 +279,11 @@
     <!-- Developer Options — 7-tap on About -->
     <string name="dev_options_title">Developer Options</string>
     <string name="dev_options_sum">Diagnostic switches (off by default)</string>
+    <string name="pref_developer_enabled">Developer options enabled</string>
+    <string name="pref_developer_enabled_sum">Master switch for the Developer options page. Turn off to hide the entry back in About without losing the seven-tap unlock. On by default after the seven-tap gesture.</string>
+    <string name="dev_unlocked_toast">Developer options unlocked</string>
+    <string name="dev_enabled_toast">Developer options enabled</string>
+    <string name="dev_disabled_toast">Developer options hidden. Tap the version number seven times in About to re-enable.</string>
     <string name="pref_logcat_toggle">Enable logcat</string>
     <string name="pref_logcat_toggle_sum">When on, lifecycle, network, WebView, fullscreen, and bridge events are written to a file under cacheDir/diagnostic/. The file is read in-view, shared via the system share sheet, or cleared from here. Off by default; the cost when off is one boolean read per call site.</string>
     <string name="pref_diagnostic_view">View log</string>

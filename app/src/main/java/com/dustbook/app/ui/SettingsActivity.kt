@@ -209,13 +209,17 @@ class SettingsActivity : AppCompatActivity() {
             java.util.concurrent.atomic.AtomicBoolean(false)
 
         private fun wire() {
-            // ---- 7-tap on About → unhide Developer options ----
+            // ---- 7-tap on About → unlock + reveal Developer options ----
             // The Developer options entry is invisible by default in the
             // layout (android:visibility="gone"). Tapping the About this
-            // app entry seven times within five minutes makes it visible;
-            // the visible state persists across process restarts, so the
-            // user only has to do the seven taps once per install. The
-            // tap counter is a small integer in SharedPreferences and
+            // app entry seven times within five minutes does two things:
+            //   1. Sets developerUnlocked to true (one-way; never resets).
+            //      This is the gate the page-top switch lives behind.
+            //   2. Sets developerEnabled to true, so the entry appears
+            //      immediately. The user can later turn the page-top
+            //      switch off to hide the entry again, without losing
+            //      the unlock - seven taps are a one-shot, not a toggle.
+            // The tap counter is a small integer in SharedPreferences and
             // resets when the first tap is older than five minutes - so
             // an accidental tap a month ago does not get half-credit
             // today.
@@ -235,25 +239,27 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 if (taps >= 7) {
                     prefs.developerUnlocked = true
+                    prefs.developerEnabled = true
                     prefs.devTapCount = 0
                     prefs.devTapFirstAt = 0L
                     sevenTap.summary = getString(R.string.dev_options_sum)
                     val dev = findPreference<Preference>("nav_developer")
                     dev?.isVisible = true
-                    toast("Developer options unlocked")
+                    toast(getString(R.string.dev_unlocked_toast))
                 } else if (taps >= 4) {
                     toast("$taps / 7")
                 }
                 true
             }
 
-            // Re-show the Developer options entry if it was unlocked
-            // on a previous run; the shared preference survives the
-            // process restart, and a one-time show on the inflated
-            // fragment keeps the layout consistent.
-            if (prefs.developerUnlocked) {
-                findPreference<Preference>("nav_developer")?.isVisible = true
-            }
+            // Re-show or re-hide the Developer options entry on every
+            // wire(). The page-top switch on the Developer options
+            // screen can change developerEnabled after this fragment
+            // is inflated (the user has to leave the About screen to
+            // see the switch), so we cannot rely on layout time alone -
+            // we re-read it on every entry into About.
+            findPreference<Preference>("nav_developer")?.isVisible =
+                prefs.developerEnabled
 
             // ---- about → developer nav ----
             findPreference<Preference>("nav_developer")?.setOnPreferenceClickListener {
@@ -266,6 +272,32 @@ class SettingsActivity : AppCompatActivity() {
             // open the file in a reader, share it, or clear it. The reader
             // is its own Activity so the Settings screen stays single-page
             // and the file can be much larger than any dialog body.
+            //
+            // The page-top "developer_enabled" switch sits above this and
+            // is the one the user can flip off to re-hide the Developer
+            // options entry in About. Flipping it on here does not
+            // re-trigger the seven-tap gesture - that is one-way; this
+            // switch is the only thing that can hide the entry after
+            // the gesture has unlocked it.
+            findPreference<SwitchPreferenceCompat>(Prefs.KEY_DEVELOPER_ENABLED)
+                ?.setOnPreferenceChangeListener { _, v ->
+                    val on = v as Boolean
+                    prefs.developerEnabled = on
+                    // Live update: the user is on the Developer options
+                    // screen, but flipping the switch off here should
+                    // hide the entry back in About immediately when they
+                    // navigate there. We do not have a handle on the
+                    // About fragment from here, so we rely on the
+                    // next-time-wired read of developerEnabled in wire()
+                    // to pick this up. That is the same path a process
+                    // restart would take.
+                    if (!on) {
+                        toast(getString(R.string.dev_disabled_toast))
+                    } else {
+                        toast(getString(R.string.dev_enabled_toast))
+                    }
+                    true
+                }
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_DIAGNOSTIC_LOG)
                 ?.setOnPreferenceChangeListener { _, v ->
                     prefs.diagnosticLog = v as Boolean

@@ -83,6 +83,7 @@ class Prefs(context: Context) {
         const val KEY_LOG_VIDEOS = "log_video_urls"
         const val KEY_DIAGNOSTIC_LOG = "diagnostic_log"
         const val KEY_DEVELOPER_UNLOCKED = "developer_unlocked"
+        const val KEY_DEVELOPER_ENABLED = "developer_enabled"
         const val KEY_DEV_TAP_COUNT = "dev_tap_count"
         const val KEY_DEV_TAP_FIRST_AT = "dev_tap_first_at"
         const val KEY_HOMEPAGE = "homepage_url"
@@ -321,12 +322,24 @@ class Prefs(context: Context) {
         }
 
     /** True once the user has tapped About seven times. Persists across
-     *  process restarts so the Developer options entry stays visible
-     *  after the unlock gesture. Round 28 reduced the dev surface to
-     *  a single switch, but the unlock state still survives. */
+     *  process restarts and never resets - the seven-tap gesture is the
+     *  one-way unlock. What the user toggles after that is
+     *  [developerEnabled], the page-top switch on the Developer options
+     *  screen. */
     var developerUnlocked: Boolean
         get() = sp.getBoolean(KEY_DEVELOPER_UNLOCKED, false)
         set(v) = sp.edit().putBoolean(KEY_DEVELOPER_UNLOCKED, v).apply()
+
+    /** The page-top switch the user can turn on or off after unlocking.
+     *  When off, the Developer options entry is hidden in the About
+     *  screen; when on, it is visible. Default is off (the entry is
+     *  hidden by default in the layout too, so off is the
+     *  never-seen state). Seven-tap sets this to true as well as
+     *  setting [developerUnlocked], so the unlock gesture immediately
+     *  reveals the entry. */
+    var developerEnabled: Boolean
+        get() = sp.getBoolean(KEY_DEVELOPER_ENABLED, false)
+        set(v) = sp.edit().putBoolean(KEY_DEVELOPER_ENABLED, v).apply()
 
     /** Tap counter and first-tap timestamp for the seven-tap gesture. */
     var devTapCount: Int
