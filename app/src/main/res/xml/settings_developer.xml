@@ -2,12 +2,17 @@
 <!--
   Developer Options - reached from Hidden Settings -> About by tapping
   the About-this-app entry seven times. Only one toggle lives here:
-  Enable logcat, default off. The full-screen feature is intentionally
-  not surfaced in the settings UI; the seven-tap gate is the only path.
+  Enable logcat, default off. Below it are the read / share / clear
+  buttons for the file the toggle produces.
 
   All the previous diagnostic tools (inspect_ads, log_video_urls,
-  dump_dom, sync_diagnostics, the diagnostic-log buttons) are gone.
-  Round 28 reduced the surface to a single on/off switch.
+  dump_dom, sync_diagnostics) are gone. Round 28 reduced the surface
+  to a single on/off switch, and the file produced by that switch is
+  read in-view, shared via the system share sheet, or cleared from
+  here.
+
+  The seven-tap gate is the only path - the entry is hidden by
+  default and only appears once the user has unlocked it.
 -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
@@ -17,6 +22,24 @@
         android:title="@string/pref_logcat_toggle"
         android:summary="@string/pref_logcat_toggle_sum"
         android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="view_diagnostic_log"
+        android:title="@string/pref_diagnostic_view"
+        android:summary="@string/pref_diagnostic_view_sum"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="share_diagnostic_log"
+        android:title="@string/pref_diagnostic_share"
+        android:summary="@string/pref_diagnostic_share_sum"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="clear_diagnostic_log"
+        android:title="@string/pref_diagnostic_clear"
+        android:summary="@string/pref_diagnostic_clear_sum"
         app:iconSpaceReserved="false" />
 
 </PreferenceScreen>

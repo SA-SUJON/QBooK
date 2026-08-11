@@ -8,6 +8,7 @@ import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -260,12 +261,46 @@ class SettingsActivity : AppCompatActivity() {
                 true
             }
 
-            // ---- developer: only the logcat switch ----
+            // ---- developer: logcat switch + view / share / clear buttons ----
+            // The switch drives the in-process logger; the three buttons
+            // open the file in a reader, share it, or clear it. The reader
+            // is its own Activity so the Settings screen stays single-page
+            // and the file can be much larger than any dialog body.
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_DIAGNOSTIC_LOG)
                 ?.setOnPreferenceChangeListener { _, v ->
                     prefs.diagnosticLog = v as Boolean
                     true
                 }
+            findPreference<Preference>("view_diagnostic_log")?.setOnPreferenceClickListener {
+                startActivity(Intent(requireContext(), DiagnosticLogActivity::class.java))
+                true
+            }
+            findPreference<Preference>("share_diagnostic_log")?.setOnPreferenceClickListener {
+                val path = prefs.diagLog.path()
+                val file = File(path)
+                if (!file.exists()) {
+                    toast(getString(R.string.diagnostic_log_empty))
+                    return@setOnPreferenceClickListener true
+                }
+                // FileProvider is keyed off the application package; on a
+                // SubFragment the packageName lives on the activity, not
+                // on `this` (which is the fragment).
+                val pkg = requireActivity().packageName
+                val uri = FileProvider.getUriForFile(
+                    requireContext(), "$pkg.fileprovider", file)
+                val share = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(share, getString(R.string.diagnostic_share_chooser)))
+                true
+            }
+            findPreference<Preference>("clear_diagnostic_log")?.setOnPreferenceClickListener {
+                prefs.diagLog.clear()
+                toast(getString(R.string.diagnostic_log_cleared))
+                true
+            }
 
             // ---- blocking ----
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_AD_BLOCK)

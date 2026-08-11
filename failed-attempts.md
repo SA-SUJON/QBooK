@@ -1831,3 +1831,106 @@ Re-ran all 12 structural tests in `tools/test_*.js`:
 build artefact and is left for CI.
 
 No push yet.
+
+### Addendum 16 — round 28 developer-options UI restored
+
+#### What happened
+
+After addendum 15 cleaned up the dead code that
+addendum 13 left behind, the user asked for the
+diagnostic-log buttons (View / Share / Clear) back.
+The reduced surface that addendum 13 was aimed at is
+the right call (one switch, hidden by default, seven
+taps to unlock), but the buttons the switch produces
+its output to are part of the same surface: without
+them, "Enable logcat" writes to a file that the user
+can never see or share. Addendum 15 had taken the
+view / share / clear UI out along with the redundant
+switches because no entry point remained; that was
+the right call *for that commit*, but the user
+wanted the buttons to come back. This addendum
+restores them without re-introducing the four
+switches addendum 13 removed.
+
+#### What was added back
+
+- `app/src/main/java/com/dustbook/app/ui/DiagnosticLogActivity.kt`:
+  the read-only viewer, identical to the one addendum
+  13 removed. The activity is reached from Settings
+  -> Developer options -> View log, opens the log
+  file in a monospace TextView with the system
+  scrollbar, and scrolls to the bottom so the most
+  recent entry is visible without a manual scroll.
+
+- `app/src/main/res/layout/activity_diagnostic_log.xml`:
+  a single ScrollView containing a monospace TextView,
+  textIsSelectable so the user can copy a line, 11sp
+  to fit a long log line on one screen.
+
+- `app/src/main/AndroidManifest.xml`: the
+  DiagnosticLogActivity <activity> entry. parentActivityName
+  is .ui.SettingsActivity so the back arrow lands on
+  Developer options rather than the top-level
+  settings list.
+
+- `app/src/main/res/xml/settings_developer.xml`:
+  three new <Preference> entries (view_diagnostic_log,
+  share_diagnostic_log, clear_diagnostic_log) below
+  the logcat switch. The switch is unchanged from
+  addendum 13.
+
+- `app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt`:
+  the three listeners (view / share / clear) are
+  wired the same way they were before addendum 13.
+  Share uses FileProvider with the diagnostic cache
+  path; the FileProvider import is restored.
+
+- `app/src/main/res/values/strings.xml`: the seven
+  strings addendum 15 removed - pref_diagnostic_view,
+  pref_diagnostic_view_sum, pref_diagnostic_share,
+  pref_diagnostic_share_sum, pref_diagnostic_clear,
+  pref_diagnostic_clear_sum, diagnostic_log_title,
+  diagnostic_log_empty, diagnostic_log_cleared,
+  diagnostic_share_chooser.
+
+- `app/src/main/res/xml/file_paths.xml`:
+  the <cache-path name="diagnostic"> entry, used by
+  the FileProvider for the share sheet. Removed in
+  addendum 15, restored now.
+
+#### What is intentionally NOT changed
+
+- The four removed switches (inspect_ads,
+  log_video_urls, dump_dom, sync_diagnostics) stay
+  out. The shared preference values they used to
+  write are still read by MainActivity (the long-press
+  inspector in particular), so the constants and
+  getters in Prefs.kt are kept, but no UI surfaces
+  them. The "Diagnostics" category in settings_about.xml
+  is also kept out.
+- The 7-tap gesture on the About / version entry
+  from addendum 13 is unchanged. developerUnlocked
+  is the same persisted boolean, the tap counter
+  the same shared preferences, the 5-minute window
+  the same.
+- DiagnosticLog.kt (the file writer) is unchanged.
+  Toggle on writes lifecycle / webview / bridge /
+  fullscreen / relayout events to cacheDir/diagnostic/
+  dustbook.log; toggle off is a one-boolean-read
+  early return.
+- The icon picker sizing (addendum 14) and the
+  offline video pause guard (addendum 14) are not
+  touched.
+
+#### Tests
+
+1311/1311 pass (16+29+66+18+315+54+574+43+79+27+69+21).
+
+No tests added for the restored buttons. They are
+straightforward listeners over existing call sites
+in DiagnosticLog (readAll / clear / path); the
+contract those calls honour is already pinned by
+test_diagnostic_log.js (path, format, cap, lock,
+write sites in MainActivity).
+
+No push yet.

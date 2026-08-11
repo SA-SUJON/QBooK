@@ -265,13 +265,13 @@
             android:parentActivityName=".ui.MainActivity"
             android:theme="@style/Theme.Dustbook" />
 
-        <!--
-          Round 28: the diagnostic-log viewer (DiagnosticLogActivity) is
-          gone. The developer surface is a single "Enable logcat" switch;
-          when the user wants the file the next time, it will come back
-          as a Settings page rather than its own activity, so we are not
-          committing to a manifest entry we cannot keep.
-        -->
+        <activity
+            android:name=".ui.DiagnosticLogActivity"
+            android:exported="false"
+            android:label="@string/diagnostic_log_title"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".ui.SettingsActivity"
+            android:theme="@style/Theme.Dustbook" />
 
         <service
             android:name=".ui.AudioService"

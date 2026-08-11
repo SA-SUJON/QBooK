@@ -281,6 +281,16 @@
     <string name="dev_options_sum">Diagnostic switches (off by default)</string>
     <string name="pref_logcat_toggle">Enable logcat</string>
     <string name="pref_logcat_toggle_sum">When on, lifecycle, network, WebView, fullscreen, and bridge events are written to a file under cacheDir/diagnostic/. The file is read in-view, shared via the system share sheet, or cleared from here. Off by default; the cost when off is one boolean read per call site.</string>
+    <string name="pref_diagnostic_view">View log</string>
+    <string name="pref_diagnostic_view_sum">Open the log file in a scrollable reader. Newest entry last.</string>
+    <string name="pref_diagnostic_share">Share log file</string>
+    <string name="pref_diagnostic_share_sum">Open the system share sheet with the log file attached — useful for sending the file to a developer or pasting it into a bug report.</string>
+    <string name="pref_diagnostic_clear">Clear log</string>
+    <string name="pref_diagnostic_clear_sum">Delete the log file. Cannot be undone.</string>
+    <string name="diagnostic_log_title">Diagnostic log</string>
+    <string name="diagnostic_log_empty">The diagnostic log is empty. Turn on Enable logcat in Developer options, then use the app for a while — the log file will be written under cacheDir/diagnostic/.</string>
+    <string name="diagnostic_log_cleared">Diagnostic log cleared.</string>
+    <string name="diagnostic_share_chooser">Share diagnostic log</string>
 
     <!-- developer info -->
     <string name="grp_developer">Developer</string>
