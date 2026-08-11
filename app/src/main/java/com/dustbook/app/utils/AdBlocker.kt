@@ -1613,41 +1613,91 @@ object AdBlocker {
                 tell();
               })();
 
+              // ---- diagnostic: tap event trace for the user's pause bug ----
+              // The user reported that a home feed video and a
+              // Reels video do not pause on tap. We have been
+              // guessing at the cause; the user captured a
+              // logcat session in addendum 27 that shows the
+              // native bridge works, but the JS-side event flow
+              // is invisible to the log. This block traces every
+              // tap on a video element, every tap inside the
+              // Reels screen, and the first-tap / second-tap /
+              // third-tap sequence. The trace goes to the
+              // diagnostic log via window.FBPro.trace, and the
+              // user can view the file from Developer options.
+              // No DOM mutation, no class changes - we are
+              // observing only.
+              (function() {
+                function trace(tag, msg) {
+                  try {
+                    if (window.FBPro && window.FBPro.trace) {
+                      window.FBPro.trace(tag, msg);
+                    }
+                  } catch (e) {}
+                }
+                var tapCount = 0;
+                var lastVideo = null;
+                document.addEventListener('click', function(ev) {
+                  var t = ev.target;
+                  if (!t) return;
+                  var isVideo = !!(t.closest && t.closest('video'));
+                  var inReels = !!(t.closest && t.closest('[data-is-reels="true"]'));
+                  var tag = t.tagName || 'unknown';
+                  if (isVideo || inReels) {
+                    tapCount++;
+                    trace('tap',
+                      'n=' + tapCount +
+                      ' tag=' + tag +
+                      ' isVideo=' + isVideo +
+                      ' inReels=' + inReels +
+                      ' defaultPrevented=' + ev.defaultPrevented +
+                      ' phase=' + ev.eventPhase);
+                  }
+                }, true);
+                // Video play / pause / playing events - tells
+                // us whether the player's own state machine
+                // fired for a tap, even when the user thought
+                // the tap was ignored.
+                ['play', 'pause', 'playing', 'ended', 'click', 'tap'].forEach(function(e) {
+                  document.addEventListener(e, function(ev) {
+                    var t = ev.target;
+                    if (!t || t.tagName !== 'VIDEO') return;
+                    if (lastVideo !== t) {
+                      lastVideo = t;
+                      trace('video-new', 'src=' + (t.src || t.currentSrc || '').slice(0, 80));
+                    }
+                    trace('video', e + ' currentTime=' + t.currentTime.toFixed(2) + ' paused=' + t.paused + ' muted=' + t.muted);
+                  }, true);
+                });
+                trace('tapdiag', 'init');
+              })();
+
               // ---- block right-swipe-to-create-story on the home feed ----
-              // Facebook's lite renderer watches touchstart / touchmove
-              // deltas and, on a rightward swipe that crosses a small
-              // threshold, navigates to the create-story camera. The
-              // user does not want that - a back gesture on the home
-              // feed should be a no-op, not a camera launch.
-              //
-              // The previous two versions of this fix did not work.
-              // preventDefault on touchmove was tried first - the
-              // browser's default action was blocked but
-              // Facebook's own swipe tracker reads the raw event
-              // coordinates and ignores defaultPrevented, so the
-              // navigation still fired. A capture-phase
-              // touchstart preventDefault was tried second - the
-              // startX coordinate was suppressed, but Facebook's
-              // lite renderer also reads a fallback path (the
-              // .mtfi class on certain elements) that registers
-              // a left-edge tap as the start of a swipe if the
-              // tap lands within a few pixels of the edge. The
-              // user reported the camera still opens.
-              //
-              // The reliable path is to wrap history.pushState
-              // and detect the create-story URL change, then
-              // rewind. Facebook's lite renderer uses pushState
-              // for in-app navigation; replacing it with a
-              // wrapper that detects a route containing
-              // /story/create or /composer and immediately calls
-              // history.back() works regardless of which event
-              // path triggered the navigation. The user's back
-              // button still works because we only fire on a
-              // blocked URL, and a normal back gesture does
-              // not pass through the wrapper.
+              // Round 22 addendum 27: diagnostic logging.
+              // The user installed addendum 26 and reported
+              // that none of the four device-verdict fixes
+              // actually worked. Rather than guess again, this
+              // version adds trace logging on every step of
+              // the gesture and the navigation block, so the
+              // user can capture a logcat session that shows
+              // what the script actually saw. The trace is
+              // cheap: a few string concatenations, no DOM
+              // reads, no allocations beyond the trace object.
+              // The trace is sent through window.FBPro.trace
+              // if the app registered one - that handler
+              // writes to the diagnostic log file the user
+              // can view from Developer options.
               (function() {
                 if (window.__fbproRouteBlock) return;
                 window.__fbproRouteBlock = true;
+                function trace(msg) {
+                  try {
+                    if (window.FBPro && window.FBPro.trace) {
+                      window.FBPro.trace('routeblock', msg);
+                    }
+                  } catch (e) {}
+                }
+                trace('init location=' + location.href);
                 var BLOCK_RE = /\/(story\/create|composer|create_story|compose\/post)/i;
                 var _push = history.pushState;
                 var _replace = history.replaceState;
@@ -1656,14 +1706,10 @@ object AdBlocker {
                   try { return BLOCK_RE.test(String(url)); } catch (e) { return false; }
                 }
                 history.pushState = function(state, title, url) {
+                  trace('pushState url=' + url);
                   if (check(url)) {
-                    // Block the navigation entirely. The history
-                    // entry is not added; the URL is not changed;
-                    // the user stays where they are.
+                    trace('BLOCKED pushState url=' + url);
                     try {
-                      // Re-add the previous URL with a no-op
-                      // state so the back button still goes
-                      // somewhere useful.
                       _push.call(history, {__dbRoute:1}, '', location.href);
                     } catch (e) {}
                     return;
@@ -1671,7 +1717,9 @@ object AdBlocker {
                   return _push.apply(history, arguments);
                 };
                 history.replaceState = function(state, title, url) {
+                  trace('replaceState url=' + url);
                   if (check(url)) {
+                    trace('BLOCKED replaceState url=' + url);
                     try {
                       _replace.call(history, {__dbRoute:1}, '', location.href);
                     } catch (e) {}
@@ -1679,26 +1727,16 @@ object AdBlocker {
                   }
                   return _replace.apply(history, arguments);
                 };
-                // Belt-and-braces: a popstate that lands on the
-                // blocked URL is rewound. The wrapper above
-                // should have caught the pushState that got us
-                // here, but if some other code path slipped
-                // through (window.location.assign, direct URL
-                // set) the popstate handler is the second line
-                // of defence.
                 window.addEventListener('popstate', function() {
+                  trace('popstate href=' + location.href);
                   if (check(location.href)) {
+                    trace('REWIND popstate href=' + location.href);
                     try { history.back(); } catch (e) {}
                   }
                 });
-                // Third line: a periodic check. If the URL ever
-                // lands on the blocked route through a path
-                // neither wrapper caught (a real navigation, a
-                // download hand-off, a back-button from a
-                // different stack frame), this fires within a
-                // second and rewinds it.
                 setInterval(function() {
                   if (check(location.href)) {
+                    trace('REWIND interval href=' + location.href);
                     try { history.back(); } catch (e) {}
                   }
                 }, 500);

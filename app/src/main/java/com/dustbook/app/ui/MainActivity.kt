@@ -2528,6 +2528,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**
+         * Round 22 addendum 27: trace channel for the
+         * diagnostic logging injected by the native feel
+         * script. The user installed addendum 26 and
+         * reported that none of the device-verdict fixes
+         * actually worked; we cannot guess the cause any
+         * more, so the script now traces its own
+         * decisions to this handler, and the handler
+         * writes them to the diagnostic log file. The
+         * user can view the file from Developer options
+         * and see what the script actually saw, rather
+         * than what we hoped it saw. Two channels: tag
+         * identifies the source, msg is the trace.
+         */
+        @JavascriptInterface
+        fun trace(tag: String, msg: String) {
+            this@MainActivity.prefs.diagLog.write("js", "[$tag] $msg")
+        }
+
+        /**
          * Page reports a fillable login form is present.
          *
          * Nothing acts on this any more -- the native login screen it used to
