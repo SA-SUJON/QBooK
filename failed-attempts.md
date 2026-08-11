@@ -2372,3 +2372,104 @@ same now.
 1318/1318 pass.
 
 No push yet.
+
+### Addendum 22 — round 28 idempotent seven-tap
+
+#### What the user pointed out
+
+After turning the Developer options toolbar
+toggle off, tapping the version entry seven
+times does nothing. The user expected the
+seven-tap gesture to re-enable Developer
+options, not just to do the one-time unlock
+that the addendum 17/20 wiring described.
+
+#### Root cause
+
+The seven-tap handler from addendum 17 had
+
+```
+if (prefs.developerUnlocked) return@... true
+```
+
+`developerUnlocked` was the one-way "did the
+user ever tap seven times" flag. Once true, it
+never reset, and the seven-tap handler returned
+early. After the toolbar toggle set
+`developerEnabled = false`, the user had no way
+to bring the entry back without reinstalling
+the app or manually editing shared preferences.
+
+I had split the gate into two booleans in
+addendum 17 thinking the unlock was a one-shot
+event and the toggle was a separate two-way
+control. That was the wrong split. The seven-tap
+gesture is itself the re-enable action; the
+toolbar toggle is the hide action. There is no
+"have I ever unlocked" state worth tracking -
+the gesture is idempotent, not a state machine.
+
+#### Fix
+
+The seven-tap handler now ignores
+`developerUnlocked` and just counts taps. On
+the 7th tap, it sets `developerEnabled = true`
+and posts an activity recreate. When
+`developerEnabled` is already true, the handler
+still counts the taps (so a tap that started
+before the unlock can finish its counter) but
+does not show a toast and does not recreate -
+the user is already looking at the entry.
+
+`developerUnlocked` and `KEY_DEVELOPER_UNLOCKED`
+are kept in Prefs.kt (legacy keys; the
+SharedPreferences entry stays on devices that
+already have it, and a future build that wants
+a separate "have I ever unlocked" flag can
+reuse them). The constant is not read anywhere
+in the code any more.
+
+#### Files changed
+
+- `app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt`:
+  the seven-tap handler no longer early-returns
+  on `developerUnlocked`. It checks
+  `developerEnabled` and either runs the
+  full unlock path (set developerEnabled = true,
+  recreate) or no-ops with a counter reset.
+
+- `tools/test_diagnostic_log.js`: replaced the
+  three obsolete assertions (developerUnlocked
+  is set on unlock, the seven-tap pins both
+  booleans, developerEnabled gates the entry)
+  with three new ones (seven-tap sets
+  developerEnabled, handler returns early
+  when already enabled, entry visibility
+  gated on developerEnabled). The
+  "developer_unlocked preference is exposed"
+  pin is kept - the constant is still in Prefs.
+
+#### What is intentionally NOT changed
+
+- The 7-tap window (5 minutes), the
+  developerEnabled shared preference, the
+  toolbar toggle wiring, the Enable logcat
+  switch, the View / Share / Clear buttons -
+  all unchanged.
+- The icon picker sizing and the offline video
+  pause guard (addendum 14) are not touched.
+- `developerUnlocked` and `KEY_DEVELOPER_UNLOCKED`
+  stay in Prefs.kt. Removing them would not
+  affect functionality but would force any user
+  who already had the key set to set it again,
+  which the user has not asked for. They are
+  inert code: a property, a constant, and a
+  persisted boolean that nothing reads. They
+  will be removed in a later cleanup commit if
+  no use for them emerges.
+
+#### Tests
+
+1320/1320 pass.
+
+No push yet.

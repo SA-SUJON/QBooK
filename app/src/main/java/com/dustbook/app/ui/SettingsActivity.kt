@@ -214,23 +214,39 @@ class SettingsActivity : AppCompatActivity() {
             java.util.concurrent.atomic.AtomicBoolean(false)
 
         private fun wire() {
-            // ---- 7-tap on About → unlock + reveal Developer options ----
+            // ---- 7-tap on About → reveal Developer options ----
             // The Developer options entry is invisible by default in the
             // layout (android:visibility="gone"). Tapping the About this
-            // app entry seven times within five minutes does two things:
-            //   1. Sets developerUnlocked to true (one-way; never resets).
-            //      This is the gate the page-top switch lives behind.
-            //   2. Sets developerEnabled to true, so the entry appears
-            //      immediately. The user can later turn the page-top
-            //      switch off to hide the entry again, without losing
-            //      the unlock - seven taps are a one-shot, not a toggle.
+            // app entry seven times within five minutes sets
+            // developerEnabled to true, which makes the entry visible
+            // (in About) and switches the toolbar toggle on (in
+            // Developer options). The gesture is idempotent: tapping
+            // seven times when the entry is already shown is a no-op
+            // (no recreate, no toast), and tapping seven times when the
+            // entry is hidden re-enables it. There is no "unlock" state
+            // any more - the seven taps are a verb, not a flag.
             // The tap counter is a small integer in SharedPreferences and
             // resets when the first tap is older than five minutes - so
             // an accidental tap a month ago does not get half-credit
             // today.
             val sevenTap = findPreference<Preference>("app_version")
             sevenTap?.setOnPreferenceClickListener {
-                if (prefs.developerUnlocked) return@setOnPreferenceClickListener true
+                if (prefs.developerEnabled) {
+                    // Already enabled - still count taps so a tap that
+                    // started before the unlock and crossed the
+                    // threshold is handled, but do not show a toast or
+                    // recreate. The user is looking at the entry; they
+                    // do not need to be told it is there.
+                    val now = System.currentTimeMillis()
+                    val firstTap = prefs.devTapFirstAt
+                    if (firstTap == 0L || now - firstTap > DEV_TAP_WINDOW_MS) {
+                        prefs.devTapCount = 0
+                        prefs.devTapFirstAt = 0L
+                    } else if (prefs.devTapCount >= 4) {
+                        prefs.devTapCount = prefs.devTapCount + 1
+                    }
+                    return@setOnPreferenceClickListener true
+                }
                 val now = System.currentTimeMillis()
                 val firstTap = prefs.devTapFirstAt
                 val taps = if (firstTap == 0L || now - firstTap > DEV_TAP_WINDOW_MS) {
@@ -243,7 +259,6 @@ class SettingsActivity : AppCompatActivity() {
                     next
                 }
                 if (taps >= 7) {
-                    prefs.developerUnlocked = true
                     prefs.developerEnabled = true
                     prefs.devTapCount = 0
                     prefs.devTapFirstAt = 0L

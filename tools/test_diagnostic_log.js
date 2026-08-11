@@ -106,8 +106,8 @@ ok('Settings wires the single logcat switch (round 28 reduced the dev surface to
    /KEY_DIAGNOSTIC_LOG[\s\S]{0,300}prefs\.diagnosticLog = v as Boolean/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
-ok('the About entry takes seven taps to unlock Developer options',
-   /sevenTap[\s\S]{0,2000}prefs\.developerUnlocked = true/.test(
+ok('the About entry takes seven taps to enable Developer options (and the 7th tap sets developerEnabled = true)',
+   /sevenTap[\s\S]{0,2000}prefs\.developerEnabled = true/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('the developer_unlocked preference is exposed',
@@ -118,11 +118,15 @@ ok('the developer_enabled preference is exposed (the toolbar toggle on the Devel
    /KEY_DEVELOPER_ENABLED = "developer_enabled"/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
-ok('the seven-tap unlock sets both developerUnlocked and developerEnabled (so the entry is revealed immediately)',
-   /sevenTap[\s\S]{0,2500}prefs\.developerUnlocked = true[\s\S]{0,200}prefs\.developerEnabled = true/.test(
+ok('the seven-tap gesture is idempotent: it sets developerEnabled = true on the 7th tap (no separate unlock state)',
+   /sevenTap[\s\S]{0,2500}prefs\.developerEnabled = true/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
-ok('the About entry\'s visibility is gated on developerEnabled (not developerUnlocked) so the toolbar toggle can re-hide it',
+ok('the seven-tap handler returns early when developerEnabled is already true (no recreate, no toast on re-tap when entry is already shown)',
+   /sevenTap[\s\S]{0,1500}if\s*\(prefs\.developerEnabled\)[\s\S]{0,800}return@setOnPreferenceClickListener/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ));
+ok('the About entry\'s visibility is gated on developerEnabled so the toolbar toggle can re-hide it',
    /nav_developer"\)\s*\?\s*\.isVisible\s*=\s*prefs\.developerEnabled/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
