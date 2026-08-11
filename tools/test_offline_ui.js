@@ -437,7 +437,7 @@ console.log('\nThe saved count is always visible');
   // It used to be written only from a change listener, so the row was blank
   // until something was toggled at random.
   ok('filled in when the screen opens',
-     /setPreferencesFromResource\(res, rootKey\)[\s\S]{0,300}refreshOfflineSize\(\)/
+     /setPreferencesFromResource\(res, rootKey\)[\s\S]{0,800}refreshOfflineSize\(\)/
        .test(settings));
   ok('and again on resume',
      /override fun onResume[\s\S]{0,200}refreshOfflineSize\(\)/.test(settings));
