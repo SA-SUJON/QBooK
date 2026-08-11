@@ -1,78 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Developer Options — diagnostic & inspection tools.
-  Reachable from: Hidden Settings → About → Developer Options.
-  Nothing here affects normal use; every setting is off by default.
-  Tools here are what let us write filter rules from real Facebook markup
-  instead of guessing, and capture ad-reel video URLs for network blocking.
+  Developer Options - reached from Hidden Settings -> About by tapping
+  the About-this-app entry seven times. Only one toggle lives here:
+  Enable logcat, default off. The full-screen feature is intentionally
+  not surfaced in the settings UI; the seven-tap gate is the only path.
+
+  All the previous diagnostic tools (inspect_ads, log_video_urls,
+  dump_dom, sync_diagnostics, the diagnostic-log buttons) are gone.
+  Round 28 reduced the surface to a single on/off switch.
 -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <PreferenceCategory android:title="@string/dev_cat_inspect"
-        app:iconSpaceReserved="false">
-
-        <SwitchPreferenceCompat android:key="inspect_ads"
-            android:title="@string/pref_inspect"
-            android:summary="@string/pref_inspect_sum"
-            android:defaultValue="false"
-            app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat android:key="log_video_urls"
-            android:title="@string/dev_log_video"
-            android:summary="@string/dev_log_video_sum"
-            android:defaultValue="false"
-            app:iconSpaceReserved="false" />
-
-        <Preference android:key="dump_dom"
-            android:title="@string/dev_dump_dom"
-            android:summary="@string/dev_dump_dom_sum"
-            app:iconSpaceReserved="false" />
-
-        <!-- TEMPORARY diagnostic for the offline-download-never-starts bug.
-             Remove this entry once the bug is confirmed fixed. -->
-        <Preference android:key="sync_diagnostics"
-            android:title="Sync diagnostics"
-            android:summary="Why the last offline download did or did not start"
-            app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory android:title="@string/dev_cat_log"
-        app:iconSpaceReserved="false">
-
-        <SwitchPreferenceCompat android:key="diagnostic_log"
-            android:title="@string/pref_diagnostic_log"
-            android:summary="@string/pref_diagnostic_log_sum"
-            android:defaultValue="false"
-            app:iconSpaceReserved="false" />
-
-        <Preference android:key="view_diagnostic_log"
-            android:title="@string/pref_diagnostic_view"
-            android:summary="@string/pref_diagnostic_view_sum"
-            app:iconSpaceReserved="false" />
-
-        <Preference android:key="share_diagnostic_log"
-            android:title="@string/pref_diagnostic_share"
-            android:summary="@string/pref_diagnostic_share_sum"
-            app:iconSpaceReserved="false" />
-
-        <Preference android:key="clear_diagnostic_log"
-            android:title="@string/pref_diagnostic_clear"
-            android:summary="@string/pref_diagnostic_clear_sum"
-            app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory android:title="@string/dev_cat_howto"
-        app:iconSpaceReserved="false">
-
-        <Preference android:key="dev_howto"
-            android:title="@string/dev_howto_title"
-            android:summary="@string/dev_howto_sum"
-            android:selectable="false"
-            app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
+    <SwitchPreferenceCompat
+        android:key="diagnostic_log"
+        android:title="@string/pref_logcat_toggle"
+        android:summary="@string/pref_logcat_toggle_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
 
 </PreferenceScreen>

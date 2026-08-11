@@ -5,12 +5,6 @@
         <Preference android:key="check_update" android:title="@string/pref_check_update"
             android:summary="@string/pref_check_update_sum" app:iconSpaceReserved="false" />
     </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_debug" app:iconSpaceReserved="false">
-        <Preference android:key="nav_developer"
-            android:title="@string/dev_options_title"
-            android:summary="@string/dev_options_sum"
-            app:iconSpaceReserved="false" />
-    </PreferenceCategory>
     <PreferenceCategory android:title="@string/cat_about" app:iconSpaceReserved="false">
         <Preference android:key="app_version" android:title="@string/pref_version"
             android:selectable="false" app:iconSpaceReserved="false" />
@@ -19,6 +13,11 @@
         <Preference android:key="gesture_info" android:title="@string/pref_gesture"
             android:summary="@string/pref_gesture_sum"
             android:selectable="false" app:iconSpaceReserved="false" />
+        <Preference android:key="nav_developer"
+            android:title="@string/dev_options_title"
+            android:summary="@string/dev_options_sum"
+            android:visibility="gone"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_developer" app:iconSpaceReserved="false">
         <Preference android:key="dev_info" android:title="@string/pref_developer"

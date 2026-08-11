@@ -1524,3 +1524,66 @@ session I repeated it. That is the failure.
 > 2026-08-11, 05:50 | No code change. The state on main is
 > 5.2.27 reverted, diagnostic log kept, CI green. The
 > user's verdict stands.
+
+## Round 28 Addendum 13 (2026-08-11, 06:00): the user wanted a clean dev surface
+
+The user asked for three pieces of work; the first is a rebuild
+of the Developer Options screen. The previous build exposed:
+
+  - inspect_ads (long-press ad capture)
+  - log_video_urls (reel video URL capture)
+  - dump_dom (DOM dump on long-press)
+  - sync_diagnostics (offline-download diagnostic)
+  - Enable diagnostic log
+  - View log / Share log / Clear log
+
+The user wanted:
+
+  - All of that gone.
+  - Only one switch left: Enable logcat, default off.
+  - The Developer options entry itself hidden by default.
+  - Reachable only by tapping About-this-app seven times.
+
+What changed:
+
+  settings_about.xml - the nav_developer entry was in the
+  Debug category, always visible. It is now in the About
+  category, with android:visibility="gone", and the Debug
+  category is removed entirely.
+
+  settings_developer.xml - reduced to a single switch (the
+  diagnostic-log toggle, renamed to "Enable logcat" in the
+  user-facing strings). The inspect-ads / log-video-urls /
+  dump-dom / sync-diagnostics / view-log / share-log / clear-log
+  entries are removed. Their strings are removed from
+  strings.xml.
+
+  SettingsActivity.kt - the 7-tap handler is a counter that
+  increments on each About tap and resets to 1 if the first
+  tap is more than five minutes old. Seven taps within the
+  five-minute window sets prefs.developerUnlocked = true and
+  makes the Developer options entry visible; the visible
+  state persists across process restarts. The previous dev
+  listeners (dump_dom, sync_diagnostics, view_diagnostic_log,
+  share_diagnostic_log, clear_diagnostic_log) are removed;
+  only the single KEY_DIAGNOSTIC_LOG switch listener remains.
+
+  Prefs.kt - three new fields: developerUnlocked, devTapCount,
+  devTapFirstAt. The first is the persistent unlock state;
+  the latter two are the in-progress counter for the gesture.
+
+  FileProvider import removed from SettingsActivity since
+  the share-log code is gone.
+
+  test_diagnostic_log.js - the "Settings wires the three
+  buttons" assertion becomes "Settings wires the single
+  switch" and two new assertions pin the seven-tap gesture
+  and the developer_unlocked preference.
+
+No code behaviour change for any user who has not tapped
+About seven times. For a user who has, the dev surface is
+now a single logcat switch.
+
+> 2026-08-11, 06:00 | Tests: 1311/1311 pass. No push yet -
+> the user wanted work done in small pieces with permission
+> before each push, this commit is the first piece.

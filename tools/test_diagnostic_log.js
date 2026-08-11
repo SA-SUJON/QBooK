@@ -102,15 +102,17 @@ ok('Settings wires the switch to prefs.diagnosticLog',
    /prefs\.diagnosticLog = v as Boolean/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
-ok('Settings wires the three buttons',
-   /view_diagnostic_log[\s\S]{0,200}requireContext\(\), DiagnosticLogActivity::class\.java/.test(
+ok('Settings wires the single logcat switch (round 28 reduced the dev surface to one switch)',
+   /KEY_DIAGNOSTIC_LOG[\s\S]{0,300}prefs\.diagnosticLog = v as Boolean/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
-   ) &&
-   /share_diagnostic_log[\s\S]{0,1500}ACTION_SEND/.test(
+   ));
+ok('the About entry takes seven taps to unlock Developer options',
+   /sevenTap[\s\S]{0,2000}prefs\.developerUnlocked = true/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
-   ) &&
-   /clear_diagnostic_log[\s\S]{0,200}prefs\.diagLog\.clear/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ));
+ok('the developer_unlocked preference is exposed',
+   /KEY_DEVELOPER_UNLOCKED = "developer_unlocked"/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
 
 console.log('');

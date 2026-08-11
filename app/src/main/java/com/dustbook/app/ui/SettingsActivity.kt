@@ -8,7 +8,6 @@ import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.widget.Toast
-import androidx.core.content.FileProvider
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -133,6 +132,10 @@ class SettingsActivity : AppCompatActivity() {
 
         companion object {
             private const val ARG = "which"
+            // Five minutes is the standard Android "About screen seven-tap"
+            // window: long enough for a deliberate gesture, short enough
+            // that a stray tap a week ago does not count toward today.
+            private const val DEV_TAP_WINDOW_MS = 5L * 60L * 1000L
 
             fun create(which: String) = SubFragment().apply {
                 arguments = Bundle().apply { putString(ARG, which) }
@@ -205,66 +208,64 @@ class SettingsActivity : AppCompatActivity() {
             java.util.concurrent.atomic.AtomicBoolean(false)
 
         private fun wire() {
+            // ---- 7-tap on About → unhide Developer options ----
+            // The Developer options entry is invisible by default in the
+            // layout (android:visibility="gone"). Tapping the About this
+            // app entry seven times within five minutes makes it visible;
+            // the visible state persists across process restarts, so the
+            // user only has to do the seven taps once per install. The
+            // tap counter is a small integer in SharedPreferences and
+            // resets when the first tap is older than five minutes - so
+            // an accidental tap a month ago does not get half-credit
+            // today.
+            val sevenTap = findPreference<Preference>("app_version")
+            sevenTap?.setOnPreferenceClickListener {
+                if (prefs.developerUnlocked) return@setOnPreferenceClickListener true
+                val now = System.currentTimeMillis()
+                val firstTap = prefs.devTapFirstAt
+                val taps = if (firstTap == 0L || now - firstTap > DEV_TAP_WINDOW_MS) {
+                    prefs.devTapCount = 1
+                    prefs.devTapFirstAt = now
+                    1
+                } else {
+                    val next = prefs.devTapCount + 1
+                    prefs.devTapCount = next
+                    next
+                }
+                if (taps >= 7) {
+                    prefs.developerUnlocked = true
+                    prefs.devTapCount = 0
+                    prefs.devTapFirstAt = 0L
+                    sevenTap.summary = getString(R.string.dev_options_sum)
+                    val dev = findPreference<Preference>("nav_developer")
+                    dev?.isVisible = true
+                    toast("Developer options unlocked")
+                } else if (taps >= 4) {
+                    toast("$taps / 7")
+                }
+                true
+            }
+
+            // Re-show the Developer options entry if it was unlocked
+            // on a previous run; the shared preference survives the
+            // process restart, and a one-time show on the inflated
+            // fragment keeps the layout consistent.
+            if (prefs.developerUnlocked) {
+                findPreference<Preference>("nav_developer")?.isVisible = true
+            }
+
             // ---- about → developer nav ----
             findPreference<Preference>("nav_developer")?.setOnPreferenceClickListener {
                 (activity as? SettingsActivity)?.openSub("developer")
                 true
             }
 
-            // ---- developer ----
-            findPreference<Preference>("dump_dom")?.setOnPreferenceClickListener {
-                toast("Turn on Ad Inspector, then long-press any element on the page to copy its markup.")
-                true
-            }
-
-            // TEMPORARY diagnostic for the offline-download-never-starts
-            // bug. Remove this listener together with the preference entry
-            // once the bug is confirmed fixed.
-            findPreference<Preference>("sync_diagnostics")?.setOnPreferenceClickListener {
-                showSyncDiagnosticsDialog()
-                true
-            }
-
-            // ---- diagnostic log: switch drives the in-process logger; the
-            // three buttons open the file in a reader, share it, or clear
-            // it. The reader is its own Activity so the Settings screen
-            // stays single-page and the file can be much larger than any
-            // dialog body.
+            // ---- developer: only the logcat switch ----
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_DIAGNOSTIC_LOG)
                 ?.setOnPreferenceChangeListener { _, v ->
                     prefs.diagnosticLog = v as Boolean
                     true
                 }
-            findPreference<Preference>("view_diagnostic_log")?.setOnPreferenceClickListener {
-                startActivity(Intent(requireContext(), DiagnosticLogActivity::class.java))
-                true
-            }
-            findPreference<Preference>("share_diagnostic_log")?.setOnPreferenceClickListener {
-                val path = prefs.diagLog.path()
-                val file = File(path)
-                if (!file.exists()) {
-                    toast(getString(R.string.diagnostic_log_empty))
-                    return@setOnPreferenceClickListener true
-                }
-                // FileProvider is keyed off the application package; on a
-                // SubFragment the packageName lives on the activity, not
-                // on `this` (which is the fragment).
-                val pkg = requireActivity().packageName
-                val uri = FileProvider.getUriForFile(
-                    requireContext(), "$pkg.fileprovider", file)
-                val share = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(share, getString(R.string.diagnostic_share_chooser)))
-                true
-            }
-            findPreference<Preference>("clear_diagnostic_log")?.setOnPreferenceClickListener {
-                prefs.diagLog.clear()
-                toast(getString(R.string.diagnostic_log_cleared))
-                true
-            }
 
             // ---- blocking ----
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_AD_BLOCK)

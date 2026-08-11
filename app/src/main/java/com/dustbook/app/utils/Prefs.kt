@@ -82,6 +82,9 @@ class Prefs(context: Context) {
         const val KEY_INSPECT_ADS = "inspect_ads"
         const val KEY_LOG_VIDEOS = "log_video_urls"
         const val KEY_DIAGNOSTIC_LOG = "diagnostic_log"
+        const val KEY_DEVELOPER_UNLOCKED = "developer_unlocked"
+        const val KEY_DEV_TAP_COUNT = "dev_tap_count"
+        const val KEY_DEV_TAP_FIRST_AT = "dev_tap_first_at"
         const val KEY_HOMEPAGE = "homepage_url"
 
         // Data
@@ -316,6 +319,22 @@ class Prefs(context: Context) {
             diagLog.enabled = value
             sp.edit().putBoolean(KEY_DIAGNOSTIC_LOG, value).apply()
         }
+
+    /** True once the user has tapped About seven times. Persists across
+     *  process restarts so the Developer options entry stays visible
+     *  after the unlock gesture. Round 28 reduced the dev surface to
+     *  a single switch, but the unlock state still survives. */
+    var developerUnlocked: Boolean
+        get() = sp.getBoolean(KEY_DEVELOPER_UNLOCKED, false)
+        set(v) = sp.edit().putBoolean(KEY_DEVELOPER_UNLOCKED, v).apply()
+
+    /** Tap counter and first-tap timestamp for the seven-tap gesture. */
+    var devTapCount: Int
+        get() = sp.getInt(KEY_DEV_TAP_COUNT, 0)
+        set(v) = sp.edit().putInt(KEY_DEV_TAP_COUNT, v).apply()
+    var devTapFirstAt: Long
+        get() = sp.getLong(KEY_DEV_TAP_FIRST_AT, 0L)
+        set(v) = sp.edit().putLong(KEY_DEV_TAP_FIRST_AT, v).apply()
     val saveSession: Boolean get() = sp.getBoolean(KEY_SAVE_SESSION, false)
 
     val homepage: String

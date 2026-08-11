@@ -269,30 +269,11 @@
     <string name="pref_inspect_sum">Long-press an ad that got through to copy its markup, so a filter rule can be written for it</string>
     <string name="inspect_copied">Copied to clipboard. Paste it into the bug report.</string>
 
-    <!-- Developer Options — reachable from About -->
+    <!-- Developer Options — 7-tap on About -->
     <string name="dev_options_title">Developer Options</string>
-    <string name="dev_options_sum">Ad inspector, video URL logger, DOM dump</string>
-    <string name="dev_cat_inspect">Diagnostic Tools</string>
-    <string name="dev_cat_log">In-app diagnostic log</string>
-    <string name="pref_diagnostic_log">Enable diagnostic log</string>
-    <string name="pref_diagnostic_log_sum">Write lifecycle, network, WebView, fullscreen, and bridge events to a file under cacheDir/diagnostic/. Off by default. When off, every log call returns immediately; the cost is one boolean read per call site. When on, use the buttons below to view, share, or clear the file.</string>
-    <string name="pref_diagnostic_view">View log</string>
-    <string name="pref_diagnostic_view_sum">Open the log file in a scrollable reader. Newest entry last.</string>
-    <string name="pref_diagnostic_share">Share log file</string>
-    <string name="pref_diagnostic_share_sum">Open the system share sheet with the log file attached — useful for sending the file to a developer or pasting it into a bug report.</string>
-    <string name="pref_diagnostic_clear">Clear log</string>
-    <string name="pref_diagnostic_clear_sum">Delete the log file. Cannot be undone.</string>
-    <string name="diagnostic_log_title">Diagnostic log</string>
-    <string name="diagnostic_log_empty">The diagnostic log is empty. Turn on Enable diagnostic log in Developer options, then use the app for a while — the log file will be written under cacheDir/diagnostic/.</string>
-    <string name="diagnostic_log_cleared">Diagnostic log cleared.</string>
-    <string name="diagnostic_share_chooser">Share diagnostic log</string>
-    <string name="dev_cat_howto">How to use</string>
-    <string name="dev_log_video">Log reel video URLs</string>
-    <string name="dev_log_video_sum">Turn on, then long-press a reel ad to copy its video URL (and the last few reel video URLs) straight to the clipboard — no PC needed. URLs are also logged to logcat (tag: DUSTBOOK_VIDEO). Paste them in to write a network-level block rule for reel ads.</string>
-    <string name="dev_dump_dom">DOM dump</string>
-    <string name="dev_dump_dom_sum">Turn on Ad Inspector, then long-press any element on the page to copy its full HTML markup. Paste it into a bug report so filter rules can be written from real data.</string>
-    <string name="dev_howto_title">How to capture reel ad video URLs</string>
-    <string name="dev_howto_sum">1. Turn on both \"Log reel video URLs\" and \"Ad Inspector\" above.\n2. Open Dustbook, go to Reels, keep scrolling.\n3. When an ad appears (with Order Now / Shop Now / Send Message), LONG-PRESS on it.\n4. Wait — the DOM markup AND the reel\'s video URLs will be auto-copied to your clipboard.\n5. Paste to your assistant.\n\nVideo URLs are collected silently in the background whenever \"Log reel video URLs\" is on. They only get copied when you long-press — never automatically.</string>
+    <string name="dev_options_sum">Diagnostic switches (off by default)</string>
+    <string name="pref_logcat_toggle">Enable logcat</string>
+    <string name="pref_logcat_toggle_sum">When on, lifecycle, network, WebView, fullscreen, and bridge events are written to a file under cacheDir/diagnostic/. The file is read in-view, shared via the system share sheet, or cleared from here. Off by default; the cost when off is one boolean read per call site.</string>
 
     <!-- developer info -->
     <string name="grp_developer">Developer</string>
