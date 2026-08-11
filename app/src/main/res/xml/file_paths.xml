@@ -6,7 +6,12 @@
          must be external app storage rather than the private cache. -->
     <external-files-path name="updates" path="updates/" />
     <files-path name="updates_internal" path="updates/" />
-    <!-- in-app diagnostic log file, written by DiagnosticLog and shared
-         via Settings -> Developer options -> Share log. -->
-    <cache-path name="diagnostic" path="diagnostic/" />
+    <!--
+      The in-app diagnostic log file lives under cacheDir/diagnostic/ and
+      is written by DiagnosticLog when the "Enable logcat" switch is on.
+      Round 28 removed the share/clear UI; a FileProvider entry is no
+      longer needed until the share button comes back. The file itself
+      is still readable on the device with adb (run-as) or by adding a
+      viewer later.
+    -->
 </paths>

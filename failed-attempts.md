@@ -1687,3 +1687,147 @@ fix itself.
 1311/1311 pass.
 
 No push yet.
+
+### Addendum 15 — round 28 cleanup before push
+
+#### What happened
+
+After the round 28 addenda 13 and 14 were committed locally
+(`3e79c17` and `5c6cd3b`), a structural review before push
+turned up three regressions that the previous addenda did
+not catch. They are not in the user-visible behaviour the
+round was about; they are all build-correctness issues left
+over from the strings-and-XML delete in addendum 13, and
+from the assumption in 14 that the diagnostic-log feature
+was still being torn down consistently.
+
+The two commits `3e79c17` and `5c6cd3b` did the user-facing
+work: developer options reduced to a single "Enable logcat"
+switch reachable by seven taps on the About entry, icon
+picker previews enlarged, offline Reels and home feed video
+pause behaviour fixed. The cleanup in this addendum removes
+dead code that the user-facing work left behind. It does not
+add a single new behaviour.
+
+#### What the review found
+
+**1. AndroidManifest referenced a deleted string.**
+
+Addendum 13 deleted the `diagnostic_log_title` string
+along with the three-button diagnostic-log group. The
+`AndroidManifest.xml` still had an entry for
+`DiagnosticLogActivity` whose label was
+`@string/diagnostic_log_title`. AAPT would have failed the
+build with "resource string/diagnostic_log_title not
+found". The view-only Activity was unreachable from the
+new settings layout (no button called it), but its
+manifest entry still had to compile.
+
+**2. DiagnosticLogActivity referenced a deleted string.**
+
+Same root cause. The activity's `onCreate` set
+`text.text = getString(R.string.diagnostic_log_empty)`
+when the log file was empty. The string was deleted in
+addendum 13. With the activity still on disk, Kotlin
+compilation would have failed with an unresolved
+reference at that call site.
+
+**3. Settings wired a listener to a preference that was
+no longer in the layout.**
+
+`findPreference<SwitchPreferenceCompat>(Prefs.KEY_INSPECT_ADS)
+  ?.setOnPreferenceChangeListener { ... }`
+
+The "Inspect ads" preference was removed from
+`settings_developer.xml` in addendum 13, so the lookup
+was a permanent null. The Elvis-chain made it
+runtime-safe (no crash), but the line was dead code
+that would have read as a bug to a future maintainer
+("why is this still here when the layout has no
+such key?"). The persisted `KEY_INSPECT_ADS` value
+is still read by `MainActivity` for the long-press
+inspector handler, so the constant and the `inspectAds`
+getter are kept; only the Settings-side wiring was
+removed.
+
+**4. file_paths.xml still declared a FileProvider path
+for the diagnostic log that no one shared any more.**
+
+`<cache-path name="diagnostic" path="diagnostic/" />`
+was added in round 28 for the "Share log" button.
+The button is gone, and with it the only call site
+of `FileProvider.getUriForFile` for that URI. The
+file itself is still written when "Enable logcat"
+is on; reading it later (via adb run-as or a
+future viewer) does not need a FileProvider. The
+path entry was the last remaining trace of the
+share UI in the resource tree.
+
+**5. Two `pref_inspect*` strings were orphaned.**
+
+`pref_inspect` and `pref_inspect_sum` were the
+title and summary of the "Inspect ads" preference.
+That preference is gone; the strings had no
+remaining call sites in the layout, and the long-
+press handler in `MainActivity` does not show
+either (it shows `inspect_copied`, which is kept).
+The orphaned strings did not break the build, but
+they are now misleading to translate, so they
+were removed with a comment explaining the
+rationale for the surviving `inspect_copied`.
+
+#### What was changed
+
+- `app/src/main/java/com/dustbook/app/ui/DiagnosticLogActivity.kt`
+  deleted. The view-only viewer had no remaining entry
+  point in the new settings layout.
+- `app/src/main/res/layout/activity_diagnostic_log.xml`
+  deleted. Same reason.
+- `app/src/main/AndroidManifest.xml` `<activity ... />` for
+  `DiagnosticLogActivity` removed; a comment is left
+  in its place so a future developer can see the round
+  in which the entry went.
+- `app/src/main/res/xml/file_paths.xml` `<cache-path>`
+  for the diagnostic log removed; a comment explains
+  the change.
+- `app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt`
+  `findPreference(KEY_INSPECT_ADS)` wiring removed;
+  a comment notes that the persisted state is still
+  read by `MainActivity` and that the constant is
+  kept in `Prefs`.
+- `app/src/main/res/values/strings.xml`
+  `pref_inspect` and `pref_inspect_sum` removed
+  with a comment explaining why `inspect_copied`
+  survives.
+
+#### What is intentionally NOT changed
+
+- `app/src/main/java/com/dustbook/app/utils/DiagnosticLog.kt`
+  is kept as-is. The class still writes the log file
+  when the "Enable logcat" switch is on, even though
+  the viewer and the share/clear UI are gone. A future
+  build can wire the file back into a viewer or a share
+  button without re-adding the class. The structural
+  test (`test_diagnostic_log.js`) continues to pin the
+  file location, the cap, the line format, the lock,
+  and the cold-start wiring in `MainActivity.onCreate`.
+- `app/src/main/java/com/dustbook/app/utils/Prefs.kt`
+  `KEY_INSPECT_ADS`, `KEY_LOG_VIDEOS`, and the
+  `inspectAds` / `logVideoUrls` getters are kept.
+  `MainActivity` still reads them on long-press and
+  on Reels page load; removing the constants would
+  have broken those call sites.
+- The icon picker changes from `5c6cd3b` and the
+  developer options 7-tap gate from `3e79c17` are
+  not touched. They were already verified by the
+  earlier 1311/1311 test run; the cleanup in this
+  addendum is purely about the dead code that the
+  earlier commits left around them.
+
+#### Tests
+
+Re-ran all 12 structural tests in `tools/test_*.js`:
+1311/1311 pass. `tools/verify_blocklist.py` requires a
+build artefact and is left for CI.
+
+No push yet.

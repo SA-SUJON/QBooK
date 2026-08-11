@@ -444,8 +444,12 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             // ---- about ----
-            findPreference<SwitchPreferenceCompat>(Prefs.KEY_INSPECT_ADS)
-                ?.setOnPreferenceChangeListener { _, _ -> markDirty(true); true }
+            // (Round 28: KEY_INSPECT_ADS listener removed - the
+            // "Inspect ads" preference is no longer surfaced in
+            // settings_developer.xml, so the findPreference lookup was a
+            // permanent null. Prefs.KEY_INSPECT_ADS is kept for the
+            // persisted state, in case a future build wires the toggle
+            // to a long-press gesture again.)
 
             findPreference<Preference>("app_version")?.summary = try {
                 requireContext().packageManager

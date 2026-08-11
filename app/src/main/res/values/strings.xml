@@ -265,8 +265,15 @@
     <string name="update_progress_fmt">Downloading… %1$d%%</string>
     <string name="update_need_permission">Allow installing apps from Dustbook, then tap again</string>
     <string name="grp_debug">Diagnostics</string>
-    <string name="pref_inspect">Inspect ads</string>
-    <string name="pref_inspect_sum">Long-press an ad that got through to copy its markup, so a filter rule can be written for it</string>
+    <!--
+      Round 28: pref_inspect and pref_inspect_sum are gone (the
+      "Inspect ads" entry was removed from settings_developer.xml; the
+      long-press inspector is no longer reachable from Settings).
+      "inspect_copied" stays - the long-press handler in MainActivity
+      still fires when KEY_INSPECT_ADS is on, and it shows this toast.
+      Until/unless the inspector gets its own entry point, this is the
+      only visible trace of the feature in user-facing strings.
+    -->
     <string name="inspect_copied">Copied to clipboard. Paste it into the bug report.</string>
 
     <!-- Developer Options — 7-tap on About -->
