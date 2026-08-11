@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Developer Options - reached from Hidden Settings -> About by tapping
-  the About-this-app entry seven times. The very first switch here is
-  the page-top "Developer options enabled" gate: turning it off hides
-  the Developer options entry back in About, without re-locking the
-  seven-tap gesture (the gesture is one-way, the switch is two-way).
-  Below it: the Enable logcat switch and the View / Share / Clear
-  buttons for the file the logcat switch produces.
+  the About-this-app entry seven times. The "Developer options enabled"
+  switch lives in the toolbar at the top of this screen (set up in
+  SettingsActivity.onCreate) - it is the master switch, and turning it
+  off hides the entry back in About. Below the toolbar:
+  Enable logcat switch, then View / Share / Clear buttons for the file
+  the logcat switch produces.
 
   All the previous diagnostic tools (inspect_ads, log_video_urls,
   dump_dom, sync_diagnostics) are gone. Round 28 reduced the surface
@@ -14,13 +14,6 @@
 -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-
-    <SwitchPreferenceCompat
-        android:key="developer_enabled"
-        android:title="@string/pref_developer_enabled"
-        android:summary="@string/pref_developer_enabled_sum"
-        android:defaultValue="false"
-        app:iconSpaceReserved="false" />
 
     <SwitchPreferenceCompat
         android:key="diagnostic_log"

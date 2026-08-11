@@ -2166,3 +2166,209 @@ the test_diagnostic_log.js count from 34 to
 36; the other eleven test files are unchanged).
 
 No push yet.
+
+### Addendum 20 — round 28 developer-options toolbar toggle
+
+#### What the user pointed out
+
+The user installed the addendum 19 build and
+tried three things in the Developer options page.
+None of them worked as the previous addenda
+described.
+
+1. The seven-tap gesture on the About / version
+   entry crashed the app. The user did not get
+   past the gesture; they had to reinstall the
+   previous build to recover.
+
+2. The "Developer options enabled" switch sat
+   inside the Developer options page, below the
+   page title. The user wanted the toggle to sit
+   on the right of the page title, in the toolbar
+   bar, like a normal master-switch position.
+
+3. When the switch was off, the Developer
+   options entry did not actually hide in About.
+   The toggle was a no-op; the user saw the same
+   entry both on and off.
+
+I should have caught all three on a real device
+test before pushing. Structural tests cannot see
+"the switch is in the wrong place" or "the toggle
+does not hide the entry on its own"; only a real
+install can.
+
+#### Bug 1: seven-tap crash
+
+The seven-tap handler in addendum 18 did this on
+the seventh tap:
+
+```
+val screen = preferenceScreen
+val dev = findPreference<Preference>("nav_developer")
+if (screen != null && dev != null) {
+    Handler(Looper.getMainLooper()).post {
+        if (dev.parent === screen) {
+            screen.removePreference(dev)
+        }
+        dev.isVisible = true
+        screen.addPreference(dev)
+    }
+}
+```
+
+That crashes on tap. The dev preference was
+already in the tree (the layout XML has
+android:visibility="gone", but the entry is
+still added to the parent preference screen at
+inflation). The removePreference / addPreference
+pair re-attaches a preference the framework is
+still in the middle of laying out; the call
+re-enters the framework's state machine in the
+middle of a click, and the framework throws
+either an IllegalStateException or an NPE on
+the dev instance.
+
+The fix is to step back to the simplest
+reliable path: post an `activity.recreate()` to
+the main looper. The activity recreates, the
+About fragment re-inflates, the new wire() reads
+developerEnabled (true after the unlock), and
+the entry appears. The user sees a brief
+black flash during the recreate, which is the
+acceptable cost for a one-shot unlock gesture
+that is expected to be used once per install.
+
+```
+Handler(Looper.getMainLooper()).post {
+    try { requireActivity().recreate() } catch (_: Exception) {}
+}
+```
+
+#### Bug 2: switch in the wrong place
+
+The "Developer options enabled" switch was a
+SwitchPreferenceCompat entry in
+settings_developer.xml, sitting below the
+"Enable logcat" switch. The user wanted it
+in the toolbar, on the right of the "Developer
+Options" page title, so it acts like a screen
+master switch.
+
+The fix is to remove the inline switch from
+settings_developer.xml and put a SwitchCompat
+in the toolbar instead. New resources:
+
+  - res/menu/menu_developer.xml: a menu file
+    with one item whose actionLayout points at
+    a SwitchCompat.
+  - res/layout/action_developer_toggle.xml: a
+    single SwitchCompat, no label.
+  - SubFragment.onCreatePreferences: set
+    hasOptionsMenu true only for the developer
+    sub-screen.
+  - SubFragment.onCreateOptionsMenu: inflate
+    the menu for the developer sub-screen, set
+    the switch to prefs.developerEnabled, and
+    write back on every flip.
+  - SubFragment.onOptionsItemSelected: returns
+    true (the switch's own change listener
+    handles the toggle).
+
+#### Bug 3: toggle does not hide the entry
+
+Even with the switch moved to the toolbar,
+flipping it off did not hide the Developer
+options entry in About. The reason is that the
+About fragment only re-reads developerEnabled
+inside wire(); it does not observe changes made
+from the Developer options sub-screen.
+
+The user's expectation is reasonable: turning
+the master switch off should immediately hide
+the entry. The simplest reliable path is to
+post a recreate() from the switch's change
+listener, just like the seven-tap handler does.
+The user is on the Developer options screen at
+that moment, so a recreate is heavy but
+predictable, and the wire() re-read will pick
+up the new developerEnabled value.
+
+```
+sw.setOnCheckedChangeListener { _, isChecked ->
+    prefs.developerEnabled = isChecked
+    if (!isChecked) toast(...) else toast(...)
+    Handler(Looper.getMainLooper()).post {
+        try { requireActivity().recreate() }
+        catch (_: Exception) {}
+    }
+}
+```
+
+The seven-tap handler also got the same recreate
+treatment in bug 1's fix; both paths are the
+same now.
+
+#### Files changed
+
+- app/src/main/res/xml/settings_developer.xml:
+  removed the inline developer_enabled switch
+  (it lived in the toolbar now).
+- app/src/main/res/menu/menu_developer.xml:
+  new, the action menu for the developer
+  sub-screen.
+- app/src/main/res/layout/action_developer_toggle.xml:
+  new, the SwitchCompat action view.
+- app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt:
+  - onCreatePreferences: setHasOptionsMenu(true)
+    for the developer sub-screen only.
+  - onCreateOptionsMenu: inflate the menu, set
+    the switch to prefs.developerEnabled, write
+    back on flip, post a recreate so the
+    entry hides the next time the user opens
+    About.
+  - onOptionsItemSelected: consume.
+  - seven-tap handler: replace the
+    remove/addPreference dance with a single
+    activity.recreate() posted to the main
+    looper. The re-attach path crashed on tap.
+  - wire(): the inline developer_enabled
+    SwitchPreferenceCompat listener is gone
+    (the toggle now lives in the toolbar).
+- tools/test_diagnostic_log.js: replace the
+  three obsolete assertions (one for the inline
+  switch wiring, one for the inline switch
+  position in the layout, one for the
+  re-attach) with four new ones: the
+  developer_enabled key still exists in Prefs,
+  the seven-tap handler posts a recreate, the
+  developer sub-screen has a toolbar menu with
+  a SwitchCompat action view, the toolbar
+  switch reflects and writes developerEnabled,
+  and settings_developer.xml no longer carries
+  the inline developer_enabled switch.
+- tools/test_settings_threading.js: the
+  onCreatePreferences pin had a 300-character
+  window for the refreshOfflineSize call, which
+  was too tight after the setHasOptionsMenu
+  comment was added. Bumped to 800.
+
+#### What is intentionally NOT changed
+
+- The 7-tap gesture itself, the two
+  SharedPreferences booleans (developerUnlocked
+  and developerEnabled), the five-minute tap
+  window, the Enable logcat switch, and the
+  View / Share / Clear buttons - all unchanged.
+- The icon picker sizing and the offline video
+  pause guard (addendum 14) are not touched.
+- failed-attempts.md addendum 19's Kotlin
+  compile error fix (replacing .view?.post with
+  Handler(Looper.getMainLooper()).post) is
+  reused here.
+
+#### Tests
+
+1318/1318 pass.
+
+No push yet.

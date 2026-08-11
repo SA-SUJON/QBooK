@@ -169,6 +169,11 @@ class SettingsActivity : AppCompatActivity() {
             }
             setPreferencesFromResource(res, rootKey)
             prefs = Prefs(requireContext())
+            // The Developer options screen is the only sub-screen that
+            // has a toolbar action (the master developer-enabled
+            // toggle). Tell the framework to call our menu callbacks;
+            // other sub-screens stay menu-free.
+            if (which() == "developer") setHasOptionsMenu(true)
             wire()
             // Fill it in now. It used to be written only from a change
             // listener, so opening the screen showed nothing and the count
@@ -243,23 +248,25 @@ class SettingsActivity : AppCompatActivity() {
                     prefs.devTapCount = 0
                     prefs.devTapFirstAt = 0L
                     sevenTap.summary = getString(R.string.dev_options_sum)
-                    val screen = preferenceScreen
-                    val dev = findPreference<Preference>("nav_developer")
-                    if (screen != null && dev != null) {
-                        // Preference.setVisible() does not redraw the
-                        // tree inside PreferenceFragmentCompat - the
-                        // entry stays hidden until the fragment is
-                        // re-inflated. Removing and re-adding the
-                        // preference with isVisible=true is the
-                        // documented way to get an immediate redraw.
-                        // Posted to the main thread so the click event
-                        // finishes before the tree mutates.
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            if (dev.parent === screen) {
-                                screen.removePreference(dev)
-                            }
-                            dev.isVisible = true
-                            screen.addPreference(dev)
+                    // The dev entry was inflated visibility="gone",
+                    // so it is in the tree but not drawn. setVisible
+                    // inside a click handler does not redraw the
+                    // PreferenceFragmentCompat reliably, and removing
+                    // and re-adding the same instance to its parent
+                    // screen has crashed the app on tap (the framework
+                    // re-enters its own state machine during the same
+                    // click). The reliable path is to recreate the
+                    // enclosing activity: the About screen redraws
+                    // with the entry visible, and a quick black flash
+                    // is the only cost.
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try {
+                            requireActivity().recreate()
+                        } catch (e: Exception) {
+                            // Worst case the recreate is rejected; the
+                            // user still sees the toast and can navigate
+                            // to About, where the entry will be visible
+                            // on the next inflation.
                         }
                     }
                     toast(getString(R.string.dev_unlocked_toast))
@@ -290,31 +297,12 @@ class SettingsActivity : AppCompatActivity() {
             // is its own Activity so the Settings screen stays single-page
             // and the file can be much larger than any dialog body.
             //
-            // The page-top "developer_enabled" switch sits above this and
-            // is the one the user can flip off to re-hide the Developer
-            // options entry in About. Flipping it on here does not
-            // re-trigger the seven-tap gesture - that is one-way; this
-            // switch is the only thing that can hide the entry after
-            // the gesture has unlocked it.
-            findPreference<SwitchPreferenceCompat>(Prefs.KEY_DEVELOPER_ENABLED)
-                ?.setOnPreferenceChangeListener { _, v ->
-                    val on = v as Boolean
-                    prefs.developerEnabled = on
-                    // Live update: the user is on the Developer options
-                    // screen, but flipping the switch off here should
-                    // hide the entry back in About immediately when they
-                    // navigate there. We do not have a handle on the
-                    // About fragment from here, so we rely on the
-                    // next-time-wired read of developerEnabled in wire()
-                    // to pick this up. That is the same path a process
-                    // restart would take.
-                    if (!on) {
-                        toast(getString(R.string.dev_disabled_toast))
-                    } else {
-                        toast(getString(R.string.dev_enabled_toast))
-                    }
-                    true
-                }
+            // The page-top "developer_enabled" switch is no longer a
+            // row in this preference screen - the master toggle now
+            // lives in the toolbar at the top of the Developer
+            // options screen (set up in onCreateOptionsMenu). Below
+            // is the in-page content: the logcat switch and the
+            // view / share / clear buttons.
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_DIAGNOSTIC_LOG)
                 ?.setOnPreferenceChangeListener { _, v ->
                     prefs.diagnosticLog = v as Boolean
@@ -602,6 +590,42 @@ class SettingsActivity : AppCompatActivity() {
          * mistook the update-check's executor (further up, on a click) for
          * this path; verified line by line: these calls sat on the caller.
          */
+        override fun onCreateOptionsMenu(menu: android.view.Menu, inflater: android.view.MenuInflater) {
+            super.onCreateOptionsMenu(menu, inflater)
+            if (which() != "developer") return
+            inflater.inflate(R.menu.menu_developer, menu)
+            val item = menu.findItem(R.id.action_developer_toggle)
+            val sw = item?.actionView?.findViewById<androidx.appcompat.widget.SwitchCompat>(
+                R.id.developer_toggle_switch)
+            if (sw != null) {
+                // Reflect the persisted state on every inflation. The
+                // switch is the only thing the user can flip from this
+                // screen to re-hide the Developer options entry, so
+                // its visible state must match the persisted value.
+                sw.isChecked = prefs.developerEnabled
+                sw.setOnCheckedChangeListener { _, isChecked ->
+                    prefs.developerEnabled = isChecked
+                    if (!isChecked) {
+                        toast(getString(R.string.dev_disabled_toast))
+                    } else {
+                        toast(getString(R.string.dev_enabled_toast))
+                    }
+                    // The About fragment reads developerEnabled in
+                    // wire() - it will see the new value the next time
+                    // the user navigates to About. We do not call
+                    // activity.recreate() here because the user is on
+                    // this screen, not on About, and a recreate would
+                    // lose the menu state.
+                }
+            }
+        }
+
+        override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+            // The switch's own change listener handles the toggle, so
+            // the menu item only needs to return true to consume.
+            return true
+        }
+
         private fun refreshOfflineSize() {
             if (findPreference<Preference>("offline_status") == null) return
             // Skip rather than stack: one refresh may still be counting a

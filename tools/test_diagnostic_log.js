@@ -114,7 +114,7 @@ ok('the developer_unlocked preference is exposed',
    /KEY_DEVELOPER_UNLOCKED = "developer_unlocked"/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
-ok('the developer_enabled preference is exposed (the page-top switch on the Developer options screen)',
+ok('the developer_enabled preference is exposed (the toolbar toggle on the Developer options screen)',
    /KEY_DEVELOPER_ENABLED = "developer_enabled"/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
@@ -122,25 +122,31 @@ ok('the seven-tap unlock sets both developerUnlocked and developerEnabled (so th
    /sevenTap[\s\S]{0,2500}prefs\.developerUnlocked = true[\s\S]{0,200}prefs\.developerEnabled = true/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
-ok('the About entry\'s visibility is gated on developerEnabled (not developerUnlocked) so the page-top switch can re-hide it)',
+ok('the About entry\'s visibility is gated on developerEnabled (not developerUnlocked) so the toolbar toggle can re-hide it',
    /nav_developer"\)\s*\?\s*\.isVisible\s*=\s*prefs\.developerEnabled/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
-   ));
-ok('the page-top developer_enabled switch is wired in the developer sub-screen',
-   /KEY_DEVELOPER_ENABLED[\s\S]{0,400}prefs\.developerEnabled = on/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
-   ));
-ok('the developer_enabled switch is the first entry in settings_developer.xml (page-top placement)',
-   /<PreferenceScreen[\s\S]{0,400}<SwitchPreferenceCompat\s+android:key="developer_enabled"/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/res/xml/settings_developer.xml'), 'utf8')
    ));
 ok('app_version in settings_about.xml is NOT selectable="false" (otherwise the click listener never fires)',
    !/<Preference android:key="app_version"[\s\S]{0,100}selectable="false"/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/res/xml/settings_about.xml'), 'utf8')
    ));
-ok('the seven-tap handler re-attaches the nav_developer preference to force an immediate redraw',
-   /screen\.removePreference\(dev\)[\s\S]{0,200}screen\.addPreference\(dev\)/.test(
+ok('the seven-tap handler posts an activity recreate (so the entry appears without the user navigating away and back)',
+   /Looper\.getMainLooper\(\)\)\.post[\s\S]{0,300}requireActivity\(\)\.recreate/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ));
+ok('the Developer options screen has a toolbar menu with a SwitchCompat action view',
+   /R\.menu\.menu_developer/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ) && /actionLayout="@layout\/action_developer_toggle"/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/res/menu/menu_developer.xml'), 'utf8')
+   ));
+ok('the toolbar switch reflects prefs.developerEnabled on every inflation and writes back on every flip',
+   /sw\.isChecked = prefs\.developerEnabled[\s\S]{0,400}prefs\.developerEnabled = isChecked/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ));
+ok('settings_developer.xml no longer has the inline developer_enabled switch (it lives in the toolbar now)',
+   !/android:key="developer_enabled"/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/res/xml/settings_developer.xml'), 'utf8')
    ));
 
 console.log('');
