@@ -1616,19 +1616,12 @@ console.log('\nEvery saved card reaches the page');
      /scroll-snap-type:none!important/.test(assemblySrc) &&
      /touch-action:manipulation!important/.test(assemblySrc) &&
      /scroll-snap-align:none!important/.test(assemblySrc));
-  ok('and the reels page alone opts back in: mandatory, isolated trial',
+  ok('and the reels page alone opts back in: proximity, no stop:always (round 22 device verdict)',
      /REELS_SNAP_CSS/.test(assemblySrc) &&
-     /html,body\{scroll-snap-type:y mandatory!important\}/.test(assemblySrc) &&
+     /html,body\{scroll-snap-type:y proximity!important\}/.test(assemblySrc) &&
      /#__db_cards>\*\{scroll-snap-align:start!important/.test(assemblySrc) &&
-     // Round-15 (see REELS-SCROLL-NOTES.md, item 2 - the last CSS mode):
-     // v5.2.14's device verdict killed both prior states: stop:always
-     // is inert here (scrolls fine, still skips 2/3 on a fast swipe),
-     // proximity alone cannot cap a fling either. mandatory is the one
-     // mode that forces exactly one area per rest - retrialed now that
-     // the clip bug and layout-shift sources are both gone. stop:always
-     // stays as reinforcement where the engine does honour it.
-     /scroll-snap-stop:always/.test(
-       require('./offline_vault_harness.js').REELS_SNAP_CSS) &&
+     !/scroll-snap-stop:always!important/.test(assemblySrc));
+  ok('the reels page snap call is gated on the snap parameter (off)',
      /if \(snap\) reelsSnapCss\(padTop \?\: 0\)/.test(assemblySrc));
   ok('a recycled twin of a moved chrome unit is never moved twice',
      /chromeSeen/.test(assemblySrc) &&
@@ -2023,18 +2016,17 @@ console.log('\nEvery saved card reaches the page');
         H.compose(reelDoc, [savedReel], true) + '</body></html>');
       const sd2 = sp2.window.document;
       const csBody2 = sp2.window.getComputedStyle(sd2.body);
-      ok('reels opt back into snap, the one-area-per-rest kind: mandatory',
-         /mandatory/.test(csBody2.scrollSnapType) &&
-         !/proximity/.test(sp2.window.getComputedStyle(sd2.body)
+      ok('reels opt back into snap, the one-area-per-rest kind: proximity (round 22 verdict)',
+         /proximity/.test(csBody2.scrollSnapType) &&
+         !/mandatory/.test(sp2.window.getComputedStyle(sd2.body)
            .scrollSnapType),
          csBody2.scrollSnapType);
       const csReel = sp2.window.getComputedStyle(
         sd2.getElementById('reelSurface'));
       ok('every saved reel is exactly one snap area at its start',
          csReel.scrollSnapAlign === 'start', csReel.scrollSnapAlign);
-      ok('the area refuses fling passage through it ' +
-         '(stop:always re-trialed in isolation, round 14)',
-         csReel.scrollSnapStop === 'always', csReel.scrollSnapStop);
+      ok('the area does NOT use stop:always (round 22: stop:always yanks a slow scroll out of the Reels tab)',
+         csReel.scrollSnapStop !== 'always', csReel.scrollSnapStop);
       ok('the reel\u2019s gesture still lets the drag scroll',
          csReel.touchAction === 'manipulation', csReel.touchAction);
       ok('a zero-height sentinel keeps scroll 0 a legal rest position',

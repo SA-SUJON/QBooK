@@ -1062,7 +1062,13 @@ object AdBlocker {
               function schedule() {
                 if (busy || queued) return;
                 queued = true;
-                var wait = Math.max(0, 250 - (Date.now() - last));
+                // Throttled to 500ms in round 22 (was 250ms in
+                // v5.2.x) - the cosmetic engine is the single
+                // biggest contributor to scroll jank on the lite
+                // WebView, and a half-second cadence is still
+                // imperceptible to the eye but halves the work the
+                // MutationObserver kicks off during a fast scroll.
+                var wait = Math.max(0, 500 - (Date.now() - last));
                 setTimeout(function() {
                   queued = false; last = Date.now();
                   (window.requestIdleCallback || window.requestAnimationFrame ||
@@ -1279,8 +1285,8 @@ object AdBlocker {
                    being slow rather than as the page loading.
                    Applied on a class we add ourselves, so it cannot fight
                    whatever Facebook does with :active. */
-                '.__db_press{opacity:.55 !important;', 
-                'transition:opacity .04s ease-out !important;}',
+                '.__db_press{opacity:.85 !important;',
+                'transition:opacity .02s ease-out !important;}',
                 /* kill the browser-ish install/notification prompts */
                 '[data-testid="cookie-policy-manage-dialog"],',
                 'div[role="dialog"]:has(a[href*="play.google.com"]){display:none !important;}',
@@ -1320,12 +1326,13 @@ object AdBlocker {
                  only after the gesture is judged not to be a scroll - which
                  is exactly the delay being complained about.
 
-                 The class is removed on touchend, on touchcancel, and on the
-                 first scroll, so a swipe that merely began on a control does
-                 not leave it dimmed. A timer clears it as a last resort: if
-                 the page is replaced while the finger is down there may be no
-                 touchend at all, and a control stuck at half opacity would be
-                 a worse bug than the one being fixed. */
+                 The class is removed on touchend, on touchcancel, on the
+                 first scroll, AND on the first touchmove, so a swipe or a
+                 scroll that merely began on a control does not leave it
+                 dimmed. A short timer clears it as a last resort: if the
+                 page is replaced while the finger is down there may be no
+                 touchend at all, and a control stuck at any opacity would
+                 be a worse bug than the one being fixed. */
               (function() {
                 var held = null, timer = null;
 
@@ -1358,7 +1365,7 @@ object AdBlocker {
                   } catch (e) {}
                   held = el;
                   try { el.classList.add('__db_press'); } catch (e) {}
-                  timer = setTimeout(release, 1200);
+                  timer = setTimeout(release, 250);
                 }, {passive: true, capture: true});
 
                 ['touchend', 'touchcancel'].forEach(function(e) {
@@ -1366,6 +1373,14 @@ object AdBlocker {
                     {passive: true, capture: true});
                 });
                 document.addEventListener('scroll', release,
+                  {passive: true, capture: true});
+                /* touchmove releases the press on the very first pixel
+                   of movement, so a tap-and-hold-then-drag never leaves
+                   the control dimmed. Without this, a small touch that
+                   the user thought was a tap can end up showing the
+                   dimmed state for a long time if the timer happens to
+                   race ahead of touchend. */
+                document.addEventListener('touchmove', release,
                   {passive: true, capture: true});
               })();
 

@@ -302,11 +302,12 @@ console.log('\nNothing is reconstructed');
          .filter(Boolean)
          .every(d => allowed.has(d.split(':')[0]))) &&
        (assembly.match(/scroll-snap-type/g) || []).length === 2 &&
+       // Round 22: the reels snap is y proximity, not y mandatory.
+       /scroll-snap-type:y proximity!important/.test(assembly) &&
        /html,body\{[^}]*scroll-snap-type:none!important/.test(assembly) &&
-       // Round-15: mandatory retrialed in isolation (see the same pin
-       // in test_offline_pipeline.js for the full device-verdict trail).
-       /html,body\{scroll-snap-type:y mandatory!important/.test(assembly) &&
-       !/db_chrome\b[^{]*\{[^}]*scroll-snap-align/.test(assembly));
+       !/db_chrome\b[^{]*\{[^}]*scroll-snap-align/.test(assembly) &&
+       // Round 22: stop:always is no longer used anywhere.
+       !/scroll-snap-stop:always!important/.test(assembly));
   }
 }
 

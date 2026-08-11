@@ -258,6 +258,22 @@ object PageAssembly {
      *        which the user has rejected as artificial, so that road
      *        requires their explicit consent first.
      *
+     *  Round 22 device verdict (this addendum): the user reports that
+     *    a single gentle scroll in offline Reels bumps the page out of
+     *    the Reels tab - "scroll korlei Reels tab theke ber kore dicche".
+     *    That is the v5.2.14 stop:always verdict, restated: stop:always
+     *    is not inert, it is hostile. With snap-type y mandatory, every
+     *    drag that ends between two reels is yanked sideways toward the
+     *    nearest snap point; with stop:always, the yank is the only
+     *    legal resolution and a slow scroll-whose-rest-position-falls-
+     *    outside-any-reel becomes a page-out. The trap was never the
+     *    missing-property one; it was the snap-type-and-stop combo, and
+     *    the device verdict v5.2.14 was a lucky run on a fast fling
+     *    that happened to land on a snap area. Back to the proven
+     *    benign mode from v5.2.11 - proximity, no stop - and accept
+     *    the documented fast-fling weakness ("ekbare 3/4 ta kora
+     *    jacche") as the cost of a scroll that does not eat itself.
+     *
      * As before: every saved card is one snap area aligned to its start,
      * card descendants keep snap-align:none from the reset, and
      * snap-margin-top carries the offset Facebook stamped for its own
@@ -266,9 +282,8 @@ object PageAssembly {
      */
     private const val REELS_SNAP_CSS =
         "<style id=\"__db_reels_snap\">" +
-            "html,body{scroll-snap-type:y mandatory!important}" +
+            "html,body{scroll-snap-type:y proximity!important}" +
             "#__db_cards>*{scroll-snap-align:start!important;" +
-            "scroll-snap-stop:always!important;" +
             "scroll-snap-margin-top:__PAD__px!important}</style>"
 
     /** The snap opt-in with [padTop] - Facebook's own stamped bar offset. */

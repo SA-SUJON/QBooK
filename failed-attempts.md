@@ -2473,3 +2473,161 @@ in the code any more.
 1320/1320 pass.
 
 No push yet.
+
+### Addendum 23 — round 22 performance pass
+
+#### What the user pointed out
+
+Three complaints on the device:
+
+1. **Offline mode pressure**: while the app
+   was loading or serving high-quality saved
+   content, scroll felt like the app was under
+   a lot of pressure. Frame drops, jank,
+   noticeable lag.
+
+2. **Offline Reels scroll bug**: a single
+   gentle scroll in offline Reels bumped the
+   page out of the Reels tab. The reels page
+   is the user's primary offline content; a
+   scroll gesture that escapes the page is
+   a hard wall.
+
+3. **Tap dim on every touch**: any tap on
+   any element dimmed it. The dim stayed for
+   too long, and small touches that the user
+   thought were taps were showing the dimmed
+   state for a long time if the timer raced
+   ahead of touchend. The user wants the
+   app to feel normal - subtle feedback on
+   real taps, no dim on a touch that turns
+   out to be a scroll.
+
+#### Root causes
+
+1. The cosmetic engine's MutationObserver
+   was throttled at 250ms. On a fast scroll
+   in a long feed, that fires every quarter
+   second, which is the largest single
+   contributor to scroll jank on a lite
+   WebView. Halving the cadence to 500ms is
+   still imperceptible to the eye but halves
+   the work the engine kicks off during a
+   fast scroll.
+
+2. The offline Reels page was using
+   `scroll-snap-type: y mandatory` together
+   with `scroll-snap-stop: always`. The
+   device verdict on v5.2.14 (the user's own
+   measurement, verbatim in the file's
+   history) was that stop:always is "INERT"
+   on this WebView. The round 22 measurement
+   falsified that: stop:always yanks a slow
+   scroll whose rest position falls outside
+   any snap area back toward the nearest
+   snap point, and if the nearest snap point
+   is the page boundary (because the user
+   happens to be between two reels), the
+   yank lands outside the Reels tab. The
+   page "bounces out". mandatory + stop:always
+   was a "one-snap-per-rest" promise; the
+   promise was never met on this WebView.
+
+3. The press feedback was tuned to be
+   visible: opacity 0.55, transition 0.04s,
+   timer 1200ms. The timer was the bug -
+   1.2 seconds of dim on a tap that turned
+   out to be a scroll meant the dim was
+   still on the screen by the time the
+   user looked back. And the only release
+   triggers were touchend, touchcancel, and
+   the first scroll. A tiny touch that did
+   not move enough to fire scroll was still
+   showing the dim after the timer. The
+   touchmove path was missing.
+
+#### Fixes
+
+- Cosmetic engine: throttle 250ms to 500ms.
+  Comment updated to record the round 22
+  measurement and the reasoning.
+
+- Offline Reels snap: back to the proven
+  benign mode from v5.2.11 - proximity
+  (not mandatory) and no stop:always. The
+  comment block in PageAssembly.kt gets a
+  new section at the end that records the
+  round 22 device verdict and the path
+  taken. Trade-off: a fast fling can still
+  sail through two or three snap areas
+  (the v5.2.10 symptom), which the user
+  has not complained about since. The
+  cost of "scroll e cholena" was higher.
+
+- Press feedback: opacity 0.85 (subtle,
+  barely noticeable on a real tap, but
+  present), transition 0.02s (no fade
+  stuck), timer 250ms (short), and a
+  touchmove listener that releases the
+  press on the very first pixel of
+  movement. The result is: a real tap
+  flashes briefly, a tap that turns out
+  to be a scroll releases immediately on
+  the first move, and a touch with no
+  movement is released after 250ms
+  instead of 1200ms.
+
+#### Files changed
+
+- app/src/main/java/com/dustbook/app/utils/AdBlocker.kt:
+  cosmetic engine throttle 250 to 500
+  with explanatory comment; press feedback
+  opacity 0.55 to 0.85, transition 0.04s
+  to 0.02s, timer 1200 to 250, and a new
+  touchmove release listener.
+
+- app/src/main/java/com/dustbook/app/offline/PageAssembly.kt:
+  REELS_SNAP_CSS switched to y proximity
+  with no scroll-snap-stop:always, and a
+  new paragraph in the snap-mode history
+  recording the round 22 device verdict
+  and the path taken.
+
+- tools/test_offline_pipeline.js: three
+  pins updated to match the new snap
+  state (proximity, no stop:always, no
+  mandatory) and a new pin for the snap
+  parameter gate.
+
+- tools/test_offline_ui.js: the
+  "injected markup is not restyled" pin
+  updated to look for proximity instead
+  of mandatory and to add a negative
+  pin for stop:always.
+
+#### What is intentionally NOT changed
+
+- The icon picker sizing (addendum 14),
+  the offline video pause guard (addendum
+  14), the seven-tap idempotency
+  (addendum 22), the toolbar developer
+  toggle (addendum 20) - all unchanged.
+- The offline capture path, the offline
+  sync, the offline vault model - none
+  of these change. The user said "scroll
+  lag during high-quality save" but the
+  save runs in the background, and the
+  cosmetic engine was the visible cost
+  during a scroll. If the user reports
+  a second-round of pressure after this
+  commit, the next thing to look at is
+  the offline capture's main-thread work
+  (likely the WebView's DOM serialization
+  in OfflineCapture.capture()) and move
+  it to a background executor.
+
+#### Tests
+
+1321/1321 pass.
+
+No push yet.
