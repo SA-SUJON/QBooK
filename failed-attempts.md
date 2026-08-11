@@ -2631,3 +2631,160 @@ Three complaints on the device:
 1321/1321 pass.
 
 No push yet.
+
+### Addendum 24 — round 22 device-verdict fixes
+
+#### What the user pointed out
+
+Five device-verdict fixes, one round:
+
+1. **Right-swipe on the home feed opens
+   Create Story.** Facebook's lite renderer
+   watches a left-edge rightward swipe and
+   navigates to the create-story camera. The
+   user wants the gesture swallowed.
+
+2. **Default-mute.** Every video (home feed,
+   Reels, watch) should start with sound on.
+   Round 28 introduced a 1500ms gesture-guard
+   that prevented the unmute of a paused /
+   currentTime===0 video, so the first video
+   load always showed up muted.
+
+3. **Third tap on a home feed video does
+   not pause.** First tap pauses, second tap
+   plays, third tap... does not pause.
+   Pattern is every-other-tap on the home
+   feed. The cause is the press feedback
+   landing on a video's control bar and
+   racing Facebook's own pointer router.
+
+4. **Reels tap peeks but does not pause.**
+   Tapping inside a Reel expands the comment
+   / share UI slightly but the video keeps
+   playing. Same root cause as #3 - press
+   feedback on a Reels element tells
+   Facebook's pointer router "interaction,
+   not a tap", and the Reel peeks but does
+   not pause.
+
+5. **Offline home feed is rubbery.** The
+   page does not feel solid under a finger
+   the way the online feed does. Edge swipes
+   bounce, the chrome moves with the
+   gesture. Online Facebook ships its own
+   page that handles this; the offline
+   served page did not.
+
+#### Fixes
+
+1. **Right-swipe blocker.** A new IIFE in
+   `getNativeFeelScript()` watches
+   touchstart at the left edge (within 28
+   dp), tracks the first pixel of rightward
+   movement, and calls preventDefault on
+   any gesture that is more horizontal
+   than vertical. Outside the left edge the
+   gesture passes through, so tab-row swipes
+   keep working. Reels and Watch are not
+   excluded by name - the gesture is local
+   to the home feed's left edge, which is
+   the only place Facebook routes to
+   create-story.
+
+2. **Default-unmute.** The unmute sweep now
+   tracks a `__dbEverUnmuted` flag per
+   video. The first time the sweep sees a
+   video, it clears muted regardless of
+   gesture age. Subsequent sweeps on a
+   paused / currentTime===0 video still
+   need a recent gesture, so the home-feed
+   "random pause on autoplay" bug from
+   round 28 stays fixed. A running-and-muted
+   video still defers to the next user
+   gesture.
+
+3. **Press feedback skips the home feed
+   video.** The touchstart handler now bails
+   out before adding `__db_press` to anything
+   inside a `<video>` element. The dim class
+   was racing Facebook's own pointer
+   handlers - a video that just played
+   through one pause cycle had its control
+   bar dimmed, Facebook's router read the
+   dim class as "an interaction in progress"
+   and skipped the second pause.
+
+4. **Press feedback skips the entire Reels
+   screen.** The touchstart handler bails
+   out before any work if the touch target
+   is inside `[data-is-reels="true"]`. The
+   Reels screen in particular is sensitive
+   to extra pointer handlers - even the
+   dim class landing on a comment-box or
+   like-button is enough to tell Facebook's
+   router "this was an interaction, not a
+   tap", and the Reel peeks but does not
+   pause. The press effect is for the home
+   feed's chrome (tab bar, composer, inline
+   links) - the Reels screen keeps its own
+   input entirely.
+
+5. **`overscroll-behavior: none` on the
+   offline page.** The `RESET_SCREEN_ROOT`
+   style now adds `overscroll-behavior:none`
+   to `html,body` (it was `overscroll-
+   behavior-x:contain` in the online native
+   feel). Both axes contained - the page
+   cannot scroll out into the chrome and
+   the chrome cannot scroll past the page -
+   and the offline home feed feels as solid
+   as the online one.
+
+#### Files changed
+
+- `app/src/main/java/com/dustbook/app/utils/AdBlocker.kt`:
+  - right-swipe blocker IIFE in
+    `getNativeFeelScript()`.
+  - unmute() default-unmute with the
+    `__dbEverUnmuted` flag.
+  - touchstart handler skips Reels screen
+    and home feed video.
+
+- `app/src/main/java/com/dustbook/app/offline/PageAssembly.kt`:
+  - `RESET_SCREEN_ROOT` adds
+    `overscroll-behavior:none` to html,body.
+
+#### What is intentionally NOT changed
+
+- The icon picker sizing (addendum 14),
+  the offline video pause guard (addendum
+  14), the seven-tap idempotency
+  (addendum 22), the toolbar developer
+  toggle (addendum 20), the round 22
+  performance pass (addendum 23) - all
+  unchanged.
+- The autoplay-policy semantics. The
+  default-unmute is best-effort - the
+  browser will reject the unmute of a
+  paused / currentTime===0 clip on
+  pages that have had no user interaction
+  at all. On a page where the user has
+  scrolled, tapped, or pressed a button,
+  the unmute succeeds and the clip plays
+  with sound.
+
+#### Tests
+
+1321/1321 pass. The right-swipe blocker and
+the press-feedback skip are behavioural and
+not exercised by the jsdom tests; the
+default-unmute logic is pinned by
+test_diagnostic_log.js (write-site count,
+Prefs wiring). The offline page reset is
+already pinned by test_offline_ui.js and
+test_offline_pipeline.js; the new
+`overscroll-behavior:none` line is folded
+into the existing pins.
+
+No push yet.

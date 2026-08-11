@@ -1354,8 +1354,33 @@ object AdBlocker {
                   release();
                   var t = ev.target;
                   if (!t || !t.closest) return;
+                  /* Skip the press effect on the Reels screen
+                     entirely. The lite renderer treats taps
+                     inside the player as a pause, and outside
+                     as a peek into the comment / share UI. A
+                     dim class that lands on a comment-box or
+                     like-button element tells Facebook's
+                     pointer router "this was an interaction,
+                     not a tap" and the Reel peeks but does
+                     not pause. The press effect is for the
+                     home feed's chrome (tab bar, composer,
+                     inline links) - the Reels screen must
+                     keep its own input entirely. The
+                     data-is-reels attribute is the
+                     deterministic marker the rest of the
+                     page uses for Reels. */
+                  if (t.closest && t.closest('[data-is-reels="true"]')) return;
                   var el = t.closest(SEL);
                   if (!el) return;
+                  /* Same skip on a video element anywhere else
+                     on the page: the home feed has inline
+                     videos, and a dim class on the video or
+                     its control bar would race Facebook's
+                     own pointer handlers. The third tap in
+                     a row on a feed video would not register
+                     as a pause, exactly the bug the user
+                     reported. */
+                  if (el.closest('video')) return;
                   /* Never dim something enormous: on a lite screen the whole
                      scroller can carry a data-sigil, and dimming that is a
                      flash of the entire page. */
@@ -1454,32 +1479,43 @@ object AdBlocker {
                   // old one-shot flag the sweep would otherwise undo their
                   // own mute a second later, every second.
                   if (v.__dbUserMuted) return;
-                  // Round 28: do not eagerly unmute a paused or
-                  // unstarted video. The previous code cleared muted on
-                  // every sweep for any video that was paused or had
-                  // currentTime===0, which made the home-feed autoplay
-                  // pause at random: the browser's autoplay policy says
-                  // a play() is only allowed while the clip is muted,
-                  // and clearing muted on a paused clip caused
-                  // Facebook's own player to pause it (it would
-                  // otherwise have resumed with sound once the user
-                  // tapped to start it). Now the unmute is only run
-                  // when the user has gestured recently - the same
-                  // gesture that authorised play() also authorises
-                  // sound. Without a recent gesture, the sweep just
-                  // remembers the muted state and leaves it alone.
+                  // Round 22: default-unmute. The user wants every
+                  // video - home feed, Reels, watch - to start with
+                  // sound on. The browser's autoplay policy says
+                  // play() is only allowed while the clip is muted,
+                  // so an unmute of a paused / currentTime===0 clip
+                  // makes the next play() fail. Round 28 fix was to
+                  // only un-mute after a recent user gesture; that
+                  // cost the user the default-unmute behaviour. The
+                  // two together: do the first unmute immediately
+                  // (default-unmute on first load), and skip the
+                  // subsequent unmutes that race play(). Subsequent
+                  // unmutes only run on already-running videos (the
+                  // "running and muted" branch below), which the
+                  // browser allows and which the user gesture
+                  // authorises.
+                  var isFirstUnmute = !v.__dbEverUnmuted;
                   if (v.paused || v.currentTime === 0) {
-                    if (Date.now() - lastGesture > 1500) return;
+                    if (isFirstUnmute) {
+                      // First time: clear muted before the first
+                      // play() so the clip can start with sound
+                      // (browsers will let it if the page has had
+                      // any user interaction at all; we do not
+                      // need a recent one for the *first* clip).
+                    } else if (Date.now() - lastGesture > 1500) {
+                      return;
+                    }
                   }
                   try {
                     if (v.paused || v.currentTime === 0) {
-                      // User gestured recently; safe to clear now.
                       v.muted = false;
                       v.defaultMuted = false;
                       v.removeAttribute('muted');
+                      v.__dbEverUnmuted = true;
                     } else if (v.muted) {
-                      // Already running and muted. Touching it here would
-                      // pause it, so defer to the next real interaction.
+                      // Already running and muted. Touching it here
+                      // would pause it, so defer to the next real
+                      // interaction.
                       pendingGesture = true;
                     }
                   } catch (e) {}
@@ -1623,6 +1659,57 @@ object AdBlocker {
                 // couple of boolean reads.
                 setInterval(tell, 1000);
                 tell();
+              })();
+
+              // ---- block right-swipe-to-create-story on the home feed ----
+              // Facebook's lite renderer watches touchstart / touchmove
+              // deltas and, on a rightward swipe that crosses a small
+              // threshold, navigates to the create-story camera. The
+              // user does not want that - a back gesture on the home
+              // feed should be a no-op, not a camera launch. The
+              // swipe is detected by accumulated dx, so the handler
+              // does not need to know about Facebook's own routing
+              // - it just calls preventDefault on any touch that
+              // starts at the left edge and moves rightward.
+              //
+              // Reels and Watch are excluded - they are full-screen
+              // vertical scrollers where a rightward edge swipe is
+              // not a thing Facebook routes to camera. Home feed is
+              // identified by the absence of data-is-reels and the
+              // presence of the news feed. We let the swipe through
+              // to Facebook's own handler outside the left edge so
+              // tab-row swipes keep working.
+              (function() {
+                var startX = 0, startY = 0, startT = 0, active = false;
+                function onStart(ev) {
+                  if (!ev.touches || ev.touches.length !== 1) return;
+                  var t = ev.touches[0];
+                  startX = t.clientX;
+                  startY = t.clientY;
+                  startT = Date.now();
+                  active = true;
+                }
+                function onMove(ev) {
+                  if (!active || !ev.touches || ev.touches.length !== 1) return;
+                  // Only block if the gesture started at the left edge
+                  // (within 28 dp). A swipe that started in the middle
+                  // of the screen is a horizontal scroll, not an edge
+                  // swipe, and Facebook does not route it to camera.
+                  if (startX > 28) return;
+                  var dx = ev.touches[0].clientX - startX;
+                  var dy = ev.touches[0].clientY - startY;
+                  if (dx > 6 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                    // Rightward edge swipe. Swallow it.
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    active = false;
+                  }
+                }
+                function onEnd() { active = false; }
+                document.addEventListener('touchstart', onStart, {capture: true});
+                document.addEventListener('touchmove', onMove, {passive: false, capture: true});
+                document.addEventListener('touchend', onEnd, {passive: true, capture: true});
+                document.addEventListener('touchcancel', onEnd, {passive: true, capture: true});
               })();
             })();
         """.trimIndent()

@@ -169,7 +169,14 @@ object PageAssembly {
         "<style id=\"__db_layout_reset\">" +
             "html,body{height:auto!important;min-height:0!important;" +
             "overflow:visible!important;scroll-snap-type:none!important;" +
-            "touch-action:manipulation!important}" +
+            "touch-action:manipulation!important;" +
+            /* Round 22 device verdict: the offline home feed
+               felt rubbery under the user's finger because the
+               browser's overscroll bounce was firing on every
+               edge swipe. Contain both axes - the page cannot
+               scroll out into the chrome and the chrome cannot
+               scroll past the page - and the page feels solid. */
+            "overscroll-behavior:none!important}" +
             "#screen-root{position:static!important;height:auto!important;" +
             "min-height:0!important;max-height:none!important;" +
             "overflow:visible!important}" +
