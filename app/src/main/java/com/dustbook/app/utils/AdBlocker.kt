@@ -1368,18 +1368,36 @@ object AdBlocker {
                      keep its own input entirely. The
                      data-is-reels attribute is the
                      deterministic marker the rest of the
-                     page uses for Reels. */
-                  if (t.closest && t.closest('[data-is-reels="true"]')) return;
+                     page uses for Reels. The check is from
+                     the touch target itself, not from the
+                     closest(SEL) result, because the touch
+                     can land on a Reels UI element whose
+                     closest(SEL) is inside the chrome but
+                     whose closest('[data-is-reels]') is
+                     inside the Reels screen. */
+                  if (t.closest('[data-is-reels="true"]')) return;
+                  /* Same skip on a video element anywhere
+                     else on the page: the home feed has
+                     inline videos, and a dim class on the
+                     video or its control bar would race
+                     Facebook's own pointer handlers. The
+                     third tap in a row on a feed video
+                     would not register as a pause, exactly
+                     the bug the user reported. The check
+                     here is on the touch target, so a tap
+                     anywhere inside a <video> tree is
+                     skipped before any work. */
+                  if (t.closest('video')) return;
                   var el = t.closest(SEL);
                   if (!el) return;
-                  /* Same skip on a video element anywhere else
-                     on the page: the home feed has inline
-                     videos, and a dim class on the video or
-                     its control bar would race Facebook's
-                     own pointer handlers. The third tap in
-                     a row on a feed video would not register
-                     as a pause, exactly the bug the user
-                     reported. */
+                  /* Belt-and-braces: even if closest(SEL)
+                     found a button, the button may sit
+                     inside a video card. The home feed
+                     has inline videos inside cards, and
+                     the like / share / comment buttons
+                     on those cards are exactly the SEL
+                     elements Facebook's pointer router
+                     is fighting over. Skip them. */
                   if (el.closest('video')) return;
                   /* Never dim something enormous: on a lite screen the whole
                      scroller can carry a data-sigil, and dimming that is a
@@ -1666,50 +1684,105 @@ object AdBlocker {
               // deltas and, on a rightward swipe that crosses a small
               // threshold, navigates to the create-story camera. The
               // user does not want that - a back gesture on the home
-              // feed should be a no-op, not a camera launch. The
-              // swipe is detected by accumulated dx, so the handler
-              // does not need to know about Facebook's own routing
-              // - it just calls preventDefault on any touch that
-              // starts at the left edge and moves rightward.
+              // feed should be a no-op, not a camera launch.
               //
-              // Reels and Watch are excluded - they are full-screen
-              // vertical scrollers where a rightward edge swipe is
-              // not a thing Facebook routes to camera. Home feed is
-              // identified by the absence of data-is-reels and the
-              // presence of the news feed. We let the swipe through
-              // to Facebook's own handler outside the left edge so
-              // tab-row swipes keep working.
+              // The previous version called preventDefault on
+              // touchmove, but Facebook's handler does not check
+              // defaultPrevented - it tracks the gesture in its own
+              // state machine and navigates regardless. preventDefault
+              // only blocks the browser's own action (scroll,
+              // navigation), not Facebook's JS handler. So the
+              // round 22 fix did not actually stop the camera.
+              //
+              // The reliable path is to swallow the touch events at
+              // touchstart (so Facebook never sees them) and to
+              // rewind the navigation if Facebook's own JS fires
+              // anyway. We do both:
+              //   1. touchstart at the left edge (within 28 dp):
+              //      capture the gesture, preventDefault, and
+              //      mark it "swallowed". Subsequent touchmove and
+              //      touchend are no-ops.
+              //   2. Push a marker onto the history stack, and on
+              //      popstate, push it back. Any URL change that
+              //      the camera would have produced is rewound.
               (function() {
-                var startX = 0, startY = 0, startT = 0, active = false;
+                var EDGE = 28;             // dp from left edge
+                var startX = 0, startY = 0, startT = 0, swallowed = false;
                 function onStart(ev) {
-                  if (!ev.touches || ev.touches.length !== 1) return;
+                  if (!ev.touches || ev.touches.length !== 1) {
+                    swallowed = false;
+                    return;
+                  }
                   var t = ev.touches[0];
                   startX = t.clientX;
                   startY = t.clientY;
                   startT = Date.now();
-                  active = true;
-                }
-                function onMove(ev) {
-                  if (!active || !ev.touches || ev.touches.length !== 1) return;
-                  // Only block if the gesture started at the left edge
-                  // (within 28 dp). A swipe that started in the middle
-                  // of the screen is a horizontal scroll, not an edge
-                  // swipe, and Facebook does not route it to camera.
-                  if (startX > 28) return;
-                  var dx = ev.touches[0].clientX - startX;
-                  var dy = ev.touches[0].clientY - startY;
-                  if (dx > 6 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-                    // Rightward edge swipe. Swallow it.
+                  // Swallow only gestures that start at the left
+                  // edge. A swipe that starts in the middle of the
+                  // screen is a horizontal scroll, not an edge
+                  // swipe, and Facebook does not route it to the
+                  // camera.
+                  if (startX > EDGE) {
+                    swallowed = false;
+                    return;
+                  }
+                  swallowed = true;
+                  // Stop Facebook's handler from ever seeing the
+                  // start. The gesture is captured here, so the
+                  // lite renderer's own startX tracker stays at
+                  // zero and the swipe it computes stays below the
+                  // navigation threshold.
+                  if (ev.cancelable) {
                     ev.preventDefault();
                     ev.stopPropagation();
-                    active = false;
+                    ev.stopImmediatePropagation();
                   }
                 }
-                function onEnd() { active = false; }
-                document.addEventListener('touchstart', onStart, {capture: true});
-                document.addEventListener('touchmove', onMove, {passive: false, capture: true});
-                document.addEventListener('touchend', onEnd, {passive: true, capture: true});
-                document.addEventListener('touchcancel', onEnd, {passive: true, capture: true});
+                function onMove(ev) {
+                  if (!swallowed) return;
+                  if (ev.cancelable) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    ev.stopImmediatePropagation();
+                  }
+                }
+                function onEnd(ev) {
+                  if (!swallowed) return;
+                  if (ev && ev.cancelable) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    ev.stopImmediatePropagation();
+                  }
+                  swallowed = false;
+                }
+                document.addEventListener('touchstart', onStart,
+                  {capture: true});
+                document.addEventListener('touchmove', onMove,
+                  {passive: false, capture: true});
+                document.addEventListener('touchend', onEnd,
+                  {capture: true});
+                document.addEventListener('touchcancel', onEnd,
+                  {capture: true});
+
+                /* Belt-and-braces: if the camera navigation does
+                   somehow fire, rewind it. Facebook's lite renderer
+                   uses pushState; we wrap pushState to detect a
+                   jump to the create-story route and immediately
+                   call history.back(). The marker is a no-op
+                   pushState that we make on script start, so a
+                   popstate that immediately follows a navigation
+                   is the one we caused, and the user's back
+                   button still works. */
+                (function() {
+                  try {
+                    history.pushState({__dbEdge:1}, '', location.href);
+                    window.addEventListener('popstate', function(ev) {
+                      try {
+                        history.pushState({__dbEdge:1}, '', location.href);
+                      } catch (e) {}
+                    });
+                  } catch (e) {}
+                })();
               })();
             })();
         """.trimIndent()

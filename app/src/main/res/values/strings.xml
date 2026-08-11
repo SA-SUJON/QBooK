@@ -265,6 +265,20 @@
     <string name="update_progress_fmt">Downloading… %1$d%%</string>
     <string name="update_need_permission">Allow installing apps from Dustbook, then tap again</string>
     <string name="grp_debug">Diagnostics</string>
+    <string name="grp_permissions">App permissions</string>
+    <string name="pref_perm_notifications">Enable notifications</string>
+    <string name="pref_perm_notifications_sum">Required to show likes, comments and friend-request alerts. Tap to open the system permission dialog. The app is silent until you grant this.</string>
+    <string name="pref_perm_photos">Photos and videos</string>
+    <string name="pref_perm_photos_sum">Required to pick a photo or video from your gallery when you share a post. Tap to open the system permission dialog.</string>
+    <string name="pref_perm_camera">Camera</string>
+    <string name="pref_perm_camera_sum">Required to take a photo from inside the app. Tap to open the system permission dialog.</string>
+    <string name="pref_check_notifications">Check for new notifications now</string>
+    <string name="pref_check_notifications_sum">Runs the same background check the WorkManager job runs every fifteen minutes, immediately. Useful to confirm that notifications work after granting the permission above.</string>
+    <string name="perm_already_granted">Already granted</string>
+    <string name="perm_requesting">Opening system dialog…</string>
+    <string name="perm_denied">Permission denied. Open the system settings app to grant it.</string>
+    <string name="perm_notif_check_done">Check complete. New notifications: %1$d</string>
+    <string name="perm_notif_check_failed">Check failed. See the diagnostic log (Developer options).</string>
     <!--
       Round 28: pref_inspect and pref_inspect_sum are gone (the
       "Inspect ads" entry was removed from settings_developer.xml; the

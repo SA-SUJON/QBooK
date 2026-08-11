@@ -543,6 +543,37 @@ class SettingsActivity : AppCompatActivity() {
                     .getPackageInfo(requireContext().packageName, 0).versionName
             } catch (e: Exception) { "2.0.0" }
 
+            // ---- permissions: explicit UI to grant the runtime
+            // permissions the rest of the app relies on. The user
+            // reported that photos / camera / notifications were
+            // not actually being delivered even though the
+            // manifest declared them; the cause is that on
+            // Android 11+ these are runtime permissions and the
+            // system has to ask, and the only previous path was
+            // the OS dialog fired by the WebView's first
+            // permission request - easy to dismiss and never
+            // comes back. Each entry here opens the system
+            // permission dialog for the right permission, with
+            // a one-line summary that says what the user is
+            // agreeing to. ----
+            wirePermissionRow(
+                "perm_notifications",
+                granted = hasNotifPermission(),
+                request = { requestNotifPermission() })
+            wirePermissionRow(
+                "perm_photos",
+                granted = hasPhotosPermission(),
+                request = { requestPhotosPermission() })
+            wirePermissionRow(
+                "perm_camera",
+                granted = hasCameraPermission(),
+                request = { requestCameraPermission() })
+            findPreference<Preference>("check_notifications")
+                ?.setOnPreferenceClickListener {
+                    runNotificationCheckNow()
+                    true
+                }
+
             // ---- developer info ----
             findPreference<Preference>("dev_info")?.setOnPreferenceClickListener {
                 showDeveloperDialog()
@@ -775,6 +806,150 @@ class SettingsActivity : AppCompatActivity() {
 
         private fun toast(m: String) =
             Toast.makeText(requireContext(), m, Toast.LENGTH_SHORT).show()
+
+        // ---- permission helpers -----------------------------------
+        // Each entry in the permissions row uses these. The
+        // hasXxx / requestXxx pair is the only place that talks
+        // to the platform; the row's on-click just routes
+        // through them. Granted state is reflected back in the
+        // preference summary so the user knows what is currently
+        // set without having to dig into the system settings
+        // app.
+        private fun wirePermissionRow(
+            key: String,
+            granted: Boolean,
+            request: () -> Unit
+        ) {
+            val pref = findPreference<Preference>(key) ?: return
+            pref.summary = if (granted) {
+                getString(R.string.perm_already_granted)
+            } else {
+                getString(R.string.perm_requesting)
+            }
+            pref.setOnPreferenceClickListener {
+                if (granted) {
+                    toast(getString(R.string.perm_already_granted))
+                } else {
+                    request()
+                }
+                true
+            }
+        }
+
+        private fun hasNotifPermission(): Boolean {
+            return if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.TIRAMISU) {
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    requireContext(),
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else true
+        }
+        private fun requestNotifPermission() {
+            if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.TIRAMISU) {
+                notifPermLauncher.launch(
+                    android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        private fun hasPhotosPermission(): Boolean {
+            val ctx = requireContext()
+            val pm = ctx.packageManager
+            return if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.TIRAMISU) {
+                pm.checkPermission(
+                    android.Manifest.permission.READ_MEDIA_IMAGES, ctx.packageName) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.Q) {
+                true  // scoped storage handles gallery access
+            } else {
+                pm.checkPermission(
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                    ctx.packageName) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            }
+        }
+        private fun requestPhotosPermission() {
+            val perm = if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.TIRAMISU) {
+                android.Manifest.permission.READ_MEDIA_IMAGES
+            } else {
+                android.Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+            mediaPermLauncher.launch(perm)
+        }
+
+        private fun hasCameraPermission(): Boolean {
+            return androidx.core.content.ContextCompat.checkSelfPermission(
+                requireContext(),
+                android.Manifest.permission.CAMERA
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        private fun requestCameraPermission() {
+            cameraPermLauncher.launch(android.Manifest.permission.CAMERA)
+        }
+
+        // Three ActivityResult launchers, one per permission
+        // family. The result is checked and the corresponding
+        // preference summary is updated; the user sees the
+        // "Already granted" line if they accept and the default
+        // "Opening system dialog" line if they do not.
+        private val notifPermLauncher =
+            registerForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                val p = findPreference<Preference>("perm_notifications") ?: return@registerForActivityResult
+                p.summary = if (granted) getString(R.string.perm_already_granted)
+                            else getString(R.string.perm_denied)
+            }
+        private val mediaPermLauncher =
+            registerForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                val p = findPreference<Preference>("perm_photos") ?: return@registerForActivityResult
+                p.summary = if (granted) getString(R.string.perm_already_granted)
+                            else getString(R.string.perm_denied)
+            }
+        private val cameraPermLauncher =
+            registerForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                val p = findPreference<Preference>("perm_camera") ?: return@registerForActivityResult
+                p.summary = if (granted) getString(R.string.perm_already_granted)
+                            else getString(R.string.perm_denied)
+            }
+
+        // Run the same check NotificationWorker would run, but
+        // immediately and on a background thread. The result
+        // is posted back to the UI and the preference summary
+        // is updated. Useful after granting the notification
+        // permission for the first time, when the user wants
+        // to confirm the channel is alive.
+        private fun runNotificationCheckNow() {
+            val pref = findPreference<Preference>("check_notifications") ?: return
+            pref.summary = getString(R.string.update_checking)
+            val ctx = requireContext().applicationContext
+            val p = prefs
+            AppExecutors.background.execute {
+                val items = try {
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    var got: List<com.dustbook.app.utils.NotificationScraper.Item> = emptyList()
+                    com.dustbook.app.utils.NotificationScraper.fetch(ctx) {
+                        got = it
+                        latch.countDown()
+                    }
+                    if (latch.await(90, java.util.concurrent.TimeUnit.SECONDS)) got
+                    else emptyList()
+                } catch (e: Exception) { emptyList() }
+                com.dustbook.app.utils.NotificationPresenter.post(ctx, items)
+                activity?.runOnUiThread {
+                    if (!isAdded) return@runOnUiThread
+                    pref.summary = getString(R.string.perm_notif_check_done, items.size)
+                }
+            }
+        }
 
         /**
          * TEMPORARY diagnostic for the offline-download-never-starts bug.

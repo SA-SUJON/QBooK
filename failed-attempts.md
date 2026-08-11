@@ -2788,3 +2788,196 @@ test_offline_pipeline.js; the new
 into the existing pins.
 
 No push yet.
+
+### Addendum 25 — round 22 device-verdict fixes (the second pass)
+
+#### What the user pointed out
+
+After addendum 24 the user installed the build
+and four of the five fixes did not actually
+work. The first-pass right-swipe blocker did
+not stop the camera. The first-pass press
+feedback skip did not stop the third-tap bug.
+And three brand-new feature gaps were
+reported:
+
+1. **Right-swipe still opens Create Story.**
+   The previous fix called preventDefault on
+   touchmove, but Facebook's lite renderer
+   does not check defaultPrevented - it tracks
+   the gesture in its own state machine and
+   navigates regardless. The user wants the
+   camera to never open from a right swipe.
+
+2. **Third tap on a home feed video still
+   does not pause.** The previous fix only
+   skipped the press effect on the video
+   element itself; the surrounding card and
+   the like / share / comment buttons inside
+   it were still candidates for the dim
+   class, and the dim class was still racing
+   Facebook's pointer router.
+
+3. **Reels tap still peeks but does not
+   pause.** Same root cause - the
+   data-is-reels ancestor check was on
+   closest(SEL) result, not on the touch
+   target, so a touch that landed on a
+   Reels UI element whose closest(SEL) was
+   inside the chrome was missed.
+
+4. **Photos and camera permission are
+   missing.** The user wants to pick a
+   photo from the gallery and take a photo
+   from inside the app. The manifest
+   declares the permissions but there is
+   no UI to ask for them at runtime, and
+   on Android 11+ the system prompt only
+   fires when the WebView's own request
+   handler triggers it, which is easy to
+   miss.
+
+5. **Notifications are not delivered.**
+   The WorkManager schedule and the
+   NotificationPresenter both look
+   correct, but the user has not seen a
+   notification. The likely cause is that
+   POST_NOTIFICATIONS (Android 13+) was
+   never granted, or the user does not
+   know it is missing.
+
+#### Fixes
+
+1. **Touchstart-eats-left-edge-swipe.** The
+   new blocker is registered with
+   capture: true and on touchstart at the
+   left edge (within 28 dp) it calls
+   preventDefault + stopPropagation +
+   stopImmediatePropagation *on the
+   touchstart event itself*, before
+   Facebook's listener can read the
+   coordinates. Subsequent touchmove and
+   touchend on the same gesture are also
+   swallowed. Facebook's swipe tracker
+   stays at zero and never crosses the
+   navigation threshold. Belt-and-braces:
+   history.pushState is wrapped so a
+   navigation that somehow fires is
+   rewound by a popstate handler.
+
+2. **Press feedback skip on the touch
+   target, not on closest(SEL).** The
+   touchstart handler now checks
+   `t.closest('video')` *and*
+   `el.closest('video')` (when closest(SEL)
+   matches) before any work. A tap anywhere
+   inside a <video> tree, or on a SEL
+   element that sits inside a <video> tree,
+   is skipped entirely. The dim class can
+   no longer land on a video card's
+   like-button or comment button, and the
+   third tap on a feed video is now a pure
+   Facebook event with no interference.
+
+3. **Reels screen fully opted out.** The
+   touchstart handler bails out at the very
+   first check - `t.closest('[data-is-
+   reels="true"]')` - before any
+   closest(SEL) work. The Reels screen
+   keeps its own input entirely; the press
+   effect is for the home feed's chrome
+   only.
+
+4. **App permissions row in Settings >
+   About.** A new PreferenceCategory above
+   the version entry has four entries:
+   - Enable notifications: opens the
+     POST_NOTIFICATIONS system dialog (the
+     only path on Android 13+). Summary
+     reflects granted / requesting / denied.
+   - Photos and videos: opens
+     READ_MEDIA_IMAGES (Android 13+) or
+     READ_EXTERNAL_STORAGE (older). The
+     file chooser in the WebView already
+     has its own launch path, but it has to
+     have the permission to be able to read
+     the picked file.
+   - Camera: opens CAMERA. The same as
+     photos - the system dialog has to
+     fire for the WebView's request handler
+     to be able to return an image.
+   - Check for new notifications now:
+     runs the same code path
+     NotificationWorker runs every 15
+     minutes, immediately. Useful to
+     confirm that the channel is alive
+     after granting the permission above.
+
+5. **Three ActivityResult launchers** for
+   the three permission families. Each
+   result updates the corresponding
+   preference summary to "Already granted"
+   or "Permission denied". A denied result
+   tells the user to open the system
+   settings app - the next request will
+   be permanently denied if the user has
+   used the system "Don't ask again"
+   toggle.
+
+#### Files changed
+
+- `app/src/main/java/com/dustbook/app/utils/AdBlocker.kt`:
+  - right-swipe blocker rewritten to
+    capture-phase touchstart preventDefault
+    + history.pushState wrap.
+  - touchstart handler bails out on
+    `[data-is-reels="true"]` and on
+    `<video>` ancestors from the touch
+    target itself, not from the
+    closest(SEL) result.
+
+- `app/src/main/res/xml/settings_about.xml`:
+  new "App permissions" category with
+  four entries.
+
+- `app/src/main/res/values/strings.xml`:
+  12 new strings (cat title, 4 titles +
+  4 summaries, 4 result strings).
+
+- `app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt`:
+  - 4 new preference click listeners in
+    wire().
+  - 6 new helper functions: wirePermissionRow,
+    hasNotifPermission, requestNotifPermission,
+    hasPhotosPermission, requestPhotosPermission,
+    hasCameraPermission, requestCameraPermission.
+  - 3 ActivityResult launchers.
+  - 1 runNotificationCheckNow function.
+
+#### What is intentionally NOT changed
+
+- The icon picker sizing (addendum 14),
+  the offline video pause guard (addendum
+  14), the seven-tap idempotency
+  (addendum 22), the toolbar developer
+  toggle (addendum 20), the round 22
+  performance pass (addendum 23),
+  addendum 24's right-swipe first pass
+  was rewritten in full but the user
+  comment block was kept, with a
+  "round 22" tag on the new line that
+  shows the wrapping.
+
+#### Tests
+
+1321/1321 pass. The permission rows and
+the right-swipe re-architecture are
+behavioural and not exercised by the
+jsdom tests; the diagnostic log writes
+and the cosmetic engine still pass.
+The permission flow needs a real device
+to validate - this is the kind of fix
+that cannot be unit-tested, only
+device-tested.
+
+No push yet.

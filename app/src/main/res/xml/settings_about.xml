@@ -5,6 +5,24 @@
         <Preference android:key="check_update" android:title="@string/pref_check_update"
             android:summary="@string/pref_check_update_sum" app:iconSpaceReserved="false" />
     </PreferenceCategory>
+    <PreferenceCategory android:title="@string/grp_permissions" app:iconSpaceReserved="false">
+        <Preference android:key="perm_notifications"
+            android:title="@string/pref_perm_notifications"
+            android:summary="@string/pref_perm_notifications_sum"
+            app:iconSpaceReserved="false" />
+        <Preference android:key="perm_photos"
+            android:title="@string/pref_perm_photos"
+            android:summary="@string/pref_perm_photos_sum"
+            app:iconSpaceReserved="false" />
+        <Preference android:key="perm_camera"
+            android:title="@string/pref_perm_camera"
+            android:summary="@string/pref_perm_camera_sum"
+            app:iconSpaceReserved="false" />
+        <Preference android:key="check_notifications"
+            android:title="@string/pref_check_notifications"
+            android:summary="@string/pref_check_notifications_sum"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
     <PreferenceCategory android:title="@string/cat_about" app:iconSpaceReserved="false">
         <Preference android:key="app_version" android:title="@string/pref_version"
             app:iconSpaceReserved="false" />
