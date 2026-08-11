@@ -134,6 +134,14 @@ ok('the developer_enabled switch is the first entry in settings_developer.xml (p
    /<PreferenceScreen[\s\S]{0,400}<SwitchPreferenceCompat\s+android:key="developer_enabled"/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/res/xml/settings_developer.xml'), 'utf8')
    ));
+ok('app_version in settings_about.xml is NOT selectable="false" (otherwise the click listener never fires)',
+   !/<Preference android:key="app_version"[\s\S]{0,100}selectable="false"/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/res/xml/settings_about.xml'), 'utf8')
+   ));
+ok('the seven-tap handler re-attaches the nav_developer preference to force an immediate redraw',
+   /screen\.removePreference\(dev\)[\s\S]{0,200}screen\.addPreference\(dev\)/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ));
 
 console.log('');
 console.log('=== onCreate reads the persisted value (cold-start path) ===');

@@ -2076,3 +2076,93 @@ the test_diagnostic_log.js count from 29 to 34;
 the other eleven test files are unchanged).
 
 No push yet.
+
+### Addendum 18 — round 28 selectable fix and immediate redraw
+
+#### What the user pointed out
+
+The user installed the build from addendum 17
+and tried to tap the version entry seven times
+in About. Nothing happened. The Developer options
+entry stayed hidden, no toast, no log line. The
+seven-tap code was clearly present and the
+booleans were clearly being written, but the
+gesture was not reaching the listener.
+
+#### Root cause
+
+The version entry in `settings_about.xml` had
+
+```
+android:selectable="false"
+```
+
+A Preference with `selectable="false"` does not
+receive click events in the Preference framework.
+`setOnPreferenceClickListener` is set on the
+Preference object, but the framework filters the
+event out at the row level before it ever reaches
+the listener. So the seven-tap code was correct,
+the preferences were correct, the XML was wrong.
+Three addenda (13, 16, 17) left the bug in
+because nobody installed the build and tried the
+gesture end to end.
+
+I should have caught this by writing a
+behavioural test for the seven-tap gesture
+instead of only structural assertions. The
+structural pin was looking for the right strings
+in the right files; it had no way to know that
+the framework would swallow the click before the
+listener ran.
+
+#### Fix
+
+`settings_about.xml`: removed
+`android:selectable="false"` from the
+`app_version` Preference. The other entries
+in the file (filter_info, gesture_info) keep
+their selectable="false" - they are display-only
+and the user should not expect anything to
+happen when they tap them.
+
+`SettingsActivity.kt`: the seven-tap handler
+now forces an immediate redraw of the About
+tree. `Preference.setVisible()` does not
+redraw inside `PreferenceFragmentCompat`,
+so the entry stayed hidden until the user
+navigated away and back. The handler now
+removes the `nav_developer` preference from
+its parent screen and re-adds it with
+`isVisible = true` on the next loop tick.
+That re-attaches the row to the tree, which
+is what `setVisible` should have done on its
+own.
+
+`test_diagnostic_log.js`: two new
+assertions. The first pins the absence of
+`selectable="false"` on the app_version
+entry (scope-narrowed to the first 100
+characters after the key, so it does not
+match the selectable="false" on the
+gesture_info entry two rows down). The
+second pins the re-attach in the seven-tap
+handler.
+
+#### What is intentionally NOT changed
+
+- The 7-tap window, the booleans, the
+  page-top switch on the Developer options
+  screen, the logcat switch, the View / Share
+  / Clear buttons - all unchanged from
+  addendum 17.
+- The icon picker sizing and the offline video
+  pause guard (addendum 14) are not touched.
+
+#### Tests
+
+1318/1318 pass (the two new assertions raise
+the test_diagnostic_log.js count from 34 to
+36; the other eleven test files are unchanged).
+
+No push yet.

@@ -7,7 +7,7 @@
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/cat_about" app:iconSpaceReserved="false">
         <Preference android:key="app_version" android:title="@string/pref_version"
-            android:selectable="false" app:iconSpaceReserved="false" />
+            app:iconSpaceReserved="false" />
         <Preference android:key="filter_info" android:title="@string/pref_filters"
             android:selectable="false" app:iconSpaceReserved="false" />
         <Preference android:key="gesture_info" android:title="@string/pref_gesture"

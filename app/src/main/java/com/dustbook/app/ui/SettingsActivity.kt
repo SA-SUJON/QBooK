@@ -243,8 +243,27 @@ class SettingsActivity : AppCompatActivity() {
                     prefs.devTapCount = 0
                     prefs.devTapFirstAt = 0L
                     sevenTap.summary = getString(R.string.dev_options_sum)
+                    val screen = preferenceScreen
                     val dev = findPreference<Preference>("nav_developer")
-                    dev?.isVisible = true
+                    if (screen != null && dev != null) {
+                        // Preference.setVisible() does not redraw the
+                        // tree inside PreferenceFragmentCompat - the
+                        // entry stays hidden until the fragment is
+                        // re-inflated. Removing and re-adding the
+                        // preference with isVisible=true is the
+                        // documented way to get an immediate redraw.
+                        // The dev view may not be inflated yet because
+                        // the entry was visibility="gone", so we
+                        // always post the mutation rather than relying
+                        // on dev.view.post().
+                        sevenTap.view?.post {
+                            if (dev.parent === screen) {
+                                screen.removePreference(dev)
+                            }
+                            dev.isVisible = true
+                            screen.addPreference(dev)
+                        }
+                    }
                     toast(getString(R.string.dev_unlocked_toast))
                 } else if (taps >= 4) {
                     toast("$taps / 7")
