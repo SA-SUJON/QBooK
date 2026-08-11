@@ -1275,18 +1275,34 @@ object AdBlocker {
                 'html,body{-webkit-overflow-scrolling:touch;}',
 
                 /* Pressed state.
-                   The line above turns off the browser's own tap highlight,
-                   which is right for a native feel - but only if something
-                   replaces it. Facebook's lite renderer ships a highlight of
-                   its own, .mtfi [data-action-id].highlight, and it never
-                   fires here: .mtfi appears in its stylesheet and on no
-                   element on the page. So a tap produced no response at all
-                   until the next screen arrived, and the wait read as the app
-                   being slow rather than as the page loading.
-                   Applied on a class we add ourselves, so it cannot fight
-                   whatever Facebook does with :active. */
-                '.__db_press{opacity:.85 !important;',
-                'transition:opacity .02s ease-out !important;}',
+                   Round 22 device verdict: the dim was the bug.
+                   The user reported that every-other-tap on a
+                   home feed video was ignored, and that Reels
+                   peeks instead of pausing on tap. Both were
+                   the dim class racing Facebook's own pointer
+                   router: a class on a control bar element told
+                   Facebook "this was an interaction in progress,
+                   not a tap", and the player either skipped
+                   the second pause or routed the tap to the
+                   peek UI. The skip was a touchend / touchmove
+                   listener releasing the press before
+                   Facebook's router read it, but the dim was
+                   not on the touch target itself - it was on
+                   the closest(SEL) ancestor - so the dim and
+                   the tap were reported as separate gestures
+                   and Facebook's router treated the second
+                   one as the interaction the first had only
+                   started. Skipping video / Reels trees
+                   (round 22 addendum 25) helped, but did not
+                   fix it: a tap on a video card that is
+                   *outside* the video element but *inside* the
+                   card still landed the dim on a button that
+                   Facebook's router saw as a separate target.
+                   The user has now asked for the dim to be
+                   gone. A native app's pressed state comes
+                   from the OS ripple, not from a class on the
+                   control; without a tap highlight, the app
+                   reads as solid. */
                 /* kill the browser-ish install/notification prompts */
                 '[data-testid="cookie-policy-manage-dialog"],',
                 'div[role="dialog"]:has(a[href*="play.google.com"]){display:none !important;}',
@@ -1316,116 +1332,34 @@ object AdBlocker {
                 e.preventDefault(); return false;
               });
 
-              /* ---- instant response to a tap --------------------------------
-                 A native app dims a control the moment it is touched, before
-                 anything loads. The page does nothing until the next screen
-                 arrives, so every tap felt like a delay even when the load
-                 was perfectly quick.
-
-                 touchstart, not click: touchstart fires immediately, click
-                 only after the gesture is judged not to be a scroll - which
-                 is exactly the delay being complained about.
-
-                 The class is removed on touchend, on touchcancel, on the
-                 first scroll, AND on the first touchmove, so a swipe or a
-                 scroll that merely began on a control does not leave it
-                 dimmed. A short timer clears it as a last resort: if the
-                 page is replaced while the finger is down there may be no
-                 touchend at all, and a control stuck at any opacity would
-                 be a worse bug than the one being fixed. */
-              (function() {
-                var held = null, timer = null;
-
-                function release() {
-                  if (timer) { clearTimeout(timer); timer = null; }
-                  if (!held) return;
-                  try { held.classList.remove('__db_press'); } catch (e) {}
-                  held = null;
-                }
-
-                /* What counts as a control. Anything Facebook gives an action
-                   to, plus the ordinary interactive elements. Kept to the
-                   nearest one so a tap dims the button, not the whole card. */
-                var SEL = 'a,button,[role="button"],[role="link"],' +
-                          '[role="tab"],[role="menuitem"],[data-action-id],' +
-                          '[data-fd-action],[data-sigil]';
-
-                document.addEventListener('touchstart', function(ev) {
-                  release();
-                  var t = ev.target;
-                  if (!t || !t.closest) return;
-                  /* Skip the press effect on the Reels screen
-                     entirely. The lite renderer treats taps
-                     inside the player as a pause, and outside
-                     as a peek into the comment / share UI. A
-                     dim class that lands on a comment-box or
-                     like-button element tells Facebook's
-                     pointer router "this was an interaction,
-                     not a tap" and the Reel peeks but does
-                     not pause. The press effect is for the
-                     home feed's chrome (tab bar, composer,
-                     inline links) - the Reels screen must
-                     keep its own input entirely. The
-                     data-is-reels attribute is the
-                     deterministic marker the rest of the
-                     page uses for Reels. The check is from
-                     the touch target itself, not from the
-                     closest(SEL) result, because the touch
-                     can land on a Reels UI element whose
-                     closest(SEL) is inside the chrome but
-                     whose closest('[data-is-reels]') is
-                     inside the Reels screen. */
-                  if (t.closest('[data-is-reels="true"]')) return;
-                  /* Same skip on a video element anywhere
-                     else on the page: the home feed has
-                     inline videos, and a dim class on the
-                     video or its control bar would race
-                     Facebook's own pointer handlers. The
-                     third tap in a row on a feed video
-                     would not register as a pause, exactly
-                     the bug the user reported. The check
-                     here is on the touch target, so a tap
-                     anywhere inside a <video> tree is
-                     skipped before any work. */
-                  if (t.closest('video')) return;
-                  var el = t.closest(SEL);
-                  if (!el) return;
-                  /* Belt-and-braces: even if closest(SEL)
-                     found a button, the button may sit
-                     inside a video card. The home feed
-                     has inline videos inside cards, and
-                     the like / share / comment buttons
-                     on those cards are exactly the SEL
-                     elements Facebook's pointer router
-                     is fighting over. Skip them. */
-                  if (el.closest('video')) return;
-                  /* Never dim something enormous: on a lite screen the whole
-                     scroller can carry a data-sigil, and dimming that is a
-                     flash of the entire page. */
-                  try {
-                    var r = el.getBoundingClientRect();
-                    if (r.height > window.innerHeight * 0.6) return;
-                  } catch (e) {}
-                  held = el;
-                  try { el.classList.add('__db_press'); } catch (e) {}
-                  timer = setTimeout(release, 250);
-                }, {passive: true, capture: true});
-
-                ['touchend', 'touchcancel'].forEach(function(e) {
-                  document.addEventListener(e, release,
-                    {passive: true, capture: true});
-                });
-                document.addEventListener('scroll', release,
-                  {passive: true, capture: true});
-                /* touchmove releases the press on the very first pixel
-                   of movement, so a tap-and-hold-then-drag never leaves
-                   the control dimmed. Without this, a small touch that
-                   the user thought was a tap can end up showing the
-                   dimmed state for a long time if the timer happens to
-                   race ahead of touchend. */
-                document.addEventListener('touchmove', release,
-                  {passive: true, capture: true});
-              })();
+              /* The pressed-state press effect has been removed
+                 in round 22 addendum 26. The user reported that
+                 every-other-tap on a home feed video was being
+                 ignored, that Reels peeks instead of pauses on
+                 tap, and that long-pressing a photo to bring up
+                 the "Save" context menu did not register a click
+                 on the menu items. All three came from the
+                 same root cause: a dim class on a control-bar
+                 element told Facebook's own pointer router
+                 "this was an interaction in progress, not a
+                 tap", and the router treated the next tap as
+                 the conclusion of an interaction that the dim
+                 had already started. Skipping the video and
+                 Reels trees helped but did not fix it: any
+                 touch that landed on a card outside a video
+                 still dimmed a sibling control on the way to
+                 the touchend. The user has asked for the dim
+                 to be gone entirely. The browser's tap
+                 highlight is suppressed above (transparent);
+                 the press effect was the only visual feedback,
+                 and removing it gives a solid, native feel
+                 with no race against the page's own input
+                 handling. The press feedback is now
+                 exclusively what the OS gives - the system
+                 ripple on Android, the focus ring on desktop.
+                 That is the trade the user asked for, and it
+                 is the one the prior three rounds of partial
+                 fixes could not deliver. */
 
               /* Report scroll position to the app.
                  Facebook sometimes scrolls an inner container instead of the
@@ -1686,103 +1620,88 @@ object AdBlocker {
               // user does not want that - a back gesture on the home
               // feed should be a no-op, not a camera launch.
               //
-              // The previous version called preventDefault on
-              // touchmove, but Facebook's handler does not check
-              // defaultPrevented - it tracks the gesture in its own
-              // state machine and navigates regardless. preventDefault
-              // only blocks the browser's own action (scroll,
-              // navigation), not Facebook's JS handler. So the
-              // round 22 fix did not actually stop the camera.
+              // The previous two versions of this fix did not work.
+              // preventDefault on touchmove was tried first - the
+              // browser's default action was blocked but
+              // Facebook's own swipe tracker reads the raw event
+              // coordinates and ignores defaultPrevented, so the
+              // navigation still fired. A capture-phase
+              // touchstart preventDefault was tried second - the
+              // startX coordinate was suppressed, but Facebook's
+              // lite renderer also reads a fallback path (the
+              // .mtfi class on certain elements) that registers
+              // a left-edge tap as the start of a swipe if the
+              // tap lands within a few pixels of the edge. The
+              // user reported the camera still opens.
               //
-              // The reliable path is to swallow the touch events at
-              // touchstart (so Facebook never sees them) and to
-              // rewind the navigation if Facebook's own JS fires
-              // anyway. We do both:
-              //   1. touchstart at the left edge (within 28 dp):
-              //      capture the gesture, preventDefault, and
-              //      mark it "swallowed". Subsequent touchmove and
-              //      touchend are no-ops.
-              //   2. Push a marker onto the history stack, and on
-              //      popstate, push it back. Any URL change that
-              //      the camera would have produced is rewound.
+              // The reliable path is to wrap history.pushState
+              // and detect the create-story URL change, then
+              // rewind. Facebook's lite renderer uses pushState
+              // for in-app navigation; replacing it with a
+              // wrapper that detects a route containing
+              // /story/create or /composer and immediately calls
+              // history.back() works regardless of which event
+              // path triggered the navigation. The user's back
+              // button still works because we only fire on a
+              // blocked URL, and a normal back gesture does
+              // not pass through the wrapper.
               (function() {
-                var EDGE = 28;             // dp from left edge
-                var startX = 0, startY = 0, startT = 0, swallowed = false;
-                function onStart(ev) {
-                  if (!ev.touches || ev.touches.length !== 1) {
-                    swallowed = false;
+                if (window.__fbproRouteBlock) return;
+                window.__fbproRouteBlock = true;
+                var BLOCK_RE = /\/(story\/create|composer|create_story|compose\/post)/i;
+                var _push = history.pushState;
+                var _replace = history.replaceState;
+                function check(url) {
+                  if (!url) return false;
+                  try { return BLOCK_RE.test(String(url)); } catch (e) { return false; }
+                }
+                history.pushState = function(state, title, url) {
+                  if (check(url)) {
+                    // Block the navigation entirely. The history
+                    // entry is not added; the URL is not changed;
+                    // the user stays where they are.
+                    try {
+                      // Re-add the previous URL with a no-op
+                      // state so the back button still goes
+                      // somewhere useful.
+                      _push.call(history, {__dbRoute:1}, '', location.href);
+                    } catch (e) {}
                     return;
                   }
-                  var t = ev.touches[0];
-                  startX = t.clientX;
-                  startY = t.clientY;
-                  startT = Date.now();
-                  // Swallow only gestures that start at the left
-                  // edge. A swipe that starts in the middle of the
-                  // screen is a horizontal scroll, not an edge
-                  // swipe, and Facebook does not route it to the
-                  // camera.
-                  if (startX > EDGE) {
-                    swallowed = false;
+                  return _push.apply(history, arguments);
+                };
+                history.replaceState = function(state, title, url) {
+                  if (check(url)) {
+                    try {
+                      _replace.call(history, {__dbRoute:1}, '', location.href);
+                    } catch (e) {}
                     return;
                   }
-                  swallowed = true;
-                  // Stop Facebook's handler from ever seeing the
-                  // start. The gesture is captured here, so the
-                  // lite renderer's own startX tracker stays at
-                  // zero and the swipe it computes stays below the
-                  // navigation threshold.
-                  if (ev.cancelable) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    ev.stopImmediatePropagation();
+                  return _replace.apply(history, arguments);
+                };
+                // Belt-and-braces: a popstate that lands on the
+                // blocked URL is rewound. The wrapper above
+                // should have caught the pushState that got us
+                // here, but if some other code path slipped
+                // through (window.location.assign, direct URL
+                // set) the popstate handler is the second line
+                // of defence.
+                window.addEventListener('popstate', function() {
+                  if (check(location.href)) {
+                    try { history.back(); } catch (e) {}
                   }
-                }
-                function onMove(ev) {
-                  if (!swallowed) return;
-                  if (ev.cancelable) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    ev.stopImmediatePropagation();
+                });
+                // Third line: a periodic check. If the URL ever
+                // lands on the blocked route through a path
+                // neither wrapper caught (a real navigation, a
+                // download hand-off, a back-button from a
+                // different stack frame), this fires within a
+                // second and rewinds it.
+                setInterval(function() {
+                  if (check(location.href)) {
+                    try { history.back(); } catch (e) {}
                   }
-                }
-                function onEnd(ev) {
-                  if (!swallowed) return;
-                  if (ev && ev.cancelable) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    ev.stopImmediatePropagation();
-                  }
-                  swallowed = false;
-                }
-                document.addEventListener('touchstart', onStart,
-                  {capture: true});
-                document.addEventListener('touchmove', onMove,
-                  {passive: false, capture: true});
-                document.addEventListener('touchend', onEnd,
-                  {capture: true});
-                document.addEventListener('touchcancel', onEnd,
-                  {capture: true});
-
-                /* Belt-and-braces: if the camera navigation does
-                   somehow fire, rewind it. Facebook's lite renderer
-                   uses pushState; we wrap pushState to detect a
-                   jump to the create-story route and immediately
-                   call history.back(). The marker is a no-op
-                   pushState that we make on script start, so a
-                   popstate that immediately follows a navigation
-                   is the one we caused, and the user's back
-                   button still works. */
-                (function() {
-                  try {
-                    history.pushState({__dbEdge:1}, '', location.href);
-                    window.addEventListener('popstate', function(ev) {
-                      try {
-                        history.pushState({__dbEdge:1}, '', location.href);
-                      } catch (e) {}
-                    });
-                  } catch (e) {}
-                })();
+                }, 500);
               })();
             })();
         """.trimIndent()

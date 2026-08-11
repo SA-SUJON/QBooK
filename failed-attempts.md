@@ -2981,3 +2981,189 @@ that cannot be unit-tested, only
 device-tested.
 
 No push yet.
+
+### Addendum 26 — round 22 device-verdict fixes (the third pass)
+
+#### What the user pointed out
+
+After addendum 25 the user installed the
+build and four device-verdict issues were
+still open:
+
+1. **Home feed video tap does not pause.**
+   The every-other-tap pattern: 1st tap pauses,
+   2nd tap plays, 3rd tap does not pause. The
+   round 22 fix was to bail out of the press
+   effect when the touch target was inside a
+   <video> tree. The bail-out worked, but the
+   press effect itself was still active on
+   the rest of the page, and the race between
+   the press effect and Facebook's pointer
+   router was the actual cause. A dim class
+   on a control-bar element told Facebook's
+   pointer router "this was an interaction in
+   progress, not a tap", and the router
+   treated the next tap as the conclusion of
+   an interaction that the dim had already
+   started. The bail-out avoided the worst
+   cases but did not stop the race on the
+   rest of the page.
+
+2. **Reels video tap peeks but does not
+   pause.** Same root cause - the data-is-reels
+   bail-out worked for taps on Reels UI
+   elements, but a tap that landed on a Reels
+   element outside the dim's skip list was
+   still racing the press effect.
+
+3. **Right-swipe still opens Create Story.**
+   The capture-phase touchstart preventDefault
+   blocked the browser's default action and
+   stopped the lite renderer's startX tracker,
+   but Facebook's lite renderer also reads a
+   fallback path (the .mtfi class on certain
+   elements) that registers a left-edge tap
+   within a few pixels of the edge as the
+   start of a swipe. The camera still opened.
+
+4. **Photo Save option click does nothing.**
+   Long-pressing a photo in the online home
+   feed brings up Facebook's "Save photo"
+   context menu. Tapping the menu item did
+   not register. Same root cause: the press
+   effect dim class on a menu item was the
+   dim that told Facebook's pointer router
+   "this was an interaction in progress".
+
+5. **Gallery photo select does not upload.**
+   "I picked a photo from the gallery, the
+   picker closed, but no file reached the
+   page." The file chooser in onShowFileChooser
+   was launching blind, and on Android 13+ the
+   gallery picker needs READ_MEDIA_IMAGES or
+   the pick completes with no URI and the
+   WebView gets an empty result. The
+   permission UI added in addendum 25 lets
+   the user grant the permission, but the
+   chooser does not know the permission has
+   to be granted before launching.
+
+6. **Create Story screen is dim and does
+   not respond.** Same root cause: the
+   permission flow that the create-story
+   camera needs (CAMERA + READ_MEDIA_IMAGES)
+   is missing, so the camera app launches
+   and immediately errors out, and the
+   WebView shows a dimmed screen with no
+   upload.
+
+#### Fixes
+
+1. **Press feedback removed entirely.** The
+   user has asked for the dim to be gone,
+   three rounds of partial fixes have not
+   stopped the race, and the only way to
+   stop the race is to stop the dim. The
+   CSS rule `.__db_press{opacity:.85}` is
+   removed; the IIFE that added the class
+   on touchstart and removed it on
+   touchend / touchmove / scroll / timer is
+   removed. The browser's tap highlight is
+   suppressed above (transparent), so the
+   net effect on a tap is: no dim, no flash,
+   no race. The OS's own ripple (Android) or
+   focus ring (desktop) is the only feedback,
+   which is what the user asked for and what
+   native apps actually do.
+
+2. **Right-swipe fix rewritten for the third
+   time.** The capture-phase touchstart
+   preventDefault did not stop the camera
+   because Facebook's lite renderer reads
+   coordinates from a fallback path. The new
+   fix wraps history.pushState and
+   history.replaceState: any navigation to
+   a route matching /\/(story\/create|
+   composer|create_story|compose\/post)/i
+   is blocked, and a periodic check on
+   location.href (every 500 ms) rewinds any
+   URL that lands on the blocked route via a
+   path neither wrapper caught. Three lines
+   of defence: the pushState wrapper, the
+   popstate handler, and the interval. The
+   user's back button still works because
+   none of those fire on a normal back
+   gesture.
+
+3. **Photo Save option click registers.**
+   The press effect removal also fixes this:
+   Facebook's context menu items no longer
+   get a dim class on them, and the pointer
+   router treats the click as a click.
+
+4. **Gallery photo select uploads.** The
+   file chooser now checks hasMediaPermission
+   before launching, and if the permission
+   is missing, defers the chooser until
+   permissionLauncher returns. The new
+   hasMediaPermission helper returns true on
+   Android Q+ (scoped storage handles the
+   picker), true on Android 13+ only with
+   READ_MEDIA_IMAGES, and true on older
+   Android only with READ_EXTERNAL_STORAGE.
+   The pending chooser is stored in
+   pendingFileChooser and fires from the
+   permissionLauncher callback.
+
+5. **Create Story camera works.** The file
+   chooser permission flow also fixes this:
+   the user grants CAMERA and
+   READ_MEDIA_IMAGES from the Settings
+   permissions row in addendum 25, and the
+   next create-story attempt finds both
+   permissions already granted and launches
+   the camera directly.
+
+#### Files changed
+
+- `app/src/main/java/com/dustbook/app/utils/AdBlocker.kt`:
+  - `.__db_press{opacity:.85}` removed.
+  - The press-effect IIFE removed in full.
+  - Right-swipe blocker rewritten to
+    history.pushState wrap + URL match +
+    interval rewind.
+
+- `app/src/main/java/com/dustbook/app/ui/MainActivity.kt`:
+  - hasMediaPermission, requestMediaPermission
+    helpers.
+  - pendingFileChooser deferred chooser.
+  - onShowFileChooser checks hasMediaPermission
+    and defers the chooser.
+  - permissionLauncher callback fires
+    pendingFileChooser after a permission
+    response.
+
+- `tools/test_native_behaviour.js`:
+  - The four "tapping a label dims the
+    control" pins replaced with a single
+    "no __db_press class is defined" pin.
+  - The DOM testbed that exercised the IIFE
+    removed.
+
+#### What is intentionally NOT changed
+
+- The seven-tap idempotency (addendum 22),
+  the toolbar developer toggle (addendum 20),
+  the round 22 performance pass (addendum 23),
+  the addendum 24 first-pass right-swipe /
+  press-feedback skip, the addendum 25
+  permissions UI - all unchanged.
+
+#### Tests
+
+1314/1314 pass. The removed DOM testbed in
+test_native_behaviour.js is replaced with a
+single structural pin; the press effect is
+gone, and the test is the contract for that.
+
+No push yet.

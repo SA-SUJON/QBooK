@@ -186,6 +186,14 @@ class MainActivity : AppCompatActivity() {
             pendingGeoCallback = null
             pendingGeoOrigin = null
         }
+        // Retry a pending file-chooser request. The chooser
+        // was deferred in onShowFileChooser because the
+        // media permission was missing. After the user
+        // responds to the system dialog, fire the chooser.
+        pendingFileChooser?.let { cb ->
+            pendingFileChooser = null
+            runOnUiThread { cb() }
+        }
         if (result.values.any { !it } && !settingsPromptShown) {
             settingsPromptShown = true
             showPermissionDialog()
@@ -1720,6 +1728,20 @@ class MainActivity : AppCompatActivity() {
                     return false
                 }
 
+                // Round 22 device verdict: on Android 13+ the
+                // gallery picker needs READ_MEDIA_IMAGES or the
+                // pick completes with no URI and the WebView
+                // gets an empty result. The user reported that
+                // gallery picks "select hoi na" - the picker
+                // closed but no file reached the page. Ask for
+                // the permission if it is not yet granted, and
+                // only launch the chooser once we have it.
+                if (!hasMediaPermission()) {
+                    pendingFileChooser = { onShowFileChooser(webView, callback, params) }
+                    requestMediaPermission()
+                    return true
+                }
+
                 val chooser = Intent(Intent.ACTION_CHOOSER).apply {
                     putExtra(Intent.EXTRA_INTENT, contentIntent)
                     putExtra(Intent.EXTRA_TITLE, getString(R.string.choose_file))
@@ -2777,6 +2799,42 @@ class MainActivity : AppCompatActivity() {
 
     private fun hasPermission(p: String) =
         ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    /* Media permission: the right one depends on the API level.
+       On Android 13+ the gallery picker uses scoped storage
+       and needs READ_MEDIA_IMAGES. Below 13 the older
+       READ_EXTERNAL_STORAGE covers it, and on Q+ scoped
+       storage handles the picker without any explicit
+       permission at all. The file chooser used to launch
+       blind, the picker would return an empty result on
+       13+ when the permission was missing, and the user
+       saw the gallery open and close with no file picked.
+       Round 22 addendum 26: the chooser now asks for
+       permission first and waits for the user response
+       before launching. */
+    private fun hasMediaPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasPermission(Manifest.permission.READ_MEDIA_IMAGES)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            true
+        } else {
+            hasPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+    private fun requestMediaPermission() {
+        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        permissionLauncher.launch(arrayOf(perm))
+    }
+
+    /* A file chooser request that was deferred because the
+       media permission was not yet granted. When the
+       permission dialog returns, the launcher fires this
+       callback with the same arguments. */
+    private var pendingFileChooser: (() -> Unit)? = null
 
     private fun showPermissionDialog() {
         AlertDialog.Builder(this)
