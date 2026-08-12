@@ -14,6 +14,7 @@ import com.dustbook.app.R
 import com.dustbook.app.utils.Diag
 import com.dustbook.app.utils.DiagCapture
 import com.dustbook.app.utils.DiagnosticExport
+import com.dustbook.app.utils.Prefs
 
 /**
  * Read-only viewer for the per-channel diagnostic log files.

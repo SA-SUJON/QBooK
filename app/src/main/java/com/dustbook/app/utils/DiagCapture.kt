@@ -83,7 +83,6 @@ object DiagCapture {
     fun mark(ctx: Context, message: String = "USER_MARK") {
         write(ctx, Diag.Channel.APP_LIFECYCLE, Diag.Level.WARN, message)
     }
-    }
 
     /** One-shot initialisation from MainActivity.onCreate.
      *  Idempotent. Safe to call more than once. */
