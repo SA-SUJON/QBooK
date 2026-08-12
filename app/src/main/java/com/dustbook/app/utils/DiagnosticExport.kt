@@ -91,6 +91,15 @@ object DiagnosticExport {
             } catch (_: Exception) { "unknown" })
             put("exportedAt", System.currentTimeMillis())
             put("count", entries.size)
+            put("sessionIds", JSONArray().apply {
+                entries.map { it.sessionId }.filter { it.isNotBlank() }.distinct().forEach { put(it) }
+            })
+            put("device", JSONObject().apply {
+                put("manufacturer", android.os.Build.MANUFACTURER)
+                put("model", android.os.Build.MODEL)
+                put("android", android.os.Build.VERSION.RELEASE)
+                put("sdk", android.os.Build.VERSION.SDK_INT)
+            })
             put("entries", arr)
         }
         return writeFile(ctx, "json", root.toString(2))
@@ -101,6 +110,8 @@ object DiagnosticExport {
         sb.appendLine("Dustbook diagnostic log")
         sb.appendLine("Exported: " + Diag.fmtTs(System.currentTimeMillis()))
         sb.appendLine("Entries: " + entries.size)
+        sb.appendLine("Sessions: " + entries.map { it.sessionId }.filter { it.isNotBlank() }.distinct().joinToString(", "))
+        sb.appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}; Android ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
         sb.appendLine()
         for (e in entries) {
             sb.append('[').append(Diag.fmtTs(e.ts)).append("] ")

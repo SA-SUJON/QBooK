@@ -1,6 +1,9 @@
 package com.dustbook.app.utils
 
 import android.content.Context
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.util.UUID
 
 /**
  * Singleton entry point for writing diagnostic entries from
@@ -31,6 +34,8 @@ object DiagCapture {
 
     @Volatile private var store: DiagnosticStore? = null
     @Volatile private var currentMode: Diag.Mode = Diag.Mode.ONLINE
+    private val sessionId: String = UUID.randomUUID().toString()
+    @Volatile private var crashHandlerInstalled = false
 
     /** Set the current mode. Called from the network policy
      *  listener in MainActivity so an online-to-offline
@@ -59,8 +64,25 @@ object DiagCapture {
             mode = currentMode,
             channel = channel,
             level = level,
-            message = message
+            message = message.take(MAX_MESSAGE_CHARS),
+            sessionId = sessionId,
+            thread = Thread.currentThread().name
         ))
+    }
+
+    /** Record an exception with its complete causal chain without ever
+     * allowing diagnostics to crash the app. */
+    fun writeException(ctx: Context, channel: Diag.Channel, message: String, error: Throwable) {
+        val sw = StringWriter()
+        error.printStackTrace(PrintWriter(sw))
+        write(ctx, channel, Diag.Level.ERROR, "$message\n${sw}".take(MAX_MESSAGE_CHARS))
+    }
+
+    /** A human-readable marker lets a log prove exactly when the user
+     * pressed "reproduce" instead of relying on approximate timestamps. */
+    fun mark(ctx: Context, message: String = "USER_MARK") {
+        write(ctx, Diag.Channel.APP_LIFECYCLE, Diag.Level.WARN, message)
+    }
     }
 
     /** One-shot initialisation from MainActivity.onCreate.
@@ -70,8 +92,26 @@ object DiagCapture {
         if (existing != null) return existing
         val created = DiagnosticStore(ctx.applicationContext)
         store = created
+        if (!crashHandlerInstalled) {
+            synchronized(this) {
+                if (!crashHandlerInstalled) {
+                    val previous = Thread.getDefaultUncaughtExceptionHandler()
+                    Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+                        // Best effort: the process may be dying, so never throw here.
+                        try {
+                            writeException(ctx.applicationContext, Diag.Channel.APP_LIFECYCLE,
+                                "uncaught_exception thread=${thread.name}", error)
+                        } catch (_: Throwable) { }
+                        previous?.uncaughtException(thread, error)
+                    }
+                    crashHandlerInstalled = true
+                }
+            }
+        }
         return created
     }
+
+    private const val MAX_MESSAGE_CHARS = 12_000
 
     /** Read every entry in a channel. Used by the viewer and
      *  the export. Returns an empty list if the store is

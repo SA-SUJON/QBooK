@@ -89,6 +89,7 @@ class Prefs(context: Context) {
         const val KEY_DIAGNOSTIC_NETWORK = "diag_network"
         const val KEY_DIAGNOSTIC_OFFLINE_SAVE = "diag_offline_save"
         const val KEY_DIAGNOSTIC_LIFECYCLE = "diag_lifecycle"
+        const val KEY_DIAGNOSTIC_ALL = "diag_all"
         const val KEY_DEVELOPER_UNLOCKED = "developer_unlocked"
         const val KEY_DEVELOPER_ENABLED = "developer_enabled"
         const val KEY_DEV_TAP_COUNT = "dev_tap_count"
@@ -366,7 +367,10 @@ class Prefs(context: Context) {
             Diag.Channel.OFFLINE_SAVE -> KEY_DIAGNOSTIC_OFFLINE_SAVE
             Diag.Channel.APP_LIFECYCLE -> KEY_DIAGNOSTIC_LIFECYCLE
         }
-        return sp.getBoolean(key, false)
+        return sp.getBoolean(KEY_DIAGNOSTIC_ALL, false) || sp.getBoolean(key, false)
+    }
+    fun setDiagAllEnabled(value: Boolean) {
+        sp.edit().putBoolean(KEY_DIAGNOSTIC_ALL, value).apply()
     }
     fun setDiagChannelEnabled(channel: Diag.Channel, value: Boolean) {
         val key = when (channel) {

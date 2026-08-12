@@ -27,7 +27,11 @@ data class Diag(
     val mode: Mode,
     val channel: Channel,
     val level: Level,
-    val message: String
+    val message: String,
+    /** Process/session context makes logs from separate reproductions distinguishable. */
+    val sessionId: String = "",
+    /** Thread name is essential for proving main-thread stalls and races. */
+    val thread: String = ""
 ) {
     enum class Mode { ONLINE, OFFLINE }
     enum class Level { INFO, WARN, ERROR }
@@ -51,6 +55,8 @@ data class Diag(
         put("channel", channel.name)
         put("level", level.name)
         put("message", message)
+        put("sessionId", sessionId)
+        put("thread", thread)
     }
 
     companion object {
@@ -78,7 +84,9 @@ data class Diag(
                     mode = runCatching { Mode.valueOf(o.optString("mode")) }.getOrNull() ?: Mode.ONLINE,
                     channel = runCatching { Channel.valueOf(o.optString("channel")) }.getOrNull() ?: Channel.HOME_FEED,
                     level = runCatching { Level.valueOf(o.optString("level")) }.getOrNull() ?: Level.INFO,
-                    message = o.optString("message", "")
+                    message = o.optString("message", ""),
+                    sessionId = o.optString("sessionId", ""),
+                    thread = o.optString("thread", "")
                 )
             } catch (e: Exception) { null }
         }

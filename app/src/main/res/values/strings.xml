@@ -315,6 +315,10 @@
       cycle; lifecycle captures fire on every onCreate /
       onResume / onPause / onDestroy of the main activity.
     -->
+    <string name="diag_all">Capture all app events</string>
+    <string name="diag_all_sum">Master capture: records every available diagnostic channel, including errors and lifecycle events. Enable this before reproducing any unknown bug.</string>
+    <string name="diag_mark">Mark reproduction moment</string>
+    <string name="diag_mark_sum">Writes an exact timestamp marker to the log so the bug window can be located.</string>
     <string name="diag_ch_home_feed">Home feed log</string>
     <string name="diag_ch_home_feed_sum">Every page load, scroll position, video state, and right-swipe gesture on the home feed. Online and offline. Off by default.</string>
     <string name="diag_ch_reels">Reels tab log</string>

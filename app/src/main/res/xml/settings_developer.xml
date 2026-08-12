@@ -21,6 +21,19 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <SwitchPreferenceCompat
+        android:key="diag_all"
+        android:title="@string/diag_all"
+        android:summary="@string/diag_all_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="diag_mark"
+        android:title="@string/diag_mark"
+        android:summary="@string/diag_mark_sum"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreferenceCompat
         android:key="diag_home_feed"
         android:title="@string/diag_ch_home_feed"
         android:summary="@string/diag_ch_home_feed_sum"

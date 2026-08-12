@@ -111,6 +111,7 @@ class DiagnosticLogActivity : AppCompatActivity() {
                 sb.append('[').append(Diag.fmtTs(e.ts)).append("] ")
                   .append('[').append(e.mode.name).append("] ")
                   .append('[').append(e.level.name).append("] ")
+                  .append(if (e.thread.isBlank()) "" else "[${e.thread}] ")
                   .appendLine(e.message)
             }
             b.text = sb.toString()
@@ -124,7 +125,10 @@ class DiagnosticLogActivity : AppCompatActivity() {
      *  pick which ones to enable from the developer
      *  options page before opening the viewer. */
     private fun exportChannels(format: String) {
-        val enabled = Diag.Channel.values().filter {
+        val prefs = com.dustbook.app.utils.Prefs(this)
+        val enabled = if (prefs.sp.getBoolean(Prefs.KEY_DIAGNOSTIC_ALL, false)) {
+            Diag.Channel.values().toList()
+        } else Diag.Channel.values().filter {
             // Prefs is the single source of truth for what
             // is on. We read it here rather than the
             // store to match the developer-options

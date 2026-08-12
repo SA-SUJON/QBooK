@@ -25,6 +25,7 @@ import com.dustbook.app.utils.AppExecutors
 import com.dustbook.app.utils.BlockList
 import com.dustbook.app.utils.BackgroundSyncManager
 import com.dustbook.app.utils.Diag
+import com.dustbook.app.utils.DiagCapture
 import com.dustbook.app.utils.DiagnosticExport
 import com.dustbook.app.utils.NetworkPolicy
 import com.dustbook.app.utils.NotificationPresenter
@@ -322,6 +323,18 @@ class SettingsActivity : AppCompatActivity() {
             // is updated from the live "any channel
             // enabled" state so the developer can see at
             // a glance whether the subsystem is recording.
+            findPreference<SwitchPreferenceCompat>(Prefs.KEY_DIAGNOSTIC_ALL)
+                ?.setOnPreferenceChangeListener { _, v ->
+                    prefs.setDiagAllEnabled(v as Boolean)
+                    true
+                }
+            findPreference<Preference>("diag_mark")
+                ?.setOnPreferenceClickListener {
+                    DiagCapture.mark(requireContext(), "USER_MARK settings_button")
+                    Toast.makeText(requireContext(), "Diagnostic marker added", Toast.LENGTH_SHORT).show()
+                    true
+                }
+
             val channelPrefs = listOf(
                 Diag.Channel.HOME_FEED to Prefs.KEY_DIAGNOSTIC_HOME_FEED,
                 Diag.Channel.REELS to Prefs.KEY_DIAGNOSTIC_REELS,
