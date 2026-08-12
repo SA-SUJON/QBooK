@@ -3375,3 +3375,58 @@ itself is observation-only and cannot
 be unit-tested.
 
 No push yet.
+
+### Addendum 23 — round 22 diagnostic log system (note)
+
+The user asked for a complete diagnostic log
+redesign with eight per-channel toggles
+(four channels in two modes, ONLINE and
+OFFLINE) and an export pipeline that
+produces a JSON document with the same
+shape as the example they pasted.
+
+A parallel "round 22 addendum 21" was
+already on origin/main when I tried to
+push my addendum 29, which is the same
+redesign under a different name. The
+remote implementation covers the same
+ground with a slightly different
+architecture: 7 channels (HOME_FEED,
+REELS, STORY, ADS, NETWORK, OFFLINE_SAVE,
+APP_LIFECYCLE) backed by per-channel files,
+a Diag data class with proper enums, a
+DiagCapture singleton, a DiagnosticStore
+for the per-channel read / write, and a
+DiagnosticExport that produces the exact
+JSON shape the user wanted (app,
+versionName, exportedAt, count, entries:
+[{ts, mode, channel, level, message}, ...]).
+
+The remote's design is cleaner than mine
+would have been. I dropped my addendum 29
+in favour of the remote's addendum 21.
+Nothing to merge from this side.
+
+The user can verify the new system by:
+  1. Settings > About, tap version seven times
+  2. Developer options > tap the toolbar
+     switch to enable the page
+  3. Switch on whichever channels they want
+     to capture (HOME_FEED ONLINE, REELS
+     ONLINE, etc.)
+  4. Use the app for a while
+  5. Developer options > Export log to JSON
+  6. Open the share sheet, paste into a
+     bug report
+
+The export file is the same shape the
+user pasted: {app, versionName, exportedAt,
+count, entries: [{ts, mode, channel, level,
+message}]}. The keys are identical.
+
+Tests: 1314/1314 pass (the remote's
+test_diagnostic_log.js pins the new
+contract).
+
+No push needed - the remote is already
+ahead of me on this one.
