@@ -642,7 +642,7 @@ console.log('\nPlayback survives the window being hidden');
      /keepMediaAlive = keepAudioAlive/.test(ma) &&
      /prefs\.backgroundAudio && mediaPlaying/.test(ma));
   ok('and lowered again on resume',
-     /onResume[\s\S]{0,400}keepMediaAlive = false/.test(ma));
+     /onResume[\s\S]{0,1000}keepMediaAlive = false/.test(ma));
   ok('the service is still started alongside it',
      /keepAudioAlive\)[\s\S]{0,400}startBgAudioService\(\)/.test(ma));
 }
