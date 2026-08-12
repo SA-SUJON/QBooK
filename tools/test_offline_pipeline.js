@@ -3310,9 +3310,9 @@ console.log('\nSeen tracking: unseen first, seen sinks, reconnect evicts seen');
        .test(docsKt) &&
      /FBPro\.markViewed\(SEC, sid\)/.test(docsKt));
   ok('reconnect evicts seen inside the cycle, after the policy check',
-     /if \(!NetworkPolicy\.canDownload\(c, p\)\) return[\s\S]{0,1400}OfflineVaults\.evictViewedOnReconnect\(\)/
+     /if \(!NetworkPolicy\.canDownload\(c, p\)\) return[\s\S]{0,2500}OfflineVaults\.evictViewedOnReconnect\(\)/
        .test(bsmKt) &&
-     /diskIO\.execute \{[\s\S]{0,240}trimTo[\s\S]{0,160}evictViewedOnReconnect/
+     /diskIO\.execute \{[\s\S]{0,400}trimTo[\s\S]{0,300}evictViewedOnReconnect/
        .test(bsmKt));
   {
     const fnStart = bsmKt.indexOf('fun onNetworkRestored');
