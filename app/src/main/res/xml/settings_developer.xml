@@ -71,7 +71,7 @@
 
     <Preference
         android:key="view_diagnostic_log"
-        android:title="@string/pref_diagnostic_view"
+        android:title="@string/diag_viewer_button"
         android:summary="@string/diag_viewer_button_sum"
         app:iconSpaceReserved="false" />
 

@@ -330,6 +330,7 @@
     <string name="diag_ch_lifecycle">App lifecycle log</string>
     <string name="diag_ch_lifecycle_sum">Every onCreate, onResume, onPause, onDestroy of MainActivity, with saved-instance flag. Off by default.</string>
 
+    <string name="diag_viewer_button">View diagnostic log</string>
     <string name="diag_viewer_button_sum">Open the per-channel viewer. Pick a channel from the spinner, see the captures, export to JSON or text.</string>
 
     <!--
