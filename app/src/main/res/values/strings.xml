@@ -298,18 +298,62 @@
     <string name="dev_unlocked_toast">Developer options unlocked</string>
     <string name="dev_enabled_toast">Developer options enabled</string>
     <string name="dev_disabled_toast">Developer options hidden. Tap the version number seven times in About to re-enable.</string>
-    <string name="pref_logcat_toggle">Enable logcat</string>
-    <string name="pref_logcat_toggle_sum">When on, lifecycle, network, WebView, fullscreen, and bridge events are written to a file under cacheDir/diagnostic/. The file is read in-view, shared via the system share sheet, or cleared from here. Off by default; the cost when off is one boolean read per call site.</string>
-    <string name="pref_diagnostic_view">View log</string>
-    <string name="pref_diagnostic_view_sum">Open the log file in a scrollable reader. Newest entry last.</string>
-    <string name="pref_diagnostic_share">Share log file</string>
-    <string name="pref_diagnostic_share_sum">Open the system share sheet with the log file attached — useful for sending the file to a developer or pasting it into a bug report.</string>
-    <string name="pref_diagnostic_clear">Clear log</string>
-    <string name="pref_diagnostic_clear_sum">Delete the log file. Cannot be undone.</string>
+
+    <!--
+      Diagnostic log subsystem - one toggle per topic the
+      developer wants to investigate. Each toggle is a
+      [Diag.Channel] in the store, and each writes a per-
+      channel file under cacheDir/diagnostic that the viewer
+      (DiagnosticLogActivity) reads back. The viewer has
+      a clear / clear-all / export-as-json / export-as-text
+      row at the bottom. The toggle summaries note the
+      online/offline split: home feed captures fire on the
+      home feed whether online or offline; ads captures
+      fire on the sponsored-content strip; network captures
+      fire on every blocked / allowed request; offline
+      save captures fire on the BackgroundSyncManager
+      cycle; lifecycle captures fire on every onCreate /
+      onResume / onPause / onDestroy of the main activity.
+    -->
+    <string name="diag_ch_home_feed">Home feed log</string>
+    <string name="diag_ch_home_feed_sum">Every page load, scroll position, video state, and right-swipe gesture on the home feed. Online and offline. Off by default.</string>
+    <string name="diag_ch_reels">Reels tab log</string>
+    <string name="diag_ch_reels_sum">Every scroll, every video tap, every peek UI expand on the Reels tab. Off by default.</string>
+    <string name="diag_ch_story">Story tab log</string>
+    <string name="diag_ch_story_sum">Story tray scroll, story load, story tap. Off by default.</string>
+    <string name="diag_ch_ads">Ads log</string>
+    <string name="diag_ch_ads_sum">Every sponsored-content match and removal, with the selector and the reason. Off by default.</string>
+    <string name="diag_ch_network">Network log</string>
+    <string name="diag_ch_network_sum">Every blocked or allowed network request, with host, path, and decision. The throttle on adblock.intercept mainFrame stays at the 1 entry/sec limit; this is a separate throttle. Off by default.</string>
+    <string name="diag_ch_offline_save">Offline save log</string>
+    <string name="diag_ch_offline_save_sum">Every BackgroundSyncManager cycle, every SectionVault fetch, every vault hit / miss. Online and offline. Off by default.</string>
+    <string name="diag_ch_lifecycle">App lifecycle log</string>
+    <string name="diag_ch_lifecycle_sum">Every onCreate, onResume, onPause, onDestroy of MainActivity, with saved-instance flag. Off by default.</string>
+
+    <string name="diag_viewer_button_sum">Open the per-channel viewer. Pick a channel from the spinner, see the captures, export to JSON or text.</string>
+
+    <!--
+      Viewer strings. The activity title, the empty-state
+      message, the action-button labels, and the export
+      result toasts. The export-OK toast includes the file
+      path so the developer can find the saved file if
+      the share chooser is dismissed.
+    -->
     <string name="diagnostic_log_title">Diagnostic log</string>
-    <string name="diagnostic_log_empty">The diagnostic log is empty. Turn on Enable logcat in Developer options, then use the app for a while — the log file will be written under cacheDir/diagnostic/.</string>
-    <string name="diagnostic_log_cleared">Diagnostic log cleared.</string>
-    <string name="diagnostic_share_chooser">Share diagnostic log</string>
+    <string name="diag_viewer_intro">Pick a channel. Entries are written when the matching switch is on in Developer options. Use the bottom row to clear or export.</string>
+    <string name="diag_empty_channel">No entries for this channel yet. Turn the switch on in Developer options, then use the app — entries will appear here.</string>
+    <string name="diag_btn_clear_channel">Clear this channel</string>
+    <string name="diag_btn_clear_all">Clear all</string>
+    <string name="diag_clear_all_title">Clear every channel?</string>
+    <string name="diag_clear_all_msg">Every diagnostic log file in cacheDir/diagnostic will be deleted. Cannot be undone.</string>
+    <string name="diag_clear_all_yes">Delete all</string>
+    <string name="diag_cleared_channel">This channel cleared.</string>
+    <string name="diag_cleared_all">All channels cleared.</string>
+    <string name="diag_btn_export_json">Export as JSON</string>
+    <string name="diag_btn_export_text">Export as text</string>
+    <string name="diag_export_none">No channels enabled. Turn on at least one switch in Developer options first.</string>
+    <string name="diag_export_failed">Export failed. Check that cacheDir/diagnostic/exports is writable.</string>
+    <string name="diag_export_ok">Exported to %1$s. Pick a destination in the chooser.</string>
 
     <!-- developer info -->
     <string name="grp_developer">Developer</string>

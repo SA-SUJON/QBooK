@@ -4,40 +4,75 @@
   the About-this-app entry seven times. The "Developer options enabled"
   switch lives in the toolbar at the top of this screen (set up in
   SettingsActivity.onCreate) - it is the master switch, and turning it
-  off hides the entry back in About. Below the toolbar:
-  Enable logcat switch, then View / Share / Clear buttons for the file
-  the logcat switch produces.
+  off hides the Developer options entry back in About. The seven-tap
+  gesture is one-way: once unlocked, the user only has the master
+  switch to control visibility.
 
-  All the previous diagnostic tools (inspect_ads, log_video_urls,
-  dump_dom, sync_diagnostics) are gone. Round 28 reduced the surface
-  to switches and file-handling buttons.
+  Below the toolbar: the per-channel diagnostic log switches. The
+  diagnostic log subsystem is the new way to investigate a bug:
+  every channel is a topic (home feed, reels, story, ads, network,
+  offline save, app lifecycle), and turning a channel on writes
+  every event for that topic to a per-channel file under
+  cacheDir/diagnostic. The viewer (DiagnosticLogActivity) shows the
+  captures, the export row at the bottom of the viewer writes them
+  to JSON or plain text and shares through the system chooser.
 -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <SwitchPreferenceCompat
-        android:key="diagnostic_log"
-        android:title="@string/pref_logcat_toggle"
-        android:summary="@string/pref_logcat_toggle_sum"
+        android:key="diag_home_feed"
+        android:title="@string/diag_ch_home_feed"
+        android:summary="@string/diag_ch_home_feed_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreferenceCompat
+        android:key="diag_reels"
+        android:title="@string/diag_ch_reels"
+        android:summary="@string/diag_ch_reels_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreferenceCompat
+        android:key="diag_story"
+        android:title="@string/diag_ch_story"
+        android:summary="@string/diag_ch_story_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreferenceCompat
+        android:key="diag_ads"
+        android:title="@string/diag_ch_ads"
+        android:summary="@string/diag_ch_ads_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreferenceCompat
+        android:key="diag_network"
+        android:title="@string/diag_ch_network"
+        android:summary="@string/diag_ch_network_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreferenceCompat
+        android:key="diag_offline_save"
+        android:title="@string/diag_ch_offline_save"
+        android:summary="@string/diag_ch_offline_save_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreferenceCompat
+        android:key="diag_lifecycle"
+        android:title="@string/diag_ch_lifecycle"
+        android:summary="@string/diag_ch_lifecycle_sum"
         android:defaultValue="false"
         app:iconSpaceReserved="false" />
 
     <Preference
         android:key="view_diagnostic_log"
         android:title="@string/pref_diagnostic_view"
-        android:summary="@string/pref_diagnostic_view_sum"
-        app:iconSpaceReserved="false" />
-
-    <Preference
-        android:key="share_diagnostic_log"
-        android:title="@string/pref_diagnostic_share"
-        android:summary="@string/pref_diagnostic_share_sum"
-        app:iconSpaceReserved="false" />
-
-    <Preference
-        android:key="clear_diagnostic_log"
-        android:title="@string/pref_diagnostic_clear"
-        android:summary="@string/pref_diagnostic_clear_sum"
+        android:summary="@string/diag_viewer_button_sum"
         app:iconSpaceReserved="false" />
 
 </PreferenceScreen>

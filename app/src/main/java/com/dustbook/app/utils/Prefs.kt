@@ -82,6 +82,13 @@ class Prefs(context: Context) {
         const val KEY_INSPECT_ADS = "inspect_ads"
         const val KEY_LOG_VIDEOS = "log_video_urls"
         const val KEY_DIAGNOSTIC_LOG = "diagnostic_log"
+        const val KEY_DIAGNOSTIC_HOME_FEED = "diag_home_feed"
+        const val KEY_DIAGNOSTIC_REELS = "diag_reels"
+        const val KEY_DIAGNOSTIC_STORY = "diag_story"
+        const val KEY_DIAGNOSTIC_ADS = "diag_ads"
+        const val KEY_DIAGNOSTIC_NETWORK = "diag_network"
+        const val KEY_DIAGNOSTIC_OFFLINE_SAVE = "diag_offline_save"
+        const val KEY_DIAGNOSTIC_LIFECYCLE = "diag_lifecycle"
         const val KEY_DEVELOPER_UNLOCKED = "developer_unlocked"
         const val KEY_DEVELOPER_ENABLED = "developer_enabled"
         const val KEY_DEV_TAP_COUNT = "dev_tap_count"
@@ -340,6 +347,45 @@ class Prefs(context: Context) {
     var developerEnabled: Boolean
         get() = sp.getBoolean(KEY_DEVELOPER_ENABLED, false)
         set(v) = sp.edit().putBoolean(KEY_DEVELOPER_ENABLED, v).apply()
+
+    /** Per-channel diagnostic-log enabled flags. Each channel
+     *  is a topic the developer can choose to log - home feed,
+     *  reels, story, ads, network, offline save, app lifecycle.
+     *  The [diagChannelEnabled] helper maps a [Diag.Channel]
+     *  to its key, so the [DiagnosticStore] write path is a
+     *  single function call. The flags default to false so a
+     *  fresh install produces zero disk write even if a
+     *  capture point is reached. */
+    fun diagChannelEnabled(channel: Diag.Channel): Boolean {
+        val key = when (channel) {
+            Diag.Channel.HOME_FEED -> KEY_DIAGNOSTIC_HOME_FEED
+            Diag.Channel.REELS -> KEY_DIAGNOSTIC_REELS
+            Diag.Channel.STORY -> KEY_DIAGNOSTIC_STORY
+            Diag.Channel.ADS -> KEY_DIAGNOSTIC_ADS
+            Diag.Channel.NETWORK -> KEY_DIAGNOSTIC_NETWORK
+            Diag.Channel.OFFLINE_SAVE -> KEY_DIAGNOSTIC_OFFLINE_SAVE
+            Diag.Channel.APP_LIFECYCLE -> KEY_DIAGNOSTIC_LIFECYCLE
+        }
+        return sp.getBoolean(key, false)
+    }
+    fun setDiagChannelEnabled(channel: Diag.Channel, value: Boolean) {
+        val key = when (channel) {
+            Diag.Channel.HOME_FEED -> KEY_DIAGNOSTIC_HOME_FEED
+            Diag.Channel.REELS -> KEY_DIAGNOSTIC_REELS
+            Diag.Channel.STORY -> KEY_DIAGNOSTIC_STORY
+            Diag.Channel.ADS -> KEY_DIAGNOSTIC_ADS
+            Diag.Channel.NETWORK -> KEY_DIAGNOSTIC_NETWORK
+            Diag.Channel.OFFLINE_SAVE -> KEY_DIAGNOSTIC_OFFLINE_SAVE
+            Diag.Channel.APP_LIFECYCLE -> KEY_DIAGNOSTIC_LIFECYCLE
+        }
+        sp.edit().putBoolean(key, value).apply()
+    }
+    /** True when at least one diagnostic channel is on. The
+     *  developer-options screen uses this to show a one-line
+     *  "no channels on, nothing will be captured" hint
+     *  instead of an empty list. */
+    val anyDiagChannelEnabled: Boolean
+        get() = Diag.Channel.values().any { diagChannelEnabled(it) }
 
     /** Tap counter and first-tap timestamp for the seven-tap gesture. */
     var devTapCount: Int

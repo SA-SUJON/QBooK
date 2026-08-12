@@ -1,23 +1,103 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Read-only viewer for the in-app diagnostic log. Reachable from
-  Settings -> Developer options -> View log. The TextView is a single
-  monospace block; the system scrollbar is enabled for long files.
+  Diagnostic log viewer.
+
+  Top: channel picker (Spinner).
+  Middle: scrolling text body of the current channel's
+  entries, oldest first, auto-scrolled to the bottom.
+  Bottom: row of action buttons - clear this channel,
+  clear all, export as JSON, export as text.
+
+  The body is a single TextView with textIsSelectable so a
+  developer can long-press to copy a slice into a bug report.
+  The view is fillViewport=true so the empty state is a
+  short message centred, not a tiny line at the top.
 -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:orientation="vertical"
+    android:padding="12dp">
 
     <TextView
-        android:id="@+id/diagnostic_log_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="12dp"
-        android:textIsSelectable="true"
-        android:fontFamily="monospace"
-        android:textSize="11sp"
-        android:scrollbars="vertical"
-        android:gravity="top|start" />
+        android:text="@string/diag_viewer_intro"
+        android:paddingBottom="8dp"
+        android:textStyle="bold" />
 
-</ScrollView>
+    <Spinner
+        android:id="@+id/diag_channel_spinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="8dp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <TextView
+            android:id="@+id/diagnostic_log_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textIsSelectable="true"
+            android:textSize="11sp"
+            android:padding="8dp"
+            android:gravity="top|start" />
+
+    </ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="8dp"
+        android:weightSum="2">
+
+        <Button
+            android:id="@+id/diag_clear_channel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:text="@string/diag_btn_clear_channel" />
+
+        <Button
+            android:id="@+id/diag_clear_all"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:text="@string/diag_btn_clear_all" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="4dp"
+        android:weightSum="2">
+
+        <Button
+            android:id="@+id/diag_export_json"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:text="@string/diag_btn_export_json" />
+
+        <Button
+            android:id="@+id/diag_export_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:text="@string/diag_btn_export_text" />
+
+    </LinearLayout>
+
+</LinearLayout>

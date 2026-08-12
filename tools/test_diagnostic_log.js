@@ -94,16 +94,30 @@ ok('newlines in the message are replaced with spaces',
 
 console.log('');
 console.log('=== Wiring ===');
-ok('Prefs exposes diagnosticLog accessor (must be var, with a setter that updates diagLog.enabled and the shared preference, AND a getter that reads the persisted value, not the in-memory enabled flag - cold start would otherwise always see false)',
-   /var diagnosticLog: Boolean[\s\S]{0,200}get\(\) = sp\.getBoolean\(KEY_DIAGNOSTIC_LOG, false\)[\s\S]{0,300}diagLog\.enabled = value[\s\S]{0,150}sp\.edit\(\)\.putBoolean\(KEY_DIAGNOSTIC_LOG, value\)\.apply\(\)/.test(
+ok('Prefs exposes diagChannelEnabled and setDiagChannelEnabled for every Diag.Channel',
+   /fun diagChannelEnabled\(channel: Diag\.Channel\)/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+   ) && /fun setDiagChannelEnabled\(channel: Diag\.Channel, value: Boolean\)/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
-ok('Settings wires the switch to prefs.diagnosticLog',
-   /prefs\.diagnosticLog = v as Boolean/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+ok('Prefs has a key constant for each per-channel flag',
+   /KEY_DIAGNOSTIC_HOME_FEED/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+   ) && /KEY_DIAGNOSTIC_REELS/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+   ) && /KEY_DIAGNOSTIC_STORY/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+   ) && /KEY_DIAGNOSTIC_ADS/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
    ));
-ok('Settings wires the single logcat switch (round 28 reduced the dev surface to one switch)',
-   /KEY_DIAGNOSTIC_LOG[\s\S]{0,300}prefs\.diagnosticLog = v as Boolean/.test(
+ok('Settings wires each per-channel switch to the matching Diag.Channel',
+   /Diag\.Channel\.HOME_FEED to Prefs\.KEY_DIAGNOSTIC_HOME_FEED/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ) && /Diag\.Channel\.REELS to Prefs\.KEY_DIAGNOSTIC_REELS/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ) && /Diag\.Channel\.STORY to Prefs\.KEY_DIAGNOSTIC_STORY/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+   ) && /Diag\.Channel\.ADS to Prefs\.KEY_DIAGNOSTIC_ADS/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('the About entry takes seven taps to enable Developer options (and the 7th tap sets developerEnabled = true)',

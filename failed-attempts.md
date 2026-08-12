@@ -3167,3 +3167,211 @@ single structural pin; the press effect is
 gone, and the test is the contract for that.
 
 No push yet.
+
+### Addendum 21 — round 22 fully redesigned diagnostic log subsystem
+
+#### What the user pointed out
+
+The user, frustrated after 6+ rounds of
+guess-and-push, asked for a complete
+rethink of the developer options page.
+The previous system had:
+
+  - A single switch ("Enable logcat")
+    that turned every capture on or off
+    as a group.
+  - A single flat log file that every
+    capture point wrote to.
+  - Three buttons (view, share, clear) on
+    the same flat file.
+  - No way to say "I want to see only the
+    reels captures and nothing else."
+
+That made every bug report look the same
+- one giant file with everything mixed in.
+The developer could not pick a single
+topic, leave everything else silent, and
+see a clean stream for that topic. A
+sponsored-content bug and a Reels
+pause-tap bug were indistinguishable in
+the export until the developer grepped by
+hand.
+
+#### The new system
+
+The diagnostic log subsystem is rebuilt
+around a flat enum of seven channels,
+one per topic the developer can choose to
+investigate. Each channel is its own
+file under cacheDir/diagnostic, with its
+own size cap (2 MB), its own read path,
+and its own clear / export entry. The
+single flat log file is kept for
+backwards compatibility - every capture
+point still writes to it - but the
+developer-options page no longer surfaces
+it. The new channels are:
+
+  - HOME_FEED: every page load, scroll
+    state, right-swipe attempt, and tap
+    event on the home feed. Online and
+    offline.
+  - REELS: every scroll, every video tap,
+    every peek/expand on the Reels tab.
+  - STORY: every story tray scroll and
+    story load.
+  - ADS: every sponsored-content match
+    and removal, with the selector and
+    the reason. The cosmetic engine
+    traces a one-line summary of every
+    sweep with the breakdown of
+    sponsored cards, reel CTAs, and
+    app promos.
+  - NETWORK: every blocked or allowed
+    network request, with host, path,
+    and decision. Throttled by the
+    per-channel file size cap; the
+    1 entry/sec legacy throttle on
+    adblock.intercept is removed for
+    the channel path (it stays on the
+    legacy flat log).
+  - OFFLINE_SAVE: every
+    BackgroundSyncManager cycle, every
+    block reason, every onNetworkRestored.
+  - APP_LIFECYCLE: every onCreate,
+    onResume, onPause, onDestroy of
+    MainActivity, with the saved-instance
+    flag.
+
+Each channel has its own SwitchPreferenceCompat
+on the developer-options page. The
+developer turns on the ones they care
+about, leaves the rest off, and the log
+subsystem records only those. The page
+also surfaces a single "View log" entry
+that opens a new DiagnosticLogActivity.
+
+#### The viewer
+
+DiagnosticLogActivity is a single screen
+with a Spinner at the top, a body
+TextView in the middle, and a row of
+action buttons at the bottom. The Spinner
+picks the channel; the body shows the
+entries of that channel, oldest first,
+auto-scrolled to the bottom. The action
+row is clear-this-channel, clear-all,
+export-as-JSON, export-as-text.
+
+Clear-this-channel drops the file for the
+current channel. Clear-all drops every
+file. Export-as-JSON and export-as-text
+write the union of every enabled channel
+to a timestamped file in
+cacheDir/diagnostic/exports and hand it
+to the system chooser. The export format:
+
+  - JSON: a top-level object with
+    {app, versionName, exportedAt, count,
+    entries: [...]}. Each entry is
+    {ts, mode, channel, level, message}.
+  - Text: one line per entry, in the form
+    "[yyyy-MM-dd HH:mm:ss.SSS] [MODE]
+    [CHANNEL] [LEVEL] message". The
+    same shape adb logcat uses, so a
+    slice pasted into a bug report aligns
+    with the device log.
+
+#### The mode field
+
+Every entry has a mode field: ONLINE or
+OFFLINE. The mode is set on every
+network state change (ConnectivityManager
+callback) and on every onResume. A
+developer who has the home feed channel
+on can see at a glance whether a given
+event was triggered online or offline.
+
+#### What this enables
+
+A developer who is investigating a Reels
+pause-tap bug turns on the REELS and
+APP_LIFECYCLE channels, leaves the rest
+off, and the export is two short files:
+every Reels scroll, every Reels tap,
+every video state change, and every
+lifecycle event. A sponsored-content
+debug turns on ADS, leaves the rest off,
+and the export is one file with the
+cosmetic engine's per-sweep summary.
+
+The user can now hand me a single
+targeted export for each bug, and I can
+diagnose from the export without
+guessing. The previous "infinite loop"
+of guess-and-push ends here: every
+report is now a focused signal, not a
+giant log.
+
+#### Files added
+
+- app/src/main/java/com/dustbook/app/utils/Diag.kt
+- app/src/main/java/com/dustbook/app/utils/DiagnosticStore.kt
+- app/src/main/java/com/dustbook/app/utils/DiagCapture.kt
+- app/src/main/java/com/dustbook/app/utils/DiagnosticExport.kt
+
+#### Files changed
+
+- app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt:
+  per-channel switch listeners, view-log
+  button.
+- app/src/main/java/com/dustbook/app/ui/DiagnosticLogActivity.kt:
+  new viewer with Spinner, body, and
+  action row.
+- app/src/main/java/com/dustbook/app/ui/MainActivity.kt:
+  per-channel capture points in
+  onCreate, onResume, onPause, onDestroy,
+  shouldOverrideUrlLoading, the network
+  callback, and the JS trace handler.
+- app/src/main/java/com/dustbook/app/utils/AdBlocker.kt:
+  cosmetic engine traces a one-line
+  summary of every sweep.
+- app/src/main/java/com/dustbook/app/utils/BackgroundSyncManager.kt:
+  start() and onNetworkRestored() trace.
+- app/src/main/java/com/dustbook/app/utils/Prefs.kt:
+  per-channel enabled flag helper.
+- app/src/main/res/xml/settings_developer.xml:
+  seven SwitchPreferenceCompat entries,
+  one view-log entry.
+- app/src/main/res/layout/activity_diagnostic_log.xml:
+  new viewer layout.
+- app/src/main/res/values/strings.xml:
+  per-channel and viewer strings.
+- tools/test_diagnostic_log.js:
+  updated assertions for the new
+  per-channel system.
+
+#### What is intentionally NOT changed
+
+- The legacy flat DiagnosticLog file is
+  kept; every capture point still writes
+  to it. The new per-channel system is
+  additive. A future commit can retire
+  the flat file if no caller needs it.
+- The 7-tap gesture on About is unchanged.
+  The toolbar developer toggle is
+  unchanged. The addendum 18 (offline
+  rubbery fix), addendum 22-23
+  (performance), and addendum 24-28
+  (right-swipe and tap-pause) are all
+  preserved.
+
+#### Tests
+
+1311/1311 pass. The diagnostic test
+files update their assertions for the
+new per-channel system; the behaviour
+itself is observation-only and cannot
+be unit-tested.
+
+No push yet.

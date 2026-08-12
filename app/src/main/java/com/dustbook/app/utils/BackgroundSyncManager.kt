@@ -96,6 +96,16 @@ object BackgroundSyncManager {
                 "connected=${NetworkPolicy.isConnected(c)}, " +
                 "unmetered=${NetworkPolicy.isUnmetered(c)})")
         lastBlockReason = stampedNote("passed all gates, pipeline started")
+        // Per-channel diagnostic capture. The start path
+        // is the single most useful signal in the offline
+        // save log: every "passed all gates" entry means
+        // a download cycle is starting; every "block
+        // reason" entry tells the developer why a cycle
+        // did NOT start. The export is the rest of the
+        // log: which phase ran, what it fetched, what
+        // it hit on disk.
+        DiagCapture.write(c, Diag.Channel.OFFLINE_SAVE,
+            message = "start block_reason=$lastBlockReason")
 
         isRunning = true
         // Hard-ceiling bookkeeping BEFORE any fetching: the feed vault
@@ -119,6 +129,8 @@ object BackgroundSyncManager {
 
     /** Called when connectivity returns after being offline. */
     fun onNetworkRestored() {
+        DiagCapture.write(ctx ?: return, Diag.Channel.OFFLINE_SAVE,
+            message = "onNetworkRestored isRunning=$isRunning")
         // Reconnecting no longer wipes the library. A full clear punished
         // exactly the entries the user had NOT seen yet - everything was
         // thrown out, seen or not, and refetched. start()'s cycle-opening

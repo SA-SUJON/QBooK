@@ -59,6 +59,8 @@ import com.dustbook.app.utils.AdBlocker
 import com.dustbook.app.utils.AdInspector
 import com.dustbook.app.utils.BlockList
 import com.dustbook.app.utils.CosmeticFilters
+import com.dustbook.app.utils.Diag
+import com.dustbook.app.utils.DiagCapture
 import com.dustbook.app.utils.MFacebookAds
 import com.dustbook.app.utils.BackgroundSyncManager
 import com.dustbook.app.utils.NetworkPolicy
@@ -230,6 +232,18 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs(this)
+        // Initialise the per-channel diagnostic capture store
+        // before anything else can write to it. The store
+        // is a singleton on the application context, so the
+        // first write wins; everything after that hits the
+        // same lock. The first call also reads the persisted
+        // mode and sets [DiagCapture.currentMode] so an
+        // online-to-offline transition that happened before
+        // process start is reflected in the first entry.
+        DiagCapture.init(this)
+        DiagCapture.setMode(if (NetworkPolicy.isConnected(this)) Diag.Mode.ONLINE else Diag.Mode.OFFLINE)
+        DiagCapture.write(this, Diag.Channel.APP_LIFECYCLE,
+            message = "onCreate savedInstanceState=$savedInstanceState")
         // Wire the in-process DiagnosticLog to the persisted toggle. The
         // setting has its own getter (reads the persisted value, not the
         // in-memory enabled flag - cold start must see what the user
@@ -419,6 +433,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         prefs.diagLog.write("lifecycle", "onResume")
+        DiagCapture.write(this, Diag.Channel.APP_LIFECYCLE,
+            message = "onResume")
+        // Refresh the diagnostic mode on every resume. The
+        // network may have come back while we were
+        // backgrounded, and an online-to-offline toggle on
+        // the home feed ought to be reflected in the next
+        // entry without the developer having to do
+        // anything.
+        DiagCapture.setMode(if (NetworkPolicy.isConnected(this)) Diag.Mode.ONLINE else Diag.Mode.OFFLINE)
         stopBgAudioService()
         // Back in front: let the framework manage visibility normally again,
         // so a WebView the user has finished with is still suspended.
@@ -501,6 +524,8 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         prefs.diagLog.write("lifecycle", "onPause isFinishing=$isFinishing")
+        DiagCapture.write(this, Diag.Channel.APP_LIFECYCLE,
+            message = "onPause isFinishing=$isFinishing")
         if (resumed == this) resumed = null
 
         saveOfflinePosition()
@@ -557,6 +582,8 @@ class MainActivity : AppCompatActivity() {
      */
     override fun onDestroy() {
         prefs.diagLog.write("lifecycle", "onDestroy isFinishing=$isFinishing")
+        DiagCapture.write(this, Diag.Channel.APP_LIFECYCLE,
+            message = "onDestroy isFinishing=$isFinishing")
         connectivityCallback?.let {
             try {
                 (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
@@ -1491,6 +1518,23 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): Boolean {
                 val url = request?.url?.toString() ?: return false
+                // Channel detection - the home feed, reels, and
+                // story routes all have a distinct URL
+                // signature. We log the navigation so a
+                // developer who has the channel switch on
+                // can see which screen the user is on at
+                // every load. Reels is checked first because
+                // a reel sometimes appears inside a story
+                // tray and a substring match would route it
+                // to the story channel instead.
+                val lc = url.lowercase(Locale.ROOT)
+                val channel = when {
+                    lc.contains("/reel") -> Diag.Channel.REELS
+                    lc.contains("/stories") -> Diag.Channel.STORY
+                    else -> Diag.Channel.HOME_FEED
+                }
+                DiagCapture.write(this@MainActivity, channel,
+                    message = "navigate url=" + url.take(120))
                 return handleUrl(url)
             }
 
@@ -1513,6 +1557,20 @@ class MainActivity : AppCompatActivity() {
                         "intercept mainFrame=${request.isForMainFrame} " +
                         "url=${request.url.toString().take(150)}")
                 }
+                // The per-channel NETWORK capture is
+                // independently throttled by the file
+                // size cap (2 MB). It is not the same as
+                // the legacy throttleMs gate above - the
+                // legacy is for the single flat log; this
+                // is for the per-channel store. The 1
+                // entry/sec throttle on adblock.intercept
+                // stays as a hard cap on writes to the
+                // channel file, and a developer who has
+                // the network switch on can disable the
+                // throttle by patching the gate.
+                DiagCapture.write(this@MainActivity, Diag.Channel.NETWORK,
+                    message = "mainFrame=${request.isForMainFrame} " +
+                        "url=${request.url.toString().take(150)}")
 
                 // Every new main-frame navigation leaves the offline
                 // document behind unless serve() says otherwise below -
@@ -2564,6 +2622,23 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun trace(tag: String, msg: String) {
             this@MainActivity.prefs.diagLog.write("js", "[$tag] $msg")
+            // The new per-channel diagnostic store. Each
+            // trace tag maps to a [Diag.Channel] so a
+            // developer with the matching switch on sees
+            // only the captures they care about. Tags the
+            // JS layer does not know about fall through to
+            // the legacy single-file log above.
+            val channel = when (tag) {
+                "ads" -> Diag.Channel.ADS
+                "routeblock" -> Diag.Channel.HOME_FEED
+                "tap" -> Diag.Channel.HOME_FEED
+                "tapdiag" -> Diag.Channel.HOME_FEED
+                "video", "video-new" -> Diag.Channel.REELS
+                else -> null
+            }
+            if (channel != null) {
+                DiagCapture.write(this@MainActivity, channel, message = msg)
+            }
         }
 
         /**
@@ -2657,6 +2732,9 @@ class MainActivity : AppCompatActivity() {
             override fun onAvailable(network: Network) {
                 val was = isOnline
                 isOnline = true
+                DiagCapture.setMode(Diag.Mode.ONLINE)
+                DiagCapture.write(applicationContext, Diag.Channel.NETWORK,
+                    message = "online (was=$was)")
                 runOnUiThread {
                     // Coming back online: refresh only if we were showing the
                     // offline error page, never yank a page the user is reading.
@@ -2677,8 +2755,13 @@ class MainActivity : AppCompatActivity() {
 
             override fun onLost(network: Network) {
                 isOnline = hasNetwork(cm)
-                if (!isOnline) runOnUiThread {
-                    toast(getString(R.string.offline_banner))
+                if (!isOnline) {
+                    DiagCapture.setMode(Diag.Mode.OFFLINE)
+                    DiagCapture.write(applicationContext, Diag.Channel.NETWORK,
+                        message = "offline")
+                    runOnUiThread {
+                        toast(getString(R.string.offline_banner))
+                    }
                 }
             }
         }

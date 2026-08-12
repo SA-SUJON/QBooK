@@ -1050,9 +1050,36 @@ object AdBlocker {
                 busy = true;
                 try {
                   refreshPageText();
+                  // Trace a one-line summary of every
+                  // sweep. The killSponsored /
+                  // killReelCtaAds / killPromos functions
+                  // mark the DOM with TAG / CTA_TAG
+                  // attributes that are stable across
+                  // runs, so counting the diff between
+                  // before and after would only count new
+                  // matches. We trace the totals instead
+                  // - the [TAG~...] selector is a
+                  // substring check that returns the
+                  // number of nodes the engine has marked
+                  // since the last clear. The
+                  // developer with the ads channel on
+                  // sees one line per sweep in the log
+                  // file, with the breakdown of sponsored
+                  // cards, reel CTAs, and app promos.
+                  var preSponsored = document.querySelectorAll('[' + TAG + ']').length;
+                  var preReel = document.querySelectorAll('[' + CTA_TAG + ']').length;
                   if (BLOCK_ADS) { killSponsored(); killReelCtaAds(); }
                   if (BLOCK_PROMOS) killPromos();
                   for (var key in FLAGS) { if (FLAGS[key]) killSection(key); }
+                  var postSponsored = document.querySelectorAll('[' + TAG + ']').length;
+                  var postReel = document.querySelectorAll('[' + CTA_TAG + ']').length;
+                  var sDelta = postSponsored - preSponsored;
+                  var rDelta = postReel - preReel;
+                  if (sDelta || rDelta) {
+                    try {
+                      window.FBPro.trace('ads', 'sweep sponsored=' + sDelta + ' reel=' + rDelta);
+                    } catch (e) {}
+                  }
                 } catch (e) {}
                 busy = false;
               }

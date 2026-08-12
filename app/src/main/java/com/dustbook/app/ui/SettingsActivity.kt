@@ -24,6 +24,8 @@ import com.dustbook.app.utils.AdBlocker
 import com.dustbook.app.utils.AppExecutors
 import com.dustbook.app.utils.BlockList
 import com.dustbook.app.utils.BackgroundSyncManager
+import com.dustbook.app.utils.Diag
+import com.dustbook.app.utils.DiagnosticExport
 import com.dustbook.app.utils.NetworkPolicy
 import com.dustbook.app.utils.NotificationPresenter
 import com.dustbook.app.utils.NotificationStore
@@ -312,47 +314,47 @@ class SettingsActivity : AppCompatActivity() {
             // is its own Activity so the Settings screen stays single-page
             // and the file can be much larger than any dialog body.
             //
-            // The page-top "developer_enabled" switch is no longer a
-            // row in this preference screen - the master toggle now
-            // lives in the toolbar at the top of the Developer
-            // options screen (set up in onCreateOptionsMenu). Below
-            // is the in-page content: the logcat switch and the
-            // view / share / clear buttons.
-            findPreference<SwitchPreferenceCompat>(Prefs.KEY_DIAGNOSTIC_LOG)
-                ?.setOnPreferenceChangeListener { _, v ->
-                    prefs.diagnosticLog = v as Boolean
+            // Per-channel diagnostic log switches. The XML in
+            // settings_developer.xml defines one
+            // SwitchPreferenceCompat per Diag.Channel. The
+            // toggle writes through to the Prefs boolean
+            // for the matching key, and the toggle summary
+            // is updated from the live "any channel
+            // enabled" state so the developer can see at
+            // a glance whether the subsystem is recording.
+            val channelPrefs = listOf(
+                Diag.Channel.HOME_FEED to Prefs.KEY_DIAGNOSTIC_HOME_FEED,
+                Diag.Channel.REELS to Prefs.KEY_DIAGNOSTIC_REELS,
+                Diag.Channel.STORY to Prefs.KEY_DIAGNOSTIC_STORY,
+                Diag.Channel.ADS to Prefs.KEY_DIAGNOSTIC_ADS,
+                Diag.Channel.NETWORK to Prefs.KEY_DIAGNOSTIC_NETWORK,
+                Diag.Channel.OFFLINE_SAVE to Prefs.KEY_DIAGNOSTIC_OFFLINE_SAVE,
+                Diag.Channel.APP_LIFECYCLE to Prefs.KEY_DIAGNOSTIC_LIFECYCLE,
+            )
+            for ((channel, key) in channelPrefs) {
+                findPreference<SwitchPreferenceCompat>(key)
+                    ?.setOnPreferenceChangeListener { _, v ->
+                        prefs.setDiagChannelEnabled(channel, v as Boolean)
+                        true
+                    }
+            }
+            // Open the per-channel viewer. The view button
+            // sits below the seven channel switches in the
+            // XML, and from there the developer can pick a
+            // channel, see the captures, clear, and export.
+            findPreference<Preference>("view_diagnostic_log")
+                ?.setOnPreferenceClickListener {
+                    // Purge old export files before opening
+                    // the viewer. Each export writes a
+                    // new timestamped file in
+                    // cacheDir/diagnostic/exports; the
+                    // chooser reads from there. Purging
+                    // on entry keeps that directory from
+                    // growing across sessions.
+                    com.dustbook.app.utils.DiagnosticExport.purge(requireContext())
+                    startActivity(Intent(requireContext(), DiagnosticLogActivity::class.java))
                     true
                 }
-            findPreference<Preference>("view_diagnostic_log")?.setOnPreferenceClickListener {
-                startActivity(Intent(requireContext(), DiagnosticLogActivity::class.java))
-                true
-            }
-            findPreference<Preference>("share_diagnostic_log")?.setOnPreferenceClickListener {
-                val path = prefs.diagLog.path()
-                val file = File(path)
-                if (!file.exists()) {
-                    toast(getString(R.string.diagnostic_log_empty))
-                    return@setOnPreferenceClickListener true
-                }
-                // FileProvider is keyed off the application package; on a
-                // SubFragment the packageName lives on the activity, not
-                // on `this` (which is the fragment).
-                val pkg = requireActivity().packageName
-                val uri = FileProvider.getUriForFile(
-                    requireContext(), "$pkg.fileprovider", file)
-                val share = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(share, getString(R.string.diagnostic_share_chooser)))
-                true
-            }
-            findPreference<Preference>("clear_diagnostic_log")?.setOnPreferenceClickListener {
-                prefs.diagLog.clear()
-                toast(getString(R.string.diagnostic_log_cleared))
-                true
-            }
 
             // ---- blocking ----
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_AD_BLOCK)
