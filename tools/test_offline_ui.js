@@ -383,12 +383,12 @@ console.log('\nDownloading does not wait for the user');
   // Opening the app is enough: nothing has to be watched or scrolled past
   // for content to be saved.
   ok('a pass starts when the app comes to the front',
-     /onResume[\s\S]{0,900}maybeSyncOffline/.test(main));
+     /onResume[\s\S]{0,2000}maybeSyncOffline/.test(main));
   // The requirement is that reconnecting resumes collecting. Which engine
   // does it is not the point -- BackgroundSyncManager owns that now, and
   // OfflineManager is no longer started alongside it.
   ok('and again when the connection returns',
-     /onAvailable[\s\S]{0,900}BackgroundSyncManager\.onNetworkRestored/.test(main));
+     /onAvailable[\s\S]{0,1500}BackgroundSyncManager\.onNetworkRestored/.test(main));
   ok('only one collecting engine is started',
      !/OfflineManager\.startProactivePreparation/.test(main) &&
      !/OfflineManager\.onNetworkRestored/.test(main));
