@@ -1594,6 +1594,26 @@ class MainActivity : AppCompatActivity() {
             enqueueDownload(url, binding.webView.settings.userAgentString, null, null)
             return true
         }
+        // 0.5 Round 22 addendum 27: block the create-story /
+        //     compose route that the home feed's right-edge
+        //     swipe launches. The user reported that a
+        //     right-swipe from the home feed opens the camera,
+        //     and the JS-side pushState / replaceState wrap
+        //     was not catching it. The webview client sees
+        //     every navigation, including ones the JS
+        //     wrappers miss, so this is the reliable
+        //     second line. The camera is reachable from the
+        //     Reels / Home share buttons in the proper
+        //     places - the only path being blocked is the
+        //     home-feed edge swipe.
+        if (url.contains("/story/create") ||
+            url.contains("/composer") ||
+            url.contains("/create_story") ||
+            url.contains("/compose/post") ||
+            url.contains("/story_composer")) {
+            prefs.diagLog.write("routeblock", "BLOCKED shouldOverrideUrlLoading url=" + url.take(120))
+            return true // swallow silently
+        }
         // 1. Play Store / app install links are killed outright.
         if (prefs.blockAppPromo && UrlHelper.isAppStoreLink(url)) {
             return true // swallow silently, no store, no chooser

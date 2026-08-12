@@ -1698,13 +1698,23 @@ object AdBlocker {
                   } catch (e) {}
                 }
                 trace('init location=' + location.href);
-                var BLOCK_RE = /\/(story\/create|composer|create_story|compose\/post)/i;
+                var BLOCK_RE = /\/(story\/create|composer|create_story|compose\/post|create\/story|story_composer)/i;
                 var _push = history.pushState;
                 var _replace = history.replaceState;
                 function check(url) {
                   if (!url) return false;
                   try { return BLOCK_RE.test(String(url)); } catch (e) { return false; }
                 }
+                // Track URL changes via interval - catches paths
+                // Facebook may take that bypass pushState (direct
+                // location.href, internal state machine, etc).
+                var lastHref = location.href;
+                setInterval(function() {
+                  if (location.href !== lastHref) {
+                    trace('href-change old=' + lastHref.slice(-60) + ' new=' + location.href.slice(-60));
+                    lastHref = location.href;
+                  }
+                }, 100);
                 history.pushState = function(state, title, url) {
                   trace('pushState url=' + url);
                   if (check(url)) {
@@ -1727,6 +1737,24 @@ object AdBlocker {
                   }
                   return _replace.apply(history, arguments);
                 };
+                // Catch every navigation by wrapping href setter
+                // too - some Facebook flows use window.location
+                // direct assignment, not pushState.
+                try {
+                  var _loc = window.location;
+                  Object.defineProperty(window, 'location', {
+                    configurable: true,
+                    get: function() { return _loc; },
+                    set: function(v) {
+                      trace('location-set href=' + (typeof v === 'string' ? v : ''));
+                      if (typeof v === 'string' && check(v)) {
+                        trace('BLOCKED location-set href=' + v);
+                        return; // refuse
+                      }
+                      _loc.href = v;
+                    }
+                  });
+                } catch (e) { trace('location-wrap-fail ' + e); }
                 window.addEventListener('popstate', function() {
                   trace('popstate href=' + location.href);
                   if (check(location.href)) {
@@ -1734,12 +1762,17 @@ object AdBlocker {
                     try { history.back(); } catch (e) {}
                   }
                 });
+                // Aggressive rewind: if URL is ever on the
+                // blocked route, force it back to / immediately.
                 setInterval(function() {
                   if (check(location.href)) {
                     trace('REWIND interval href=' + location.href);
+                    try {
+                      _replace.call(history, {__dbRoute:1}, '/');
+                    } catch (e) {}
                     try { history.back(); } catch (e) {}
                   }
-                }, 500);
+                }, 300);
               })();
             })();
         """.trimIndent()
