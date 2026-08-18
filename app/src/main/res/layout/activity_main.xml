@@ -35,7 +35,7 @@
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <com.dustbook.app.ui.MediaWebView
+            <org.qbook.ui.MediaWebView
                 android:id="@+id/webView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"

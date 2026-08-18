@@ -1,0 +1,3136 @@
+package org.qbook.ui
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
+import android.util.Base64
+import android.util.Log
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
+import android.webkit.JavascriptInterface
+import android.webkit.PermissionRequest
+import android.webkit.URLUtil
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updatePadding
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import org.qbook.BuildConfig
+import org.qbook.R
+import org.qbook.databinding.ActivityMainBinding
+import org.qbook.utils.AdBlocker
+import org.qbook.utils.AdInspector
+import org.qbook.utils.BlockList
+import org.qbook.utils.CosmeticFilters
+import org.qbook.utils.Diag
+import org.qbook.utils.DiagCapture
+import org.qbook.utils.MFacebookAds
+import org.qbook.utils.BackgroundSyncManager
+import org.qbook.utils.NetworkPolicy
+import org.qbook.utils.OfflineCache
+import org.qbook.utils.OfflineCapture
+import org.qbook.utils.OfflineDocs
+import org.qbook.utils.OfflineFeed
+import org.qbook.utils.AppExecutors
+import org.qbook.offline.OfflineVaults
+import org.qbook.utils.OfflineSync
+import org.qbook.utils.Prefs
+import org.qbook.utils.VideoHelper
+import org.qbook.utils.SessionState
+import org.qbook.utils.SoftRefresh
+import org.qbook.utils.ThreeFingerDoubleTapDetector
+import org.qbook.utils.UpdateWatcher
+import org.qbook.utils.UrlHelper
+import org.qbook.viewmodel.MainViewModel
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private val viewModel: MainViewModel by viewModels()
+    private lateinit var prefs: Prefs
+
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraPhotoUri: Uri? = null
+
+    // Fullscreen video state
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var originalOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+    // Pending geolocation request, retried after the permission dialog.
+    private var pendingGeoOrigin: String? = null
+    private var pendingGeoCallback: GeolocationPermissions.Callback? = null
+    private var pendingWebRtcRequest: PermissionRequest? = null
+
+    private var settingsPromptShown = false
+    private var earlyScriptHandle: androidx.webkit.ScriptHandler? = null
+
+    /** Live network state, updated by the ConnectivityManager callback. */
+    @Volatile private var isOnline: Boolean = true
+
+    /**
+     * True exactly while the WebView's current main-frame document was
+     * served by [OfflineDocs] - the stored page itself, not a guess from
+     * the radio state. Recomputed at every main-frame request: reset at
+     * the top of shouldInterceptRequest, set only when serve() actually
+     * answers. This is the gate the offline pages' own bridges trust:
+     * a saved page the user keeps reading through a silent reconnect
+     * must keep reporting position (the radio flipping to "online"
+     * mid-read used to freeze resume forever), while a genuinely live
+     * page must never write offline state.
+     */
+    @Volatile private var isShowingOfflinePage: Boolean = false
+
+    /**
+     * Consecutive main-frame failures for the current navigation.
+     *
+     * Reset the moment a page starts or finishes successfully, so a genuine
+     * outage still reaches the error screen after [MAX_MAIN_FRAME_RETRIES]
+     * attempts rather than retrying forever.
+     */
+    private var mainFrameRetries = 0
+    private var connectivityCallback: ConnectivityManager.NetworkCallback? = null
+
+    /** False when the page's own scroll container is scrolled away from top. */
+    @Volatile private var pageAtTop: Boolean = true
+
+    /**
+     * True while the page has a video or audio element actually playing.
+     *
+     * Reported from the page, because the URL cannot answer it: the lite
+     * renderer swaps the Reels screen in without navigating.
+     */
+    @Volatile private var mediaPlaying: Boolean = false
+
+    /** The support prompt is considered at most once per session. */
+    private var supportAsked = false
+
+    /** True while a login / signup / checkpoint page is showing. */
+    private var onAuthPage: Boolean = false
+
+    /** Set by the page probe when a password field or login form is present. */
+    @Volatile private var domSaysLoggedOut: Boolean = false
+
+    /** Reels currently held offline, reported by the page. */
+    @Volatile private var offlineReelCount: Int = 0
+
+    /** True while a soft refresh is waiting for the page to answer. */
+    @Volatile private var softRefreshPending: Boolean = false
+
+    /** Throttles the diagnostic-log network entry to one per second.
+     *  Read/written from the WebView resource thread, hence @Volatile. */
+    @Volatile private var lastNetworkLogSecond: Long = 0
+
+    private val gestureDetector by lazy {
+        ThreeFingerDoubleTapDetector { openHiddenSettings() }
+    }
+
+    // ---------------------------------------------------------------- launchers
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        // Retry any WebRTC request that was waiting on these permissions.
+        pendingWebRtcRequest?.let { req ->
+            val granted = result.values.all { it }
+            runOnUiThread { if (granted) req.grant(req.resources) else req.deny() }
+            pendingWebRtcRequest = null
+        }
+        // Retry a pending geolocation request.
+        pendingGeoCallback?.let { cb ->
+            val ok = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            cb.invoke(pendingGeoOrigin, ok, false)
+            pendingGeoCallback = null
+            pendingGeoOrigin = null
+        }
+        // Retry a pending file-chooser request. The chooser
+        // was deferred in onShowFileChooser because the
+        // media permission was missing. After the user
+        // responds to the system dialog, fire the chooser.
+        pendingFileChooser?.let { cb ->
+            pendingFileChooser = null
+            runOnUiThread { cb() }
+        }
+        if (result.values.any { !it } && !settingsPromptShown) {
+            settingsPromptShown = true
+            showPermissionDialog()
+        }
+    }
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val cb = filePathCallback
+        filePathCallback = null
+        if (cb == null) return@registerForActivityResult
+
+        if (result.resultCode != RESULT_OK) {
+            cb.onReceiveValue(null)
+            cameraPhotoUri = null
+            return@registerForActivityResult
+        }
+
+        val data = result.data
+        // Camera capture returns no data; fall back to the file we created.
+        val uris: Array<Uri>? = when {
+            data?.data != null || data?.clipData != null ->
+                WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+            cameraPhotoUri != null -> arrayOf(cameraPhotoUri!!)
+            else -> null
+        }
+        cb.onReceiveValue(uris)
+        cameraPhotoUri = null
+    }
+
+    // ---------------------------------------------------------------- lifecycle
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        prefs = Prefs(this)
+        // Initialise the per-channel diagnostic capture store
+        // before anything else can write to it. The store
+        // is a singleton on the application context, so the
+        // first write wins; everything after that hits the
+        // same lock. The first call also reads the persisted
+        // mode and sets [DiagCapture.currentMode] so an
+        // online-to-offline transition that happened before
+        // process start is reflected in the first entry.
+        DiagCapture.init(this)
+        DiagCapture.setMode(if (NetworkPolicy.isConnected(this)) Diag.Mode.ONLINE else Diag.Mode.OFFLINE)
+        DiagCapture.write(this, Diag.Channel.APP_LIFECYCLE,
+            message = "onCreate savedInstanceState=$savedInstanceState")
+        // Wire the in-process DiagnosticLog to the persisted toggle. The
+        // setting has its own getter (reads the persisted value, not the
+        // in-memory enabled flag - cold start must see what the user
+        // actually saved) and a setter that updates both the volatile
+        // flag (read by every write call site) and the shared
+        // preference. Reading prefs.diagnosticLog here is the only place
+        // the persisted value is read; every later read of
+        // prefs.diagnosticLog returns the same persisted value, while
+        // diagLog.enabled stays in sync.
+        prefs.diagLog.enabled = prefs.diagnosticLog
+        prefs.diagLog.write("lifecycle", "onCreate savedInstanceState=$savedInstanceState diagnosticLog=${prefs.diagnosticLog}")
+        AppCompatDelegate.setDefaultNightMode(prefs.nightMode())
+        if (prefs.amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
+        super.onCreate(savedInstanceState)
+
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Blocklist + offline store load off the main thread.
+        OfflineCache.init(applicationContext)
+        OfflineFeed.init(applicationContext)
+        OfflineDocs.init(applicationContext)
+        applyOfflineFlags()
+        AppExecutors.diskIO.execute {
+            BlockList.load(applicationContext)
+            CosmeticFilters.load(applicationContext)
+            OfflineCache.trimIfNeeded()
+        }
+
+        // Updates are watched for the whole process, not just this screen, so
+        // a release published while the app is open is offered straight away
+        // instead of waiting for the next cold start.
+        UpdateWatcher.presenter = { activity, rel, local ->
+            UpdatePrompt.show(activity, rel, local)
+        }
+
+        // Whether a session exists still decides what the app may do in the
+        // background (offline sync must not run on a signed-out shell), but it
+        // no longer selects between two different sign-in screens: there is
+        // only Facebook's own form now.
+        onAuthPage = !UrlHelper.isLoggedIn()
+
+        BackgroundSyncManager.init(applicationContext, prefs)
+        applyBlockerFlags()
+        setupEdgeToEdge()
+        setupWebView()
+        setupSwipeRefresh()
+        setupDownloadManager()
+        setupBackHandling()
+        setupErrorView()
+        setupConnectivity()
+        observeViewModel()
+
+        updateChromeVisibility()
+
+        // Restore in-memory state first, then the on-disk copy. The bundle
+        // only exists when Android killed the activity; after a swipe-away or
+        // a process reclaim it is gone, and without the disk copy the app
+        // would rebuild Facebook's whole shell on every launch.
+        val restored = savedInstanceState
+            ?: if (prefs.saveSession) SessionState.restore(this) else null
+
+        // Restoring paints from the WebView's own history and issues no
+        // request, so whatever page was showing when the app closed is what
+        // comes back — including Facebook's "Can't load the page" screen if
+        // the connection happened to be down at the time. That then survived
+        // every relaunch, with a perfectly good connection, because nothing
+        // ever went back to the network. Only accept a state that actually
+        // points at Facebook; anything else falls through to a normal load.
+        val restoredUrl = restored
+            ?.let { binding.webView.restoreState(it) }
+            ?.let { binding.webView.url }
+
+        if (restoredUrl != null && SessionState.isUsable(restoredUrl)) {
+            // History came back. Nothing to load: the WebView repaints the
+            // page it was on, header and tab bar included.
+        } else {
+            if (restoredUrl != null) {
+                // The restore already put a dead page in the WebView. Drop it
+                // and the file behind it before loading properly.
+                binding.webView.clearHistory()
+                SessionState.clear(this)
+            }
+            val target = if (onAuthPage) {
+                // Signed out: go straight to Facebook's own sign-in form.
+                // Nothing is stacked in front of it any more, so this is the
+                // form the user actually types into -- one surface, one
+                // submit. The "Get Facebook for Android" banner it carries is
+                // removed by the cosmetic pass before first paint.
+                "https://www.facebook.com/login/"
+            } else {
+                resolveStartUrl(intent)
+            }
+            binding.webView.loadUrl(target)
+        }
+
+        applyRuntimeOptions()
+
+        // =====================================================
+        // V4: PROACTIVE OFFLINE PREPARATION
+        // Start preparing fresh offline content immediately
+        // (no user scrolling required). This is the core of V4.
+        // =====================================================
+        // Nothing is started here. Preparation begins from onPageFinished,
+        // once the Home page has genuinely finished loading - a fixed timer
+        // fired while the page was still coming up and competed with it.
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val url = urlFromIntent(intent)
+        if (url != null) binding.webView.loadUrl(url)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        binding.webView.saveState(outState)
+    }
+
+    /**
+     * Same shortfall recoverWindowSizeIfStale measures, without acting on it.
+     *
+     * Session state is written from onPause, which is exactly the moment a
+     * transient window shrink is most likely to be mid-flight - Reels and
+     * Stories were coming back broken after nothing but a background/
+     * foreground cycle, on an otherwise perfectly normal window. Turning
+     * "restore last session" off made it stop, which only makes sense if the
+     * bundle being restored was bad: saveState() had captured the WebView
+     * while the window was briefly short, and every relaunch faithfully
+     * restored that same short-window layout rather than the real one.
+     *
+     * The window recovering afterwards on its own does not undo this - the
+     * damage is in the saved bundle, not the live window, and restoring it
+     * writes the bad state straight back over whatever had since recovered.
+     */
+    private fun isWindowStale(): Boolean {
+        val root = binding.root
+        val insets = ViewCompat.getRootWindowInsets(root) ?: return false
+        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return false
+
+        val windowH = root.height
+        if (windowH <= 0) return false
+
+        val screenH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager.maximumWindowMetrics.bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            resources.displayMetrics.heightPixels
+        }
+
+        val short = screenH - windowH
+        return short > 24 && short < screenH / 2
+    }
+
+    /**
+     * Mirror the WebView's state to disk so it survives the process being
+     * killed, not just the activity being recreated.
+     */
+    private fun persistSession() {
+        if (!prefs.saveSession) {
+            SessionState.clear(this)
+            return
+        }
+        // Never write a state we would refuse to restore. Saving an error
+        // page here is what created the loop: the bad page went to disk on
+        // pause and came back on every launch afterwards.
+        if (!SessionState.isUsable(binding.webView.url)) {
+            SessionState.clear(this)
+            return
+        }
+        // Never write a state captured while the window was briefly short
+        // either, for the same reason - it would faithfully restore a
+        // layout that was already wrong, on every launch, on an otherwise
+        // healthy window. Skipping the write here just means the next
+        // launch does a normal load instead of a broken restore; the
+        // existing on-disk copy (if any) is left alone rather than
+        // overwritten with a worse one.
+        if (isWindowStale()) return
+        val b = Bundle()
+        if (binding.webView.saveState(b) != null) {
+            SessionState.save(this, b)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        prefs.diagLog.write("lifecycle", "onResume")
+        DiagCapture.write(this, Diag.Channel.APP_LIFECYCLE,
+            message = "onResume")
+        // Refresh the diagnostic mode on every resume. The
+        // network may have come back while we were
+        // backgrounded, and an online-to-offline toggle on
+        // the home feed ought to be reflected in the next
+        // entry without the developer having to do
+        // anything.
+        DiagCapture.setMode(if (NetworkPolicy.isConnected(this)) Diag.Mode.ONLINE else Diag.Mode.OFFLINE)
+        stopBgAudioService()
+        // Back in front: let the framework manage visibility normally again,
+        // so a WebView the user has finished with is still suspended.
+        binding.webView.keepMediaAlive = false
+        binding.webView.onResume()
+        binding.webView.resumeTimers()
+        // Leaving with the keyboard up and coming back is the other way to
+        // find the window still shrunken, so check here too. Posted, because
+        // a height cannot be read until this pass has laid out. Costs two
+        // reads and does nothing when the size is already right.
+        binding.root.post { if (!isFinishing && !isDestroyed) recoverWindowSizeIfStale() }
+        resumed = this
+        applyBlockerFlags()
+        applyRuntimeOptions()
+        applyOfflineFlags()
+        // Settings may have changed while we were away.
+        // V4: Trigger proactive offline preparation on every resume
+        // (lightweight if already running).
+        binding.root.postDelayed({
+            if (!isFinishing && !isDestroyed) {
+                maybeSyncOffline(force = false)
+            }
+        }, 4500)
+
+        // Downloading also has to be able to begin here, not only from
+        // onPageFinished. After a fresh install the first page load is the
+        // login screen, and once the credentials are accepted Facebook swaps
+        // its shell in client-side — often with no further onPageFinished for
+        // the feed. The one call site therefore never fired, and nothing was
+        // ever saved until some later navigation happened to trigger it.
+        // start() is a no-op when it is already running, not logged in, or
+        // offline saving is switched off, so calling it on every resume is
+        // safe and costs a few field reads.
+        binding.root.postDelayed({
+            if (!isFinishing && !isDestroyed && isOnline) {
+                BackgroundSyncManager.start()
+                SyncService.startIfNeeded(applicationContext)
+            }
+        }, 6000)
+
+        if (MainViewModel.pendingUpdateCheck) {
+            MainViewModel.pendingUpdateCheck = false
+            UpdateWatcher.checkNow(force = true)
+        }
+
+        // Ask about supporting the project, once the app has actually been
+        // useful. Deliberately late and deliberately rare: it waits for the
+        // feed to settle so it never lands on top of a page still loading,
+        // and it stands aside entirely if an update prompt is due, since two
+        // dialogs at once is nobody's idea of a native feel.
+        if (!supportAsked) {
+            supportAsked = true
+            // Long enough for the feed to have painted, short enough that it
+            // still reads as "on opening the app". Nine seconds was too late:
+            // by then the user is already scrolling and a dialog is an
+            // interruption rather than a greeting.
+            binding.root.postDelayed({
+                if (!isFinishing && !isDestroyed &&
+                    UpdateWatcher.pending == null && customView == null
+                ) {
+                    SupportPrompt.maybeShow(this)
+                }
+            }, 3500)
+        }
+
+        if (viewModel.settingsDirty) {
+            viewModel.settingsDirty = false
+            applyWebSettings()
+            registerEarlyScript()
+            if (viewModel.needsReload) {
+                viewModel.needsReload = false
+                binding.webView.reload()
+            } else {
+                // Apply cosmetic changes live, without losing scroll position.
+                injectAll(binding.webView)
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        prefs.diagLog.write("lifecycle", "onPause isFinishing=$isFinishing")
+        DiagCapture.write(this, Diag.Channel.APP_LIFECYCLE,
+            message = "onPause isFinishing=$isFinishing")
+        if (resumed == this) resumed = null
+
+        saveOfflinePosition()
+
+        // Whether audio should continue cannot be decided from the URL.
+        // Facebook's lite renderer swaps the Reels screen in place without
+        // navigating, so the address stays on the home feed the whole time a
+        // reel is playing — the old "/reel" / "/watch" test simply never
+        // matched, and background audio did nothing for the one case it
+        // exists for. mediaPlaying is reported by the page itself, from the
+        // video element's own play/pause events, so it is true whenever
+        // something is actually making sound regardless of the URL.
+        val keepAudioAlive = prefs.backgroundAudio && mediaPlaying
+
+        // The service alone was never enough. Android suspends the media
+        // pipeline itself when the window is hidden, one layer below anything
+        // onPause can do — which is why a notification appeared and the audio
+        // stopped anyway. MediaWebView swallows that notification, but only
+        // while this flag is set.
+        binding.webView.keepMediaAlive = keepAudioAlive
+
+        if (keepAudioAlive) {
+            // The service is still needed: it tells Android this is active
+            // media playback, so the process is not frozen and Chromium does
+            // not throttle its timers.
+            startBgAudioService()
+        } else {
+            // onPause() is per-WebView and is what we want here.
+            //
+            // pauseTimers() is not: Android documents it as "a global request,
+            // not restricted to just this WebView", so it also froze the
+            // offscreen WebView that OfflineSync runs. Leaving the app
+            // therefore stopped the download every time — the service stayed
+            // up and the notification stayed on screen, because the service
+            // was never the thing that had stalled.
+            //
+            // It is only called when nothing is downloading, so an idle app
+            // still gives back the same CPU it did before.
+            binding.webView.onPause()
+            if (!BackgroundSyncManager.isRunning) {
+                binding.webView.pauseTimers()
+            }
+        }
+
+        CookieManager.getInstance().flush()
+        persistSession()
+        viewModel.blockedCount.value?.let { if (it > 0) prefs.blockCount = it }
+    }
+
+    /**
+     * Facebook's shell is expensive to rebuild. Keeping the process warm makes
+     * the next launch paint from memory instead of re-running the whole
+     * bootstrap, which is the difference between an app and a browser tab.
+     */
+    override fun onDestroy() {
+        prefs.diagLog.write("lifecycle", "onDestroy isFinishing=$isFinishing")
+        DiagCapture.write(this, Diag.Channel.APP_LIFECYCLE,
+            message = "onDestroy isFinishing=$isFinishing")
+        connectivityCallback?.let {
+            try {
+                (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
+                    .unregisterNetworkCallback(it)
+            } catch (e: Exception) {}
+        }
+        connectivityCallback = null
+        AppExecutors.diskIO.execute { OfflineCache.trimIfNeeded() }
+        try { earlyScriptHandle?.remove() } catch (e: Exception) {}
+        earlyScriptHandle = null
+        CookieManager.getInstance().flush()
+        binding.webView.apply {
+            stopLoading()
+            webChromeClient = null
+            (parent as? android.view.ViewGroup)?.removeView(this)
+            removeAllViews()
+            destroy()
+        }
+        super.onDestroy()
+    }
+
+    // ---------------------------------------------------------------- gestures
+
+    /**
+     * Three finger double tap anywhere -> hidden settings.
+     * Purely observational, never consumes the event, so normal scrolling and
+     * tapping are completely unaffected.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        gestureDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun openHiddenSettings() {
+        if (prefs.haptics) {
+            binding.root.performHapticFeedback(
+                android.view.HapticFeedbackConstants.LONG_PRESS
+            )
+        }
+        startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    // ---------------------------------------------------------------- setup
+
+    /** True while system bar visibility is being changed, so insets updates
+     *  during the transition are ignored — they would otherwise momentarily
+     *  resize the WebView and visually bounce content under the player. */
+    /** True while any layout-affecting transition is in progress:
+     *  fullscreen enter/exit, page load, or navigation. */
+    private var suppressInsets = false
+
+    private var inFullscreenTransition = false
+
+    /**
+     * Page loads and fullscreen transitions both want to hold insets still,
+     * and they used to share one boolean. Whichever finished first cleared it
+     * for the other, which is how the layout ended up shifting at random:
+     *
+     *  - tap a reel while the feed is still loading. onShowCustomView sets the
+     *    flag and hides the system bars; onPageFinished then clears it a
+     *    moment later, still fullscreen, and the next inset pass writes the
+     *    immersive insets (top = 0) into the root. On leaving fullscreen the
+     *    bars come back but the padding stays at zero, so everything sits up
+     *    under the status bar.
+     *
+     * Counting instead of flagging: the suppression only lifts when every
+     * holder has released it.
+     */
+    private var insetHolds = 0
+
+    private fun holdInsets() {
+        insetHolds++
+        suppressInsets = true
+    }
+
+    private fun releaseInsets() {
+        if (insetHolds > 0) insetHolds--
+        if (insetHolds == 0) suppressInsets = false
+    }
+
+    /**
+     * Clears the fullscreen transition after the animation settles.
+     *
+     * Kept as a field so it can be cancelled. There was no removeCallbacks
+     * anywhere, so a quick exit-then-enter left the exit's callback pending;
+     * it fired half a second into the new fullscreen, cleared the flags and
+     * pushed an inset pass under the fullscreen container - the very re-layout
+     * that makes the player re-attach and the clip jump.
+     */
+    private var fullscreenSettle: Runnable? = null
+
+    /** True while the current page load owns one inset hold. */
+    private var pageLoadHoldsInsets = false
+
+    private fun setupEdgeToEdge() {
+        // Pad contentRoot - the feed - and not the root FrameLayout.
+        //
+        // This is the whole bug, and every earlier attempt was working around
+        // it rather than removing it. root holds two children: contentRoot
+        // (the feed) and customViewContainer (the fullscreen video). Padding
+        // on root therefore applies to the video as well, so it *had* to drop
+        // to zero for fullscreen and be restored on the way out. That restore
+        // is a moving part, and any missed pass leaves the feed padded with
+        // zero, sitting up under the status bar with an unpainted strip at the
+        // bottom. Scrolling appeared to fix it only because a scroll forces a
+        // fresh layout.
+        //
+        // customViewContainer is a sibling, so padding here never touches the
+        // video: fullscreen is genuinely fullscreen and the feed's padding
+        // never has to change. Nothing to restore means nothing to get wrong.
+        //
+        // The earlier comment here warned that contentRoot's visibility
+        // toggles during fullscreen and that each toggle triggered a pass.
+        // That is true, and it is why the container is now hidden with
+        // INVISIBLE rather than GONE - see onShowCustomView. INVISIBLE keeps
+        // the feed measured, so it comes back at the size it left at.
+        var imeWasVisible = false
+        ViewCompat.setOnApplyWindowInsetsListener(binding.contentRoot) { view, windowInsets ->
+            // getInsetsIgnoringVisibility, not getInsets.
+            //
+            // getInsets reports zero the moment the bars are hidden, so a pass
+            // taken during immersive playback - or during either animation -
+            // says "no status bar". Asking for the space the bars occupy when
+            // shown gives the same answer throughout, so a pass arriving at an
+            // awkward moment cannot record the wrong thing.
+            //
+            // The keyboard genuinely does come and go, so the IME is still
+            // read normally.
+            val bars = windowInsets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars()
+            )
+            val imeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime())
+            val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+            view.updatePadding(
+                top = bars.top,
+                bottom = maxOf(bars.bottom, ime.bottom)
+            )
+
+            // The keyboard closing on its own way into Reels or Stories is
+            // another moment the window is left short with nothing to say
+            // so - the lite renderer swaps the comment box for those screens
+            // in place, no navigation and no fullscreen transition, so
+            // neither of recoverWindowSizeIfStale()'s two existing call
+            // sites ever runs.
+            //
+            // This pass fires the moment the close *starts*, not once it has
+            // finished - the window has not actually resized back yet, so
+            // checking here immediately would measure the still-short window
+            // and find nothing wrong. The same gap exists on the fullscreen
+            // exit path, which is why that one already waits before its
+            // second check. Same wait here, for the same reason.
+            if (imeWasVisible && !imeVisible) {
+                binding.root.postDelayed({
+                    if (!isFinishing && !isDestroyed) recoverWindowSizeIfStale()
+                }, 650)
+            }
+            imeWasVisible = imeVisible
+
+            windowInsets
+        }
+
+        // The offline / error screen is a sibling of contentRoot, not a child,
+        // so it needs the same treatment or its message and buttons would sit
+        // under the status bar.
+        //
+        // It carries 32dp of its own padding from the layout, which is what
+        // keeps the text off the screen edges. Add the bars to that rather
+        // than replacing it, and read the base once so repeated passes cannot
+        // accumulate.
+        val errorBasePadding = binding.errorView.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(binding.errorView) { view, windowInsets ->
+            val bars = windowInsets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars()
+            )
+            view.updatePadding(
+                top = errorBasePadding + bars.top,
+                bottom = errorBasePadding + bars.bottom
+            )
+            windowInsets
+        }
+        updateSystemBarIcons()
+    }
+
+    private fun updateSystemBarIcons() {
+        val isNight = (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        WindowInsetsControllerCompat(window, binding.root).apply {
+            isAppearanceLightStatusBars = !isNight
+            isAppearanceLightNavigationBars = !isNight
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun setupWebView() {
+        binding.webView.apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addJavascriptInterface(JsBridge(), "FBPro")
+            webViewClient = createWebViewClient()
+            webChromeClient = createWebChromeClient()
+        }
+        applyWebSettings()
+        registerEarlyScript()
+
+        // V4 Step 3: Apply video playback optimizations
+        VideoHelper.applyVideoOptimizations(binding.webView)
+
+        // Facebook picks a different renderer per user agent, so a stored page
+        // must be fetched with the same one the WebView uses. Read it after
+        // applyWebSettings, not before, or it is the stock UA and the pages we
+        // store are ones the WebView would never have been served.
+        OfflineDocs.userAgent = binding.webView.settings.userAgentString
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(binding.webView, true)
+        }
+    }
+
+    /**
+     * Register the GraphQL ad-stripper to run at document start, before any of
+     * Facebook's own scripts. This is what lets us delete sponsored posts from
+     * the API response instead of hiding them after they render.
+     */
+    private fun registerEarlyScript() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        try {
+            earlyScriptHandle?.remove()
+            earlyScriptHandle = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
+                binding.webView,
+                AdBlocker.getEarlyScript(prefs.adBlock, prefs.blockAppPromo) + "\n" +
+                    (if (prefs.adBlock && prefs.cosmeticFilter) MFacebookAds.script() else ""),
+                setOf("https://*.facebook.com", "https://*.messenger.com")
+            )
+        } catch (e: Exception) {
+            earlyScriptHandle = null
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun applyWebSettings() {
+        binding.webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+
+            // Zoom is user configurable now (accessibility).
+            val zoom = prefs.allowZoom
+            setSupportZoom(zoom)
+            builtInZoomControls = zoom
+            displayZoomControls = false
+
+            // Popups are handled by onCreateWindow, never silently dropped.
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = !prefs.blockPopups
+
+            // Prefer the HTTP cache so a relaunch paints from disk instead of
+            // refetching everything, which is what made the app feel like a
+            // browser rather than an installed app.
+            cacheMode = if (isOnline) {
+                WebSettings.LOAD_DEFAULT
+            } else {
+                WebSettings.LOAD_CACHE_ELSE_NETWORK
+            }
+            // Keep the rendering pipeline warm.
+            setRenderPriority(WebSettings.RenderPriority.HIGH)
+            domStorageEnabled = true
+            databaseEnabled = true
+            loadsImagesAutomatically = true
+            blockNetworkImage = false
+            // Do not wait for the full layout before painting text.
+            layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
+            allowFileAccess = false          // security: was true
+            allowContentAccess = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            mediaPlaybackRequiresUserGesture = !prefs.autoplayVideo
+            safeBrowsingEnabled = true
+
+            userAgentString = buildUserAgent(userAgentString)
+
+            // Native-feel tuning
+            setGeolocationEnabled(true)
+            defaultTextEncodingName = "utf-8"
+        }
+
+        // Follow the app theme inside the page so Facebook renders dark mode
+        // natively instead of flashing a white background.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            try {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(
+                    binding.webView.settings, true
+                )
+            } catch (e: Exception) { /* not fatal */ }
+        }
+    }
+
+    /**
+     * Present as an ordinary Android Chrome browser.
+     *
+     * We strip only the "wv" token, which marks the client as an embedded
+     * WebView. Nothing is invented: the Chrome version, Android version and
+     * device string all stay as they really are. Spoofing the official
+     * Facebook app's user agent was considered and rejected - a WebView
+     * cannot back up that claim, and the mismatch is exactly what triggers
+     * checkpoints. A normal mobile browser is a genuine, supported way to
+     * use Facebook.
+     */
+    private fun buildUserAgent(current: String): String {
+        val clean = current
+            .replace("; wv", "")
+            .replace(" wv", "")
+            .replace(Regex("\\bwv\\b"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return if (prefs.desktopMode) {
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/122.0.0.0 Safari/537.36"
+        } else {
+            clean
+        }
+    }
+
+    /**
+     * Reading is always on; only saving follows the user's switches.
+     *
+     * These used to be one flag, so turning saving off also hid content that
+     * was already downloaded. It was never deleted -- turning the switches
+     * back on made it reappear -- so the app was simply refusing to show
+     * something it still had.
+     */
+    /**
+     * Re-apply window insets once a page has finished loading.
+     *
+     * Insets are suppressed from onPageStarted, so any change that arrives
+     * during the load is dropped and root padding is left stale — content
+     * then sits high, with the header and action row clipped. The fullscreen
+     * handlers already ask for a fresh dispatch when they stop suppressing;
+     * this is the same thing for an ordinary navigation.
+     */
+    /**
+     * Start a fullscreen enter or exit.
+     *
+     * Cancels any settle still pending from the previous transition. Tapping
+     * through reels produces exit/enter pairs far closer together than the
+     * settle delay, and the old callback used to fire in the middle of the
+     * next fullscreen and re-lay out the root underneath the player.
+     */
+    private fun beginFullscreenTransition() {
+        fullscreenSettle?.let { binding.root.removeCallbacks(it) }
+        fullscreenSettle = null
+        if (!inFullscreenTransition) {
+            inFullscreenTransition = true
+            holdInsets()
+        }
+    }
+
+    /** Release the transition once the animation and bar change have settled. */
+    private fun endFullscreenTransition() {
+        fullscreenSettle?.let { binding.root.removeCallbacks(it) }
+        val r = Runnable {
+            fullscreenSettle = null
+            if (inFullscreenTransition) {
+                inFullscreenTransition = false
+                releaseInsets()
+            }
+            // Requested on root, which dispatches down to the listeners on
+            // contentRoot and errorView.
+            //
+            // With the padding moved off root and measured ignoring bar
+            // visibility, a badly-timed pass can no longer record the wrong
+            // thing - this guard and the suppression counter are now belt and
+            // braces rather than the thing holding the layout together.
+            if (!suppressInsets && customView == null) {
+                ViewCompat.requestApplyInsets(binding.root)
+            }
+        }
+        fullscreenSettle = r
+        binding.root.postDelayed(r, 500)
+    }
+
+    private fun refreshInsetsAfterLoad() {
+        // Not while a video is fullscreen. An inset pass re-lays out the root,
+        // and doing that under the fullscreen container made the player
+        // re-attach — the clip jumped back to the start. The fullscreen
+        // handlers already request their own pass when they finish, which is
+        // the right moment for it.
+        if (customView != null || inFullscreenTransition) return
+        ViewCompat.requestApplyInsets(binding.root)
+    }
+
+    private fun applyOfflineFlags() {
+        val read = prefs.offlineRead
+        val write = prefs.offlineMode
+        OfflineCache.enabled = read
+        OfflineFeed.enabled = read
+        OfflineDocs.enabled = read
+        OfflineCache.writeEnabled = write
+        OfflineFeed.writeEnabled = write
+        OfflineDocs.writeEnabled = write
+    }
+
+    private fun applyBlockerFlags() {
+        AdBlocker.enabled = prefs.adBlock
+        AdBlocker.cosmeticEnabled = prefs.cosmeticFilter
+    }
+
+    /**
+     * The real Facebook app shows no navigation chrome until you are signed
+     * in, so the login screen must be the bare page. Chrome is therefore
+     * hidden whenever an auth page is showing, regardless of the setting.
+     */
+    /**
+     * Decide whether we are on a logged-out screen.
+     *
+     * Three signals, because no single one is enough:
+     *  - the URL (explicit /login, /reg, /checkpoint pages)
+     *  - the session cookie (c_user only exists when signed in)
+     *  - the DOM (Facebook serves the login form at / itself, so a password
+     *    field on screen is the decisive marker)
+     */
+    private fun evaluateAuthState(url: String?) {
+        val byUrl = UrlHelper.isAuthPage(url)
+        val signedIn = UrlHelper.isLoggedIn()
+
+        // The session cookie is authoritative, and that has to include the
+        // URL test. Facebook posts the sign-in form to
+        // /login/device-based/regular/login/ and redirects through
+        // /login/?next=..., whose first path segment is "login", so
+        // isAuthPage() returns true for the very page that is handing us the
+        // session. Checking byUrl first therefore re-latched onAuthPage to
+        // true immediately after a successful login: the native screen came
+        // back with the fields already cleared and the user had to type the
+        // credentials and press Log in a second time.
+        //
+        // c_user only exists once Facebook has accepted the credentials, so
+        // when it is present the URL cannot mean "not signed in" - it only
+        // means the redirect is still in flight.
+        val auth = when {
+            signedIn -> false
+            byUrl -> true
+            else -> domSaysLoggedOut || !signedIn
+        }
+
+        if (auth != onAuthPage) {
+            val wasAuth = onAuthPage
+            onAuthPage = auth
+            updateChromeVisibility()
+
+            // Just signed in: leave the login screen behind for good and make
+            // sure we land on the feed rather than a leftover login URL.
+            if (wasAuth && !auth) {
+                // Always load homepage on auth→non-auth transition.
+                // If Facebook's redirect lands the WebView on an
+                // intermediate page (e.g. /login/?next=), that page
+                // can still have "Get the app" banners. Loading the
+                // homepage ensures the first visible frame is clean.
+                binding.webView.loadUrl(prefs.homepage)
+
+                // Just signed in, so there is a session for the first time.
+                // This is the earliest honest moment to start filling the
+                // offline store, and on a fresh install it is the only one
+                // that reliably arrives.
+                binding.root.postDelayed({
+                    if (!isFinishing && !isDestroyed && isOnline) {
+                        BackgroundSyncManager.start()
+                        SyncService.startIfNeeded(applicationContext)
+                    }
+                }, 8000)
+            }
+        }
+    }
+
+    /** Re-run the auth probe a few times after a load or a navigation. */
+    private fun scheduleAuthProbes(view: WebView?) {
+        val target = view ?: binding.webView
+        target.evaluateJavascript(AdBlocker.getAuthProbeScript(), null)
+        for (delay in longArrayOf(400, 1200, 2500, 4000)) {
+            target.postDelayed({
+                if (!isFinishing && !isDestroyed) {
+                    target.evaluateJavascript(AdBlocker.getAuthProbeScript(), null)
+                }
+            }, delay)
+        }
+    }
+
+    /**
+     * The WebView is the only surface. Facebook renders its own login form,
+     * its own header and its own tabs, and the app draws none of them.
+     *
+     * There used to be a native login screen stacked on top of this, mirroring
+     * Facebook's layout, with the real page loading hidden behind it. Keeping
+     * two sign-in surfaces in agreement needed a timer, and when the timer was
+     * wrong the native screen was pulled away to reveal Facebook's own form
+     * underneath -- which is what made people log in twice. One surface cannot
+     * disagree with itself.
+     */
+    private fun updateChromeVisibility() {
+        binding.swipeRefresh.visibility = View.VISIBLE
+    }
+
+    private fun applyRuntimeOptions() {
+        updateChromeVisibility()
+        binding.swipeRefresh.isEnabled = prefs.pullToRefresh
+        if (prefs.keepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        if (!prefs.showProgress) binding.progressBar.visibility = View.GONE
+    }
+
+    private fun setupSwipeRefresh() {
+        binding.swipeRefresh.apply {
+            setColorSchemeResources(R.color.primary, R.color.secondary)
+            setOnRefreshListener { softRefresh() }
+
+            // V4 Step 4: More robust scroll detection
+            setOnChildScrollUpCallback { _, _ ->
+                binding.webView.canScrollVertically(-1) ||
+                    binding.webView.scrollY > 0 ||
+                    !pageAtTop
+            }
+        }
+    }
+
+    /**
+     * Refresh the content without reloading the document.
+     *
+     * A real reload makes Facebook re-run its bootstrap, which paints its own
+     * blue splash screen - the app looks like a browser tab every time the
+     * user pulls down. Asking the page to refresh itself keeps the shell on
+     * screen, which is what the native app does. If the page cannot do it we
+     * fall back to a reload, so pull-to-refresh always works.
+     */
+    private fun softRefresh() {
+        // Offline: a live refresh is impossible. Rebuild the stored page so
+        // the latest saved cards appear, then dismiss the spinner instantly.
+        if (!isOnline) {
+            OfflineDocs.invalidate()
+            binding.swipeRefresh.isRefreshing = false
+            if (!hasAnythingOffline()) return
+            // navigableScreens, not savedScreens: a screen held only as cards
+            // has no stored document, so it fell through to reload() — which
+            // re-served the very page we had just invalidated, and the screen
+            // never changed.
+            val saved = OfflineDocs.navigableScreens()
+            val cur = OfflineDocs.screenFor(binding.webView.url ?: "")
+            if (cur != null && saved.contains(cur)) {
+                binding.webView.loadUrl(OfflineDocs.urlFor(cur)
+                    ?: binding.webView.url ?: "https://www.facebook.com")
+            } else {
+                binding.webView.reload()
+            }
+            return
+        }
+
+        softRefreshPending = true
+        binding.webView.evaluateJavascript(SoftRefresh.script(), null)
+        binding.webView.postDelayed({
+            if (softRefreshPending) {
+                softRefreshPending = false
+                binding.swipeRefresh.isRefreshing = false
+                binding.webView.reload()
+            }
+        }, 2500)
+    }
+
+    private fun setupErrorView() {
+        binding.errorRetry.setOnClickListener {
+            // A deliberate retry earns a fresh set of automatic attempts.
+            mainFrameRetries = 0
+            binding.errorView.visibility = View.GONE
+            binding.webView.visibility = View.VISIBLE
+            binding.webView.reload()
+        }
+
+        // Browse the cached copy of the last page without a connection.
+        // Show what we actually saved.
+        //
+        // This used to reload the last Facebook URL from the HTTP cache and
+        // hope for the best, which is why the button appeared to do nothing:
+        // with no connection the document request simply failed again. Now we
+        // render our own page from the stored items.
+        binding.errorOffline.setOnClickListener { showSavedContent() }
+    }
+
+    /**
+     * Open the offline screen built from the items we hold. Prefers whichever
+     * section the user was on; falls back to whichever has content.
+     */
+    /** True when there is any offline content at all - a page, or cards. */
+    /**
+     * True when there is a stored Facebook page to show.
+     *
+     * Cards on their own no longer count: without a stored document there is
+     * no Facebook chrome to put them in, and the alternative - drawing a page
+     * of our own around them - is what made offline look different from
+     * online. Better to show nothing than something we invented.
+     */
+    private fun hasAnythingOffline(): Boolean =
+        OfflineDocs.savedScreens().isNotEmpty() ||
+        OfflineFeed.hasAnything()
+
+    private fun showSavedContent() {
+        // navigableScreens, not savedScreens: a screen held only as cards is
+        // still reachable, because shellFor() builds a page from them.
+        val saved = OfflineDocs.navigableScreens()
+        val last = OfflineDocs.screenFor(prefs.lastUrl)
+
+        val target = when {
+            last != null && saved.contains(last) -> prefs.lastUrl
+            saved.contains("home") -> "https://m.facebook.com/"
+            saved.contains("reels") -> "https://m.facebook.com/reel/"
+            saved.contains("stories") -> "https://m.facebook.com/stories/"
+            saved.isNotEmpty() -> OfflineDocs.urlFor(saved.first())
+            // No stored Facebook document, but we have cards. Load the
+            // home URL anyway — shellFor() will serve them.
+            OfflineFeed.hasAnything() -> prefs.homepage
+            else -> null
+        }
+
+        if (target == null) {
+            toast(getString(R.string.offline_nothing_saved))
+            return
+        }
+
+        binding.errorView.visibility = View.GONE
+        binding.webView.visibility = View.VISIBLE
+        // A toast, not a permanent bar. The bar sat across the bottom of
+        // every screen and covered the video while it played.
+        toast(getString(R.string.offline_banner))
+        binding.webView.loadUrl(target)
+    }
+
+    /**
+     * Fill the offline store by itself.
+     *
+     * The user should not have to scroll through content, or press a button,
+     * for "keep this offline" to mean anything - so this runs on its own once
+     * the visible page has settled, for whichever sections are enabled.
+     */
+    /** 
+     * Collecting is owned by BackgroundSyncManager.
+     * Legacy path kept for compatibility (e.g. network restored callbacks).
+     * The main automatic fresh content preparation now happens on launch.
+     */
+    private fun maybeSyncOffline(force: Boolean = false) {
+        if (!prefs.offlineMode || !isOnline) return
+        if (!NetworkPolicy.canDownload(applicationContext, prefs)) return
+
+        // BackgroundSyncManager owns collecting; OfflineManager is not
+        // started here any more.
+        //
+        // Both build their own offscreen WebView, and a WebView must live on
+        // the main thread — the same thread that draws the feed. Running two
+        // of them alongside the visible page meant three WebViews competing
+        // for one thread: the feed scrolled in steps, and right after signing
+        // in the screen sat dimmed and ignored taps while they all loaded.
+        //
+        // start() is idempotent and already triggered from onResume, from
+        // onPageFinished and from the sign-in transition, so nothing is lost
+        // by not starting a second engine here.
+        if (!BackgroundSyncManager.isRunning) {
+            BackgroundSyncManager.start()
+            SyncService.startIfNeeded(applicationContext)
+        }
+
+        // Still refresh the current visible page's documents lightly
+        AppExecutors.background.execute {
+            try {
+                OfflineDocs.refresh(force = force)
+
+                val screens = OfflineDocs.savedScreens()
+                val media = screens.flatMap { OfflineDocs.mediaUrls(it) }.distinct()
+                OfflineFeed.prefetchUrls(media, includeVideo = prefs.offlineVideo)
+
+                // A second pass, once the stylesheets are on disk.
+                //
+                // The icon font's URL lives inside the CSS, so it can only be
+                // discovered by reading a stylesheet we have already stored.
+                // On the first pass those files were still downloading, which
+                // is why the font was never found and every icon rendered as
+                // a tofu box. Sweeping again afterwards picks it up.
+                OfflineFeed.awaitPrefetch(45_000)
+                val second = screens.flatMap { OfflineDocs.mediaUrls(it) }
+                    .distinct()
+                    .filterNot { OfflineCache.has(it) }
+                if (second.isNotEmpty()) {
+                    OfflineFeed.prefetchUrls(second, includeVideo = prefs.offlineVideo)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun setupBackHandling() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when {
+                    customView != null ->
+                        (binding.webView.webChromeClient)?.onHideCustomView()
+
+                    binding.webView.canGoBack() -> {
+                        binding.webView.goBack()
+                        if (prefs.haptics) {
+                            binding.root.performHapticFeedback(
+                                android.view.HapticFeedbackConstants.VIRTUAL_KEY
+                            )
+                        }
+                    }
+
+                    else -> {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+            }
+        })
+    }
+
+    private fun observeViewModel() {
+        viewModel.progress.observe(this) { p ->
+            if (!prefs.showProgress) {
+                binding.progressBar.visibility = View.GONE
+                return@observe
+            }
+            binding.progressBar.progress = p
+            binding.progressBar.visibility = if (p in 1..99) View.VISIBLE else View.GONE
+        }
+    }
+
+    // ---------------------------------------------------------------- start url
+
+    private fun resolveStartUrl(intent: Intent?): String {
+        urlFromIntent(intent)?.let { return it }
+        if (prefs.saveSession) {
+            val last = prefs.lastUrl
+            if (!last.isNullOrBlank() && UrlHelper.isInternal(last)) return last
+        }
+        return prefs.homepage
+    }
+
+    private fun urlFromIntent(intent: Intent?): String? {
+        intent ?: return null
+        // Deep link: fixes the old bug where intent.data was never read.
+        if (intent.action == Intent.ACTION_VIEW) {
+            val data = intent.dataString
+            if (!data.isNullOrBlank() && UrlHelper.isInternal(data)) return data
+        }
+        if (intent.action == Intent.ACTION_SEND) {
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (!text.isNullOrBlank()) {
+                return "https://www.facebook.com/sharer/sharer.php?u=${Uri.encode(text)}"
+            }
+        }
+        return null
+    }
+
+    // ---------------------------------------------------------------- clients
+
+    private fun createWebViewClient(): android.webkit.WebViewClient {
+        return object : android.webkit.WebViewClient() {
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                prefs.diagLog.write("webview", "onPageStarted url=${url?.take(120)}")
+                // Counted, so finishing this load cannot lift a hold that a
+                // fullscreen transition is still relying on.
+                if (!pageLoadHoldsInsets) { pageLoadHoldsInsets = true; holdInsets() }
+                binding.errorView.visibility = View.GONE
+                binding.webView.visibility = View.VISIBLE
+
+                // Decide chrome visibility before the page paints, so the
+                // login screen never flashes a top bar.
+                evaluateAuthState(url)
+
+                // Inject the CSS blocks as early as possible.
+                view?.evaluateJavascript(
+                    AdBlocker.getStyleScript(
+                        prefs.blockAppPromo,
+                        prefs.adBlock,
+                        hideSiteLoadingBar = !prefs.showProgress
+                    ),
+                    null
+                )
+                // Fallback for devices without DOCUMENT_START_SCRIPT support.
+                if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                    view?.evaluateJavascript(
+                        AdBlocker.getEarlyScript(prefs.adBlock, prefs.blockAppPromo), null
+                    )
+                }
+                // Start the m.facebook ad remover as early as possible so a
+                // sponsored video never gets to autoplay.
+                if (prefs.adBlock && prefs.cosmeticFilter) {
+                    view?.evaluateJavascript(CosmeticFilters.styleScript(), null)
+                    view?.evaluateJavascript(MFacebookAds.script(), null)
+                }
+                // The long-press inspector also powers "Log reel video URLs":
+                // a long-press then flushes the captured video CDN URLs to the
+                // clipboard, so it must be present whenever that switch is on,
+                // not only when full ad inspection is.
+                if (prefs.inspectAds || prefs.logVideoUrls) {
+                    view?.evaluateJavascript(AdInspector.script(), null)
+                }
+            }
+
+            // A fast connection can render before Android's own layout pass
+            // has settled, leaving the page's first height read taken
+            // mid-transition - this is why the feed-jump bug was Wi-Fi-only
+            // and a VPN or mobile data made it go away, both adding the
+            // latency a fast Wi-Fi load has none of. onPageFinished below
+            // reuses the same settle already used on the fullscreen-exit path.
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                prefs.diagLog.write("webview", "onPageFinished url=${url?.take(120)}")
+                if (pageLoadHoldsInsets) { pageLoadHoldsInsets = false; releaseInsets() }
+                binding.swipeRefresh.isRefreshing = false
+                mainFrameRetries = 0
+                refreshInsetsAfterLoad()
+                settleRelayout(view)
+                if (prefs.saveSession && UrlHelper.isInternal(url)) prefs.lastUrl = url
+                injectAll(view)
+                view?.postDelayed({ warmOfflineCache(url) }, 2500)
+
+                // Offline preparation starts here, and only here: the Home
+                // page has finished loading, so the user is looking at real
+                // content and nothing is competing for the first paint.
+                // Silent, background, never blocks scrolling.
+                if (!onAuthPage && UrlHelper.isInternal(url)) {
+                    view?.postDelayed({ maybeSyncOffline() }, 8_000)
+                    BackgroundSyncManager.start()
+                    SyncService.startIfNeeded(applicationContext)
+                }
+                // Re-probe several times: after a login submit Facebook swaps
+                // the shell client-side, so the password field disappears
+                // without another page load. A single probe would leave the
+                // logged-out state latched.
+                scheduleAuthProbes(view)
+            }
+
+            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                prefs.diagLog.write("webview", "doUpdateVisitedHistory isReload=$isReload url=${url?.take(120)}")
+                // SPA navigation - re-run the blocker.
+                injectAll(view)
+                scheduleAuthProbes(view)
+                // Bug-report-v3's dead strip, Wi-Fi reels/stories: those
+                // screens swap INLINE, so none of the recovery's existing
+                // moments (resume, IME, load, fullscreen) ever arrives
+                // while the user is swiping - and this callback is the
+                // app's own proof that an in-place swap announces itself
+                // here (it has re-run the blocker on SPA swaps all
+                // along). v5.2.21 gated the reflow behind a measured
+                // short window; the device answered with the same strip
+                // on v5.2.21 - so the strip is page-side staleness, not
+                // a short window, and the right dose is the page-side
+                // half of the pair, exactly what leaving fullscreen
+                // uses, gated to this family only. The settle loop is
+                // self-terminating (two agreeing frames or ~40 max,
+                // 1.2s anti-stacking guard) and only ever dispatches a
+                // resize while the measured height is still moving -
+                // the tracer's healing read, on purpose. The window
+                // check stays first: it no-ops on a healthy window, and
+                // on the home feed this whole branch is never taken.
+                if (isReelOrStoryUrl(url)) {
+                    recoverWindowSizeIfStale()
+                    forcePageRelayout(view)
+                }
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                super.onReceivedError(view, request, error)
+                prefs.diagLog.write("webview",
+                    "onReceivedError code=${error?.errorCode} mainFrame=${request?.isForMainFrame} " +
+                    "url=${request?.url?.toString()?.take(120)}")
+                binding.swipeRefresh.isRefreshing = false
+                if (request?.isForMainFrame != true) return
+
+                // Offline: go straight to whatever is stored. Showing an
+                // error and asking the user to press "View saved content" is
+                // browser behaviour; the app just shows what it has.
+                //
+                // The home screen counts as available if there is either a
+                // stored document or saved cards to put in one - requiring a
+                // stored document alone meant a store full of reels still
+                // showed "Can't load the page".
+                // offlineRead, not offlineMode: the save switches decide what
+                // is collected from now on, not whether what is already on
+                // disk may be read.
+                if (prefs.offlineRead && !isOnline && hasAnythingOffline()) {
+                    showSavedContent()
+                    return
+                }
+
+                // A single failed request is not a dead connection. On mobile
+                // data the first load routinely fails while the radio is still
+                // coming up or DNS has not settled — ERROR_HOST_LOOKUP,
+                // ERROR_CONNECT, ERROR_TIMEOUT — and giving up immediately is
+                // why the app worked on Wi-Fi and showed "Can't load the page"
+                // on cellular. Wi-Fi is usually already associated and
+                // resolving by the time the activity starts, so the same code
+                // path never failed there.
+                //
+                // Retry the main frame a few times with a widening gap before
+                // admitting defeat. The user sees a blank frame for a moment
+                // instead of a dead end.
+                val code = error?.errorCode
+                    ?: android.webkit.WebViewClient.ERROR_UNKNOWN
+                if (isOnline && isTransientNetworkError(code) &&
+                    mainFrameRetries < MAX_MAIN_FRAME_RETRIES
+                ) {
+                    val attempt = ++mainFrameRetries
+                    val failed = request.url?.toString()
+                    binding.root.postDelayed({
+                        if (isFinishing || isDestroyed) return@postDelayed
+                        if (failed != null) binding.webView.loadUrl(failed)
+                        else binding.webView.reload()
+                    }, attempt * 1200L)
+                    return
+                }
+
+                showErrorPage()
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val url = request?.url?.toString() ?: return false
+                // Channel detection - the home feed, reels, and
+                // story routes all have a distinct URL
+                // signature. We log the navigation so a
+                // developer who has the channel switch on
+                // can see which screen the user is on at
+                // every load. Reels is checked first because
+                // a reel sometimes appears inside a story
+                // tray and a substring match would route it
+                // to the story channel instead.
+                val lc = url.lowercase(Locale.ROOT)
+                val channel = when {
+                    lc.contains("/reel") -> Diag.Channel.REELS
+                    lc.contains("/stories") -> Diag.Channel.STORY
+                    else -> Diag.Channel.HOME_FEED
+                }
+                DiagCapture.write(this@MainActivity, channel,
+                    message = "navigate url=" + url.take(120))
+                return handleUrl(url)
+            }
+
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                request ?: return null
+                // Throttled network log: write only the first request of each
+                // second, so a busy page produces ~1 entry/sec instead of
+                // hundreds. The "throttle" counter is a single Int on the
+                // Activity; it resets only on process restart, so very long
+                // sessions could in theory see drift, but the difference
+                // between minute 1 and minute 1440 is what matters and the
+                // modulus is 1000, not 1440.
+                val throttleMs = System.currentTimeMillis() / 1000
+                if (throttleMs != lastNetworkLogSecond) {
+                    lastNetworkLogSecond = throttleMs
+                    prefs.diagLog.write("network",
+                        "intercept mainFrame=${request.isForMainFrame} " +
+                        "url=${request.url.toString().take(150)}")
+                }
+                // The per-channel NETWORK capture is
+                // independently throttled by the file
+                // size cap (2 MB). It is not the same as
+                // the legacy throttleMs gate above - the
+                // legacy is for the single flat log; this
+                // is for the per-channel store. The 1
+                // entry/sec throttle on adblock.intercept
+                // stays as a hard cap on writes to the
+                // channel file, and a developer who has
+                // the network switch on can disable the
+                // throttle by patching the gate.
+                DiagCapture.write(this@MainActivity, Diag.Channel.NETWORK,
+                    message = "mainFrame=${request.isForMainFrame} " +
+                        "url=${request.url.toString().take(150)}")
+
+                // Every new main-frame navigation leaves the offline
+                // document behind unless serve() says otherwise below -
+                // back online, a reload, a link tap: all mean live again.
+                if (request.isForMainFrame) isShowingOfflinePage = false
+
+                // Developer: silently capture video CDN URLs for reel ad blocking.
+                // Enable in Hidden Settings → About → Developer Options.
+                // URLs are flushed to clipboard ONLY on long-press (AdInspector).
+                if (prefs.logVideoUrls) {
+                    val videoUrl = request.url.toString()
+                    if (videoUrl.contains("/video/") ||
+                        (videoUrl.contains("fbcdn.net") &&
+                         (videoUrl.contains(".mp4") || videoUrl.contains("video")))) {
+                        try { addVideoUrl(videoUrl, request.requestHeaders) } catch (_: Exception) {}
+                    }
+                }
+
+                if (AdBlocker.shouldBlockRequest(request)) {
+                    viewModel.incrementBlocked()
+                    return AdBlocker.createEmptyResponse()
+                }
+
+                // Offline main frame. Serve the real Facebook document we
+                // stored while online, so the header, tab bar, counts and
+                // post controls are all exactly where they are online -
+                // because it is the same page. Without this the WebView's own
+                // error page wins before a single cached asset is requested.
+                if (prefs.offlineRead && !isOnline && request.isForMainFrame) {
+                    OfflineDocs.serve(request)?.let {
+                        isShowingOfflinePage = true
+                        return it
+                    }
+                }
+
+                // Online, hand every subresource straight back to the WebView.
+                //
+                // This test has to come before isInterceptable(), not after.
+                // isInterceptable() calls has(), which hashes the URL and stats
+                // a file — disk work on the WebView's resource thread, for every
+                // image, script and stylesheet on the page. It used to be
+                // unreachable online because the store was disabled whenever
+                // saving was off; now that reading is always enabled, leaving it
+                // in front of this line made the whole feed crawl.
+                if (isOnline) return null
+
+                if (!prefs.offlineRead) return null
+
+                // The saved content's own media lives in the section vaults
+                // (separate per-section folders), not in the chrome cache.
+                // The cards that reference these URLs are exactly the ones
+                // being counted, so their bytes are answered for first.
+                val rangeHdr = request.requestHeaders.entries
+                    .firstOrNull { it.key.equals("Range", true) }?.value
+                OfflineVaults.serveAny(request.url.toString(), rangeHdr)
+                    ?.let { return it }
+
+                if (!OfflineCache.isInterceptable(request)) return null
+
+                // Offline only: serve whatever we already stored.
+                // V4 Step 3: Try range first for video, fallback to normal get
+                if (request.requestHeaders.keys.any { it.equals("Range", true) }) {
+                    OfflineCache.range(request)?.let { return it }
+                }
+                return OfflineCache.get(request, offlineOnly = true)
+            }
+        }
+    }
+
+    /** @return true if the app consumed the navigation. */
+    private fun handleUrl(url: String): Boolean {
+        // 0. A direct media link (the CDN URL behind Facebook's own "Save"
+        //    option) must be downloaded, not navigated to. Left to fall
+        //    through to the internal-host check below, fbcdn.net URLs were
+        //    treated as "stay inside the app" and the WebView silently
+        //    navigated to the raw image/video instead of firing the
+        //    DownloadListener - so "Save" from the ⋮ menu did nothing.
+        if (UrlHelper.isDirectMediaLink(url)) {
+            enqueueDownload(url, binding.webView.settings.userAgentString, null, null)
+            return true
+        }
+        // 0.5 Round 22 addendum 27: block the create-story /
+        //     compose route that the home feed's right-edge
+        //     swipe launches. The user reported that a
+        //     right-swipe from the home feed opens the camera,
+        //     and the JS-side pushState / replaceState wrap
+        //     was not catching it. The webview client sees
+        //     every navigation, including ones the JS
+        //     wrappers miss, so this is the reliable
+        //     second line. The camera is reachable from the
+        //     Reels / Home share buttons in the proper
+        //     places - the only path being blocked is the
+        //     home-feed edge swipe.
+        if (url.contains("/story/create") ||
+            url.contains("/composer") ||
+            url.contains("/create_story") ||
+            url.contains("/compose/post") ||
+            url.contains("/story_composer")) {
+            prefs.diagLog.write("routeblock", "BLOCKED shouldOverrideUrlLoading url=" + url.take(120))
+            return true // swallow silently
+        }
+        // 1. Play Store / app install links are killed outright.
+        if (prefs.blockAppPromo && UrlHelper.isAppStoreLink(url)) {
+            return true // swallow silently, no store, no chooser
+        }
+        // 2. tel:/mailto:/sms:
+        if (UrlHelper.isSpecialScheme(url)) {
+            return openExternally(url)
+        }
+        // 3. Messaging is deliberately left alone. The desktop-UA switch
+        //    leaked into the rest of the session and broke the home feed
+        //    ("Something went wrong"), so it was removed in 3.6.2.
+
+        // 4. Facebook + auth providers stay inside.
+        if (UrlHelper.isInternal(url)) return false
+        // 5. Everything else, per user setting.
+        return if (prefs.openLinksExternal) openExternally(url) else false
+    }
+
+
+    private fun openExternally(url: String): Boolean {
+        return try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            true
+        } catch (e: ActivityNotFoundException) {
+            toast(getString(R.string.no_app_to_open))
+            true
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    private fun injectAll(view: WebView?) {
+        view ?: return
+
+        // Re-apply the static sheet as well. It used to run only from
+        // onPageStarted, so switching the loading bar off did nothing until
+        // the next navigation — and switching it back on left Facebook's own
+        // bar hidden for the rest of the session.
+        view.evaluateJavascript(
+            AdBlocker.getStyleScript(
+                prefs.blockAppPromo,
+                prefs.adBlock,
+                hideSiteLoadingBar = !prefs.showProgress
+            ),
+            null
+        )
+        // Long-press capture must run when either the full inspector is on or
+        // when "Log reel video URLs" is on: that switch makes a long-press on
+        // a reel ad copy its video URL to the clipboard.
+        if (prefs.inspectAds || prefs.logVideoUrls) {
+            view.evaluateJavascript(AdInspector.script(), null)
+        }
+        if (prefs.adBlock && prefs.cosmeticFilter) {
+            view.evaluateJavascript(CosmeticFilters.styleScript(), null)
+            view.evaluateJavascript(CosmeticFilters.proceduralScript(), null)
+            view.evaluateJavascript(MFacebookAds.script(), null)
+        }
+        if (prefs.offlineRead) {
+            // Capture only runs via OfflineSync background WebView.
+            // The visible page never populates the offline store —
+            // this ensures online-viewed content is never saved.
+            if (!isOnline) {
+                view.evaluateJavascript(VideoHelper.getOfflineVideoAssistScript(), null)
+            }
+        }
+        view.evaluateJavascript(
+            AdBlocker.getNativeFeelScript(), null
+        )
+        view.evaluateJavascript(
+            AdBlocker.getCosmeticScript(
+                blockAds = prefs.adBlock && prefs.cosmeticFilter,
+                blockAppPromos = prefs.blockAppPromo,
+                hideFlags = prefs.sectionFlags()
+            ),
+            null
+        )
+    }
+
+    private fun createWebChromeClient(): WebChromeClient {
+        return object : WebChromeClient() {
+
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                super.onProgressChanged(view, newProgress)
+                viewModel.setProgress(newProgress)
+            }
+
+            /**
+             * Popups. The old build set window.open = null in JS and never
+             * implemented this, so every target=_blank link was a dead tap.
+             */
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                if (prefs.blockPopups && !isUserGesture) return false
+
+                // Load the popup target in the main WebView instead of a new one.
+                val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                val temp = WebView(this@MainActivity)
+                temp.webViewClient = object : android.webkit.WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        v: WebView?, request: WebResourceRequest?
+                    ): Boolean {
+                        val url = request?.url?.toString() ?: return true
+                        if (!handleUrl(url)) binding.webView.loadUrl(url)
+                        // Destroy off the callback stack, never from inside it.
+                        v?.post { temp.destroy() }
+                        return true
+                    }
+                }
+                transport.webView = temp
+                resultMsg.sendToTarget()
+                return true
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView?,
+                callback: ValueCallback<Array<Uri>>?,
+                params: FileChooserParams?
+            ): Boolean {
+                // Always release a previous callback, never leave the input locked.
+                filePathCallback?.onReceiveValue(null)
+                filePathCallback = callback
+                cameraPhotoUri = null
+
+                val contentIntent = params?.createIntent() ?: run {
+                    filePathCallback = null
+                    return false
+                }
+
+                // Round 22 device verdict: on Android 13+ the
+                // gallery picker needs READ_MEDIA_IMAGES or the
+                // pick completes with no URI and the WebView
+                // gets an empty result. The user reported that
+                // gallery picks "select hoi na" - the picker
+                // closed but no file reached the page. Ask for
+                // the permission if it is not yet granted, and
+                // only launch the chooser once we have it.
+                if (!hasMediaPermission()) {
+                    pendingFileChooser = { onShowFileChooser(webView, callback, params) }
+                    requestMediaPermission()
+                    return true
+                }
+
+                val chooser = Intent(Intent.ACTION_CHOOSER).apply {
+                    putExtra(Intent.EXTRA_INTENT, contentIntent)
+                    putExtra(Intent.EXTRA_TITLE, getString(R.string.choose_file))
+                    val extras = buildCaptureIntents(params)
+                    if (extras.isNotEmpty()) {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, extras.toTypedArray())
+                    }
+                }
+
+                return try {
+                    fileChooserLauncher.launch(chooser)
+                    true
+                } catch (e: Exception) {
+                    // Critical: unlock the <input type=file> before bailing out.
+                    filePathCallback?.onReceiveValue(null)
+                    filePathCallback = null
+                    false
+                }
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                request ?: return
+                val resources = request.resources
+                val needed = mutableListOf<String>()
+
+                if (resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+                    !hasPermission(Manifest.permission.CAMERA)
+                ) needed += Manifest.permission.CAMERA
+
+                if (resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+                    !hasPermission(Manifest.permission.RECORD_AUDIO)
+                ) needed += Manifest.permission.RECORD_AUDIO
+
+                if (needed.isEmpty()) {
+                    // Grant capture permissions plus protected-media playback.
+                    // RESOURCE_PROTECTED_MEDIA_ID is required for EME/DRM video
+                    // decoding — Facebook's video and Reels content needs this to
+                    // actually start playing. Without it the WebView can request
+                    // the resource but never receives a grant, so the video stays
+                    // stuck buffering and only the loading placeholder shows.
+                    val safe = resources.filter {
+                        it == PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
+                            it == PermissionRequest.RESOURCE_AUDIO_CAPTURE ||
+                            it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
+                    }.toTypedArray()
+                    request.grant(if (safe.isEmpty()) resources else safe)
+                } else {
+                    // Retry after the dialog instead of denying forever.
+                    pendingWebRtcRequest = request
+                    permissionLauncher.launch(needed.toTypedArray())
+                }
+            }
+
+            override fun onPermissionRequestCanceled(request: PermissionRequest?) {
+                super.onPermissionRequestCanceled(request)
+                pendingWebRtcRequest = null
+            }
+
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                // Guard against a second call
+                if (customView != null) {
+                    callback?.onCustomViewHidden()
+                    return
+                }
+                customView = view
+                customViewCallback = callback
+                originalOrientation = requestedOrientation
+                prefs.diagLog.write("fullscreen", "onShowCustomView originalOrientation=$originalOrientation")
+
+                // The system's default video poster (the large play-triangle-in-a-ring
+                // icon) is drawn by the platform's VideoView/MediaPlayer before the
+                // first real frame decodes. Giving the view and its container an
+                // opaque black background papers over that placeholder without
+                // touching Facebook's own player UI or using any CSS/overlay hack —
+                // it's just how the native container is normally painted.
+                view?.setBackgroundColor(android.graphics.Color.BLACK)
+
+                binding.customViewContainer.apply {
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                    addView(
+                        view,
+                        android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                        )
+                    )
+                    visibility = View.VISIBLE
+                }
+                beginFullscreenTransition()
+                // INVISIBLE, not GONE.
+                //
+                // GONE removes the feed from layout, so it is re-measured from
+                // scratch on the way back - and that measurement happens while
+                // the system bars are still animating in, giving it the full
+                // screen height. The page then stays laid out for a taller
+                // viewport than it has: content sits shifted up with a dead
+                // strip at the bottom until a scroll forces a relayout.
+                //
+                // INVISIBLE keeps it measured at the size it had, so it comes
+                // back exactly as it left. It costs nothing: the WebView is
+                // covered by the fullscreen container and is not drawn.
+                binding.contentRoot.visibility = View.INVISIBLE
+                enterImmersive(true)
+                // Entering fullscreen straight after a fast Wi-Fi page load
+                // (the app opening directly into Reels, say) can race the
+                // page's own layout the same way leaving fullscreen always
+                // could - the exit path already settles the page for that
+                // reason; entry needs the same protection, not just exit.
+                //
+                // The clue that pointed here: the bug is Wi-Fi-only and a
+                // 100% clean on mobile data or VPN, both of which only add
+                // network latency, nothing else. That latency was doing the
+                // job of leaving the render pipeline time to actually finish
+                // before immersive mode and the settle read landed. Wi-Fi's
+                // near-zero latency removes that accidental cushion. This
+                // reproduces the same cushion on purpose, on every network,
+                // instead of leaving it to chance.
+                binding.contentRoot.postDelayed({
+                    settleRelayout(binding.webView)
+                }, 220)
+                // Reels/Stories are vertical (9:16) video. Forcing landscape here
+                // shrinks/letterboxes that content instead of filling the screen.
+                // Let the system rotate freely based on the device sensor instead
+                // of locking to landscape, so vertical video stays fullscreen and
+                // horizontal video (e.g. shared long-form clips) can still rotate.
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                endFullscreenTransition()
+            }
+
+            override fun onHideCustomView() {
+                if (customView == null) return
+                prefs.diagLog.write("fullscreen", "onHideCustomView")
+                beginFullscreenTransition()
+                binding.customViewContainer.apply {
+                    removeAllViews()
+                    visibility = View.GONE
+                }
+                // Layout before VISIBLE: touches on a stale layout can hit
+                // whatever was there before - the dead-strip-no-tap shape.
+                binding.contentRoot.requestLayout()
+                binding.contentRoot.visibility = View.VISIBLE
+                customView = null
+                customViewCallback?.onCustomViewHidden()
+                customViewCallback = null
+                enterImmersive(false)
+                requestedOrientation = originalOrientation
+                endFullscreenTransition()
+
+                // Before the page is asked to re-measure, make sure the thing
+                // it will measure against is the right size. If the window is
+                // still short, a reflow just re-fits the page to a short
+                // window and the band stays.
+                recoverWindowSizeIfStale()
+
+                // Twice, because the size the page should settle at is not
+                // known yet at the first one: the system bars are still
+                // animating in and the WebView has not been through the inset
+                // pass that endFullscreenTransition requests 500ms from now.
+                //
+                // The early one clears the immersive layout straight away so
+                // the feed is not visibly wrong while the bars slide back.
+                // The later one runs after that inset pass has resized the
+                // WebView, and is the one that leaves it correct. Cheap
+                // enough to do both: two layout reads, once per exit.
+        forcePageRelayout(binding.webView, "fs-exit-immediate")
+        binding.root.postDelayed({
+            if (!isFinishing && !isDestroyed) {
+                recoverWindowSizeIfStale()
+                forcePageRelayout(binding.webView, "fs-exit-delayed")
+            }
+        }, 650)
+
+                // V4 Step 3: Re-inject after exiting fullscreen (helps restore feed state)
+                binding.root.postDelayed({
+                    if (!isFinishing && !isDestroyed) {
+                        injectAll(binding.webView)
+                    }
+                }, 300)
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?,
+                callback: GeolocationPermissions.Callback?
+            ) {
+                if (hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                    hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                ) {
+                    callback?.invoke(origin, true, false)
+                } else {
+                    // Keep the callback and answer it once the user decides.
+                    pendingGeoOrigin = origin
+                    pendingGeoCallback = callback
+                    permissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Make the page re-measure itself.
+     *
+     * The native side of the fullscreen bug is fixed: the padding lives on
+     * contentRoot, it is measured ignoring bar visibility, and the feed is
+     * hidden with INVISIBLE so it keeps its measured size. What none of that
+     * reaches is the layout *inside* the WebView. Facebook's lite renderer
+     * caps its screen at a height it worked out earlier - the traces caught
+     * it holding "min-height:100vh;width:360px" - and it only recomputes when
+     * something makes it. Leaving fullscreen is not, by itself, one of those
+     * things, so the page can come back still laid out for the immersive
+     * viewport: content shifted up, dead strip at the bottom.
+     *
+     * Reading a layout property is what forces it. That is a deliberate
+     * forced synchronous layout - normally a thing to avoid, here the entire
+     * point - and it is why a scroll always appeared to cure this, and why
+     * the bug hid for a day while the diagnostic tracer was installed: that
+     * tracer read getBoundingClientRect() on a 400ms timer and was
+     * accidentally doing this 2.5 times a second.
+     *
+     * Once, on exit. Not a poll: a timer that forces a layout several times
+     * a second to paper over a stale one would cost battery on every screen
+     * in the app to fix a bug on one.
+     */
+    /**
+     * Attempt #119 on the fullscreen/Reels stale-layout bug.
+     *
+     * The native side has been correct since attempt #2: padding on
+     * contentRoot, measured ignoring bar visibility, the feed kept
+     * INVISIBLE rather than GONE so it never loses its size. None of that
+     * reaches the layout *inside* the WebView, which is where the actual
+     * fault lives.
+     *
+     * The lite renderer works out its own screen height once - the tracer
+     * caught it holding "min-height:100vh;width:360px" - and only recomputes
+     * when something tells it to. Leaving fullscreen is not one of those
+     * things by itself, so the page can return still laid out for the
+     * immersive viewport: content shifted up, a dead strip at the bottom.
+     *
+     * A single dispatched resize (attempt #4) was correct in kind but not
+     * in dose: it landed once, at a guessed delay, and if the renderer's own
+     * transition hadn't finished settling by then the event arrived too
+     * early to matter. The diagnostic tracer from attempt #3 made the bug
+     * vanish purely as a side effect - a raw property read forces layout,
+     * and it was doing that unconditionally five times a second for as long
+     * as diagnostics were on. That is what was actually fixing it, and
+     * removing the tracer (attempt #5) is what brought the bug back.
+     *
+     * This reproduces that effect on purpose instead of by accident: poll
+     * the real layout height on animation frames - cheap, and automatically
+     * paced to the display - firing a resize each time it is still moving,
+     * and stop as soon as two consecutive frames agree or a frame budget
+     * runs out. Unlike the tracer this cannot run forever: it is only ever
+     * started from a fullscreen exit, and it terminates itself.
+     */
+    private fun forcePageRelayout(view: WebView?, context: String = "default") {
+        view ?: return
+        if (BuildConfig.DEBUG) {
+            // Round 28 instrumentation: count the call, record who fired it,
+            // and capture the page's actual height on the way back. The whole
+            // block is dead-stripped in release builds by R8 (BuildConfig.DEBUG
+            // is final, the call site is gated, the if branch is the only
+            // reachable one in debug). Filter logcat with: adb logcat -s
+            // DBPro:*. Output: one line on entry, one on JS return.
+            forcePageRelayoutCount++
+            Log.d(TAG, "forcePageRelayout[$context] #${forcePageRelayoutCount}")
+            // In-app log: also written when the diagnostic switch is on,
+            // independent of the adb logcat line above. The two readers
+            // are different audiences - a developer with a USB cable vs a
+            // developer with only the phone - so the same line lives in
+            // both.
+            prefs.diagLog.write("relayout", "forcePageRelayout[$context] #${forcePageRelayoutCount}")
+        }
+        view.evaluateJavascript(
+            """
+            (function() {
+              try {
+                var de = document.documentElement;
+                var b = document.body;
+                // Round 29 probe: capture scrollTop values that
+                // forcePageRelayout was missing. vscroller is the
+                // lite renderer's scroll container; body.scrollTop
+                // is the page-level fallback. We do not assume the
+                // container is called 'vscroller' on every version of
+                // the bundle - if it is not there, the field stays
+                // 'none' and the log line makes the absence obvious.
+                var vsc = document.querySelector('[data-type="vscroller"]') ||
+                           document.querySelector('[data-pagelet="StoriesApp"]') ||
+                           b;
+                var vscTag = vsc === b ? "body" :
+                             (vsc.getAttribute('data-type') ||
+                              vsc.getAttribute('data-pagelet') ||
+                              vsc.tagName);
+                // The read is the work. Assigning it to nothing would let a
+                // minifier or the JIT drop the whole statement, so the values
+                // are kept and handed back.
+                var h = de ? de.clientHeight : 0;
+                var bh = b ? b.getBoundingClientRect().height : 0;
+                var bst = b ? b.scrollTop : -1;
+                var vst = vsc ? vsc.scrollTop : -1;
+                // First card with [data-video-id] or [data-story-id], if
+                // any - its getBoundingClientRect().top is the symptom
+                // the user reports (player shifted off-frame).
+                var first = document.querySelector('[data-video-id],[data-story-id]');
+                var ftop = first ? Math.round(first.getBoundingClientRect().top) : 'none';
+                // Tell the page as well. The lite renderer listens for resize
+                // to recompute its screen height, and coming out of immersive
+                // the viewport really has changed size - it just was not
+                // always told.
+                try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+                return h + 'x' + Math.round(bh) +
+                       ' bst=' + bst + ' vst=' + vst + ' vscTag=' + vscTag +
+                       ' ftop=' + ftop;
+              } catch (e) { return 'err'; }
+            })();
+            """.trimIndent()
+        ) { result ->
+            if (BuildConfig.DEBUG) {
+                // rAF also fires here; not gated because the JS callback is
+                // already the "after the read" moment.
+                val url = view.url ?: "no-url"
+                Log.d(TAG, "forcePageRelayout[$context] #$forcePageRelayoutCount " +
+                    "url=${url.takeLast(60)} js=${result ?: "null"}")
+                prefs.diagLog.write("relayout",
+                    "forcePageRelayout[$context] #$forcePageRelayoutCount " +
+                    "url=${url.takeLast(60)} js=${result ?: "null"}")
+            }
+        }
+        settleRelayout(view)
+    }
+
+    /**
+     * A single dispatched resize can land before the renderer's own
+     * transition has settled - it fires once, at a guessed moment. The
+     * diagnostic tracer made the bug vanish purely by accident: a raw
+     * property read forces layout, and it was doing that unconditionally
+     * five times a second for as long as diagnostics were on. Removing the
+     * tracer is what brought the bug back, so that effect is reproduced here
+     * on purpose instead of by accident - reading on animation frames, which
+     * are already paced to the display, until two consecutive frames agree
+     * or a frame budget runs out, then stopping. A flag on the page guards
+     * against a quick second exit stacking a second loop.
+     */
+    private fun settleRelayout(view: WebView?) {
+        view ?: return
+        view.evaluateJavascript(
+            """
+            (function() {
+              // The guard flag can be left stuck at true forever if a prior
+              // loop was interrupted mid-run (SPA swap, fullscreen re-entry
+              // before the old loop's rAF fired again) - once that happens
+              // every later settleRelayout call becomes a silent no-op for
+              // the rest of the page's life, which matches "once it breaks
+              // it stays broken until the app is restarted". A timestamp
+              // instead of a bare boolean lets a new call detect a stale
+              // flag and take over instead of trusting it forever.
+              var now = Date.now();
+              if (window.__dbSettle && (now - (window.__dbSettleAt || 0)) < 1200) return;
+              window.__dbSettle = true;
+              window.__dbSettleAt = now;
+              (function s(last, n, f) {
+                window.__dbSettleAt = Date.now();
+                var H = document.documentElement ? document.documentElement.clientHeight : 0;
+                if (H === last) { n++; } else {
+                  n = 0;
+                  try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+                }
+                if (n >= 2 || f >= 40) { window.__dbSettle = false; return; }
+                requestAnimationFrame(function() { s(H, n, f + 1); });
+              })(-1, 0, 0);
+            })();
+            """.trimIndent(),
+            null
+        )
+    }
+
+    /**
+     * The window itself can be left short, and no pass says so.
+     *
+     * windowSoftInputMode is adjustResize. That does not pad the window, it
+     * *shrinks* it, and the activity only learns it has grown back through an
+     * inset pass. Reels and Stories are reached from a feed where a comment
+     * box may have been focused, and the lite renderer swaps those screens in
+     * place without navigating - no navigation, no resize, no pass. The
+     * activity carries on laid out for the smaller window.
+     *
+     * Measured on the device, on a reel and on a story minutes apart: content
+     * ends at y=2024 of 2400 on both, to the pixel, and the 375px below it is
+     * RGB(5,5,5). root is painted @color/fb_bg (#18191A, reads as 24,25,27),
+     * so that strip is not root and not the page - it is the bare window,
+     * black because the AMOLED overlay is on by default. Being outside root
+     * is why neither padding nor a page reflow can reach it.
+     *
+     * So: measure the window against the display, and if it is short with no
+     * keyboard to account for it, ask for a pass.
+     *
+     * Deliberately not a listener on every layout - that risks a loop, since
+     * requesting insets causes a layout. This is called at the few moments
+     * the window is known to be suspect. Round 23 adds one more: the
+     * reel/story SPA swap in doUpdateVisitedHistory, an event and not a
+     * layout pass, so the loop warning does not apply.
+     */
+    /** Reels/stories family, exactly the URL tests saveOfflinePosition uses. */
+    private fun isReelOrStoryUrl(url: String?): Boolean {
+        url ?: return false
+        return url.contains("/reel") || url.contains("/reels") ||
+            url.contains("fb.watch") || url.contains("/stories/") ||
+            url.contains("/story/")
+    }
+
+    private fun recoverWindowSizeIfStale(): Boolean {
+        val root = binding.root
+        val insets = ViewCompat.getRootWindowInsets(root) ?: return false
+        // A visible keyboard is a legitimate reason to be short.
+        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return false
+
+        val windowH = root.height
+        if (windowH <= 0) return false
+
+        val screenH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager.maximumWindowMetrics.bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            resources.displayMetrics.heightPixels
+        }
+
+        // Split screen and freeform are genuinely smaller and must be left
+        // alone, so only a shortfall in the range a keyboard leaves counts.
+        // A tolerance keeps rounding and a cutout from triggering it.
+        val short = screenH - windowH
+        if (BuildConfig.DEBUG) {
+            // Round 28 instrumentation: log the actual numbers so the
+            // fullscreen-suspect moment can be confirmed (short=0 means the
+            // gate is permanently false and forcePageRelayout is dead, which
+            // is exactly what the 5.2.27 theory predicted).
+            Log.d(TAG, "recoverWindowSizeIfStale: windowH=$windowH screenH=$screenH short=$short")
+        }
+        // Mirror to the in-app log: same line, gated on the user's
+        // diagnostic-log switch instead of the build type.
+        prefs.diagLog.write("relayout",
+            "recoverWindowSizeIfStale: windowH=$windowH screenH=$screenH short=$short")
+        if (short > 24 && short < screenH / 2) {
+            ViewCompat.requestApplyInsets(root)
+            root.requestLayout()
+            return true
+        }
+        return false
+    }
+
+    private fun enterImmersive(on: Boolean) {
+        val controller = WindowInsetsControllerCompat(window, binding.root)
+        if (on) {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            updateSystemBarIcons()
+        }
+    }
+
+    // ---------------------------------------------------------------- camera
+
+    private fun buildCaptureIntents(params: WebChromeClient.FileChooserParams?): List<Intent> {
+        if (!hasPermission(Manifest.permission.CAMERA)) return emptyList()
+        val accept = params?.acceptTypes?.joinToString(",")?.lowercase(Locale.ROOT) ?: ""
+        val wantsImage = accept.isEmpty() || accept.contains("image") || accept.contains("*/*")
+        if (!wantsImage) return emptyList()
+
+        return try {
+            val dir = File(cacheDir, "captures").apply { mkdirs() }
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val file = File(dir, "IMG_$stamp.jpg")
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            cameraPhotoUri = uri
+            listOf(
+                Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                    putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                }
+            )
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    // ---------------------------------------------------------------- downloads
+
+    private fun setupDownloadManager() {
+        binding.webView.setDownloadListener { url, userAgent, disposition, mimetype, _ ->
+            when {
+                url.startsWith("blob:") -> {
+                    // Handled by the JS bridge; ask the page to convert it.
+                    binding.webView.evaluateJavascript(blobFetchScript(url), null)
+                }
+                url.startsWith("data:") -> saveDataUrl(url)
+                else -> enqueueDownload(url, userAgent, disposition, mimetype)
+            }
+        }
+    }
+
+    private fun enqueueDownload(
+        url: String,
+        userAgent: String?,
+        disposition: String?,
+        mimetype: String?
+    ) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+            ) {
+                permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+            }
+
+            val name = uniqueName(URLUtil.guessFileName(url, disposition, mimetype))
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                addRequestHeader("User-Agent", userAgent ?: "")
+                // Without cookies the Facebook CDN answers 403.
+                CookieManager.getInstance().getCookie(url)?.let {
+                    addRequestHeader("Cookie", it)
+                }
+                binding.webView.url?.let { addRequestHeader("Referer", it) }
+                setTitle(name)
+                setDescription(getString(R.string.download_started))
+                setMimeType(mimetype)
+                setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                )
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+            }
+            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            toast(getString(R.string.download_started))
+        } catch (e: Exception) {
+            toast(getString(R.string.download_failed))
+        }
+    }
+
+    private fun uniqueName(base: String): String {
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        var candidate = base
+        var i = 1
+        val dot = base.lastIndexOf('.')
+        val stem = if (dot > 0) base.substring(0, dot) else base
+        val ext = if (dot > 0) base.substring(dot) else ""
+        while (File(dir, candidate).exists() && i < 500) {
+            candidate = "$stem($i)$ext"
+            i++
+        }
+        return candidate
+    }
+
+    private fun blobFetchScript(url: String) = """
+        (function(){
+          var x=new XMLHttpRequest();
+          x.open('GET','$url',true);x.responseType='blob';
+          x.onload=function(){
+            var r=new FileReader();
+            r.onloadend=function(){ FBPro.onBlobDownload(r.result,''); };
+            r.readAsDataURL(x.response);
+          };
+          x.send();
+        })();
+    """.trimIndent()
+
+    private fun saveDataUrl(dataUrl: String, suggested: String = "") {
+        try {
+            val comma = dataUrl.indexOf(',')
+            if (comma < 0) return
+            val meta = dataUrl.substring(5, comma)
+            val mime = meta.substringBefore(';').ifBlank { "application/octet-stream" }
+            val bytes = Base64.decode(dataUrl.substring(comma + 1), Base64.DEFAULT)
+            val ext = android.webkit.MimeTypeMap.getSingleton()
+                .getExtensionFromMimeType(mime) ?: "bin"
+            val name = uniqueName(
+                suggested.ifBlank { "FBPro_${System.currentTimeMillis()}.$ext" }
+            )
+            val dir = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+            ).apply { mkdirs() }
+            File(dir, name).outputStream().use { it.write(bytes) }
+            toast(getString(R.string.download_completed))
+        } catch (e: Exception) {
+            toast(getString(R.string.download_failed))
+        }
+    }
+
+    inner class JsBridge {
+        @JavascriptInterface
+        fun onBlobDownload(dataUrl: String, filename: String) {
+            runOnUiThread { saveDataUrl(dataUrl, filename) }
+        }
+
+        /**
+         * Reported by the page whenever its scroll position changes. Covers
+         * the case where Facebook scrolls an inner div and the WebView's own
+         * scrollY never moves.
+         */
+        @JavascriptInterface
+        fun onScrollState(atTop: Boolean) {
+            pageAtTop = atTop
+            this@MainActivity.prefs.diagLog.write("bridge", "onScrollState atTop=$atTop")
+        }
+
+        /**
+         * Inspect mode captured an element. Copy it to the clipboard and tell
+         * the user, so it can be pasted straight into a bug report.
+         */
+        @JavascriptInterface
+        fun onAdHtml(text: String) {
+            runOnUiThread {
+                try {
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                    // Append captured video CDN URLs if the logger is on.
+                    val full = if (prefs.logVideoUrls) {
+                        val urls = drainVideoUrls()
+                        if (urls.isNotEmpty()) {
+                            text + "\n\n--- reel video URLs (last " + urls.size + ") ---\n" +
+                                urls.joinToString("\n")
+                        } else text
+                    } else text
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText("Dustbook ad markup", full)
+                    )
+                    if (prefs.haptics) {
+                        binding.root.performHapticFeedback(
+                            android.view.HapticFeedbackConstants.LONG_PRESS
+                        )
+                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.inspect_copied),
+                        Toast.LENGTH_LONG
+                    ).show()
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        this@MainActivity, e.message ?: "copy failed", Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+
+        /**
+         * The page finished a soft refresh. handled=false means it found no
+         * way to refresh itself, so we do a real reload after all.
+         */
+        @JavascriptInterface
+        fun onSoftRefresh(handled: Boolean) {
+            this@MainActivity.prefs.diagLog.write("bridge", "onSoftRefresh handled=$handled pending=$softRefreshPending")
+            if (!softRefreshPending) return
+            softRefreshPending = false
+            runOnUiThread {
+                if (handled) {
+                    binding.swipeRefresh.isRefreshing = false
+                } else {
+                    binding.webView.reload()
+                }
+            }
+        }
+
+        /**
+         * The page reported the posts or reels it is showing. Merge them into
+         * the offline store and pull their media down.
+         */
+        @JavascriptInterface
+        fun onOfflineItems(section: String, json: String, done: Boolean) {
+            this@MainActivity.prefs.diagLog.write("bridge",
+                "onOfflineItems section=$section jsonLen=${json.length} done=$done online=$isOnline mode=${prefs.offlineMode}")
+            if (!prefs.offlineMode || !isOnline) return
+            val target = prefs.offlineReelTarget.coerceAtLeast(30)
+            val items = OfflineSync.parseItems(json)
+            if (items.isEmpty()) return
+
+            // Only save genuinely NEW content — skip everything we already
+            // hold so viewed reels are never re-saved and served offline.
+            val existingIds = OfflineFeed.knownIds(section).toSet()
+            var newItems = items.filter {
+                it.id.isBlank() || it.id !in existingIds
+            }
+            if (newItems.isEmpty()) return
+
+            // The user's own browsing is a capture path too, so the chosen
+            // totals bind it exactly like the pipeline: without this gate a
+            // long scrolling session kept adding posts past the setting and
+            // "stops at my number" was only ever true for the background
+            // run. Stories have no user-set count, so they stay uncapped.
+            val cap = when (section) {
+                OfflineFeed.SECTION_FEED -> prefs.offlinePostTarget
+                OfflineFeed.SECTION_REELS -> prefs.offlineReelTarget
+                else -> 0
+            }
+            if (cap > 0) {
+                // Full store: only re-captures of entries already held
+                // (same id - a stored-but-unfinished item whose media
+                // needs its fresh URL to land) still pass; they replace
+                // rather than add. Brand-new ids spend the room left -
+                // counted in PLAYABLE items: markup without its media
+                // holds no seat (round-12 rule from the user), exactly
+                // like the pipeline's own gate in OfflineSync.
+                val storedIds = OfflineFeed.loadItems(section)
+                    .mapTo(HashSet()) { it.id }
+                var room = cap - OfflineFeed.realPlayableCount(section)
+                newItems = newItems.filter {
+                    if (it.id.isNotBlank() && it.id in storedIds) true
+                    else if (room > 0) { room--; true } else false
+                }
+                if (newItems.isEmpty()) return
+            }
+
+            // Same ceiling here, re-checked atomically inside the vault:
+            // this bridge and the background WebView's bridge can fire on
+            // different threads within the same second.
+            OfflineFeed.addItems(section, newItems, target,
+                if (cap > 0) cap else null)
+            OfflineFeed.prefetch(section, newItems, includeVideo = prefs.offlineVideo)
+        }
+
+
+        /**
+         * The page hands us its own document so it can be stored.
+         *
+         * Facebook answers m.facebook.com with HTTP 400 to any plain HTTP
+         * client, so the app cannot fetch these pages itself - a live WebView
+         * is the only place they exist.
+         */
+        @JavascriptInterface
+        fun onOfflinePage(section: String, html: String) {
+            this@MainActivity.prefs.diagLog.write("bridge",
+                "onOfflinePage section=$section htmlLen=${html.length}")
+            if (!prefs.offlineMode || !isOnline) return
+            AppExecutors.background.execute {
+                OfflineDocs.storeFromPage(
+                    when (section) {
+                        OfflineFeed.SECTION_REELS -> "reels"
+                        OfflineFeed.SECTION_STORIES -> "stories"
+                        else -> "home"
+                    },
+                    html
+                )
+            }
+        }
+
+        /**
+         * Offline, the user tapped one of Facebook's own tabs. Load the
+         * stored copy of that screen - it is served from disk by
+         * [OfflineDocs] through shouldInterceptRequest, exactly as the first
+         * screen was.
+         */
+        @JavascriptInterface
+        fun onOfflineNav(screen: String, url: String) {
+            this@MainActivity.prefs.diagLog.write("bridge", "onOfflineNav screen=$screen url=${url.take(120)}")
+            runOnUiThread { binding.webView.loadUrl(url) }
+        }
+
+        /**
+         * Offline, the user tapped a tab we hold nothing for. Say so rather
+         * than leaving the tap silently doing nothing, which is what the dead
+         * action id did.
+         */
+        @JavascriptInterface
+        fun onOfflineNavMissing(screen: String) {
+            // Deliberately silent. A toast here was ours, not Facebook's, and
+            // online no such message exists - the tap simply does nothing when
+            // there is nothing to show. The app's own offline banner, outside
+            // the WebView, already says why.
+        }
+
+        /**
+         * Page reports whether a video or audio element is actually playing.
+         *
+         * This is what decides background audio now. The URL cannot: the lite
+         * renderer swaps the Reels screen in place without navigating, so the
+         * address stays on the home feed for the whole time a reel is playing.
+         */
+        @JavascriptInterface
+        fun onMediaState(playing: Boolean) {
+            mediaPlaying = playing
+            this@MainActivity.prefs.diagLog.write("bridge", "onMediaState playing=$playing")
+        }
+
+        /**
+         * Round 22 addendum 27: trace channel for the
+         * diagnostic logging injected by the native feel
+         * script. The user installed addendum 26 and
+         * reported that none of the device-verdict fixes
+         * actually worked; we cannot guess the cause any
+         * more, so the script now traces its own
+         * decisions to this handler, and the handler
+         * writes them to the diagnostic log file. The
+         * user can view the file from Developer options
+         * and see what the script actually saw, rather
+         * than what we hoped it saw. Two channels: tag
+         * identifies the source, msg is the trace.
+         */
+        @JavascriptInterface
+        fun trace(tag: String, msg: String) {
+            this@MainActivity.prefs.diagLog.write("js", "[$tag] $msg")
+            // The new per-channel diagnostic store. Each
+            // trace tag maps to a [Diag.Channel] so a
+            // developer with the matching switch on sees
+            // only the captures they care about. Tags the
+            // JS layer does not know about fall through to
+            // the legacy single-file log above.
+            val channel = when (tag) {
+                "ads" -> Diag.Channel.ADS
+                "routeblock" -> Diag.Channel.HOME_FEED
+                "tap" -> Diag.Channel.HOME_FEED
+                "tapdiag" -> Diag.Channel.HOME_FEED
+                "video", "video-new" -> Diag.Channel.REELS
+                else -> null
+            }
+            if (channel != null) {
+                DiagCapture.write(this@MainActivity, channel, message = msg)
+            }
+        }
+
+        /**
+         * Page reports a fillable login form is present.
+         *
+         * Nothing acts on this any more -- the native login screen it used to
+         * gate is gone. The probe script still calls it on every load, so the
+         * method has to stay: an injected script calling a missing
+         * @JavascriptInterface method throws inside the page.
+         */
+        @JavascriptInterface
+        fun onLoginFormReady(ready: Boolean) {
+            // no-op
+        }
+
+        /** Page reports a password field / login form is on screen. */
+        @JavascriptInterface
+        fun onAuthState(loggedOut: Boolean) {
+            if (domSaysLoggedOut == loggedOut) return
+            domSaysLoggedOut = loggedOut
+            this@MainActivity.prefs.diagLog.write("bridge", "onAuthState loggedOut=$loggedOut")
+            runOnUiThread { evaluateAuthState(binding.webView.url) }
+        }
+
+        /**
+         * The offline page reports where the user is so the next session can
+         * resume from the same point. Called periodically while the user
+         * scrolls through offline content.
+         *
+         * The gate is the DOCUMENT, not the radio: this bridge only ever
+         * runs inside a page OfflineDocs itself served (isShowingOfflinePage
+         * is set at the intercept), so a silent mid-read reconnect can no
+         * longer freeze the resume position at whatever was saved before
+         * the network came back (the round-20 report: reels always resumed
+         * at the same first item).
+         */
+        @JavascriptInterface
+        fun reportPosition(type: String, id: String) {
+            if (!isShowingOfflinePage) return
+            when (type) {
+                "reel" -> if (id.isNotBlank()) prefs.offlineResumeReel = id
+                "stories", "story" -> if (id.isNotBlank()) prefs.offlineResumeStories = id
+                "feed" -> prefs.offlineResumeFeed = "SCROLL:$id"
+            }
+            // Offline reel/story swipes never change the URL or push
+            // history, so doUpdateVisitedHistory's SPA-swap hook - the
+            // only other place this recovery runs - never fires for them.
+            // This report already arrives reliably ~600ms after each
+            // swipe settles, so it doubles as that missing signal.
+            if (type == "reel" || type == "stories" || type == "story") {
+                runOnUiThread {
+                    if (recoverWindowSizeIfStale()) {
+                        forcePageRelayout(binding.webView)
+                    }
+                }
+            }
+        }
+
+        /**
+         * An offline page reports a card the user has actually had on
+         * screen (60% visible, 1.5s straight, or a story tapped through).
+         * Deliberately NOT gated on isOnline: a saved page the user kept
+         * reading while the network came back still tells the truth about
+         * what was seen, and the write itself is pure local vault state.
+         * Bridge calls already arrive on the JS-binding thread, and the
+         * vault serialises its own file writes - nothing here can block
+         * or fight the page mid-scroll.
+         */
+        @JavascriptInterface
+        fun markViewed(section: String, id: String) {
+            OfflineFeed.markViewed(section, id)
+        }
+    }
+
+
+    /**
+     * Silent background update check, at most once every 12 hours.
+     * Runs on the blocklist thread; never blocks startup and stays quiet
+     * unless there is genuinely a newer release the user has not skipped.
+     */
+    /**
+     * @param force true when the user asked for it from settings, which must
+     *              bypass the 12-hour throttle.
+     */
+    // ================= connectivity / offline =================
+
+    private fun setupConnectivity() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        isOnline = hasNetwork(cm)
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                val was = isOnline
+                isOnline = true
+                DiagCapture.setMode(Diag.Mode.ONLINE)
+                DiagCapture.write(applicationContext, Diag.Channel.NETWORK,
+                    message = "online (was=$was)")
+                runOnUiThread {
+                    // Coming back online: refresh only if we were showing the
+                    // offline error page, never yank a page the user is reading.
+                    if (!was && binding.errorView.visibility == View.VISIBLE) {
+                        binding.errorView.visibility = View.GONE
+                        binding.webView.visibility = View.VISIBLE
+                        binding.webView.reload()
+                    }
+                    // Back online: one engine, not two. Starting
+                    // OfflineManager here as well put a second offscreen
+                    // WebView on the main thread.
+                    if (!was) {
+                        BackgroundSyncManager.onNetworkRestored()
+                        SyncService.startIfNeeded(applicationContext)
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                isOnline = hasNetwork(cm)
+                if (!isOnline) {
+                    DiagCapture.setMode(Diag.Mode.OFFLINE)
+                    DiagCapture.write(applicationContext, Diag.Channel.NETWORK,
+                        message = "offline")
+                    runOnUiThread {
+                        toast(getString(R.string.offline_banner))
+                    }
+                }
+            }
+        }
+        connectivityCallback = cb
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+        } catch (e: Exception) {
+            connectivityCallback = null
+        }
+    }
+
+    private fun hasNetwork(cm: ConnectivityManager): Boolean = try {
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    } catch (e: Exception) {
+        true
+    }
+
+    /**
+     * Warm the offline store for the page we are on, on a background thread.
+     * This runs after the page is already displayed, so it never delays
+     * rendering the way the old inline fetch did.
+     */
+    private fun warmOfflineCache(url: String?) {
+        if (!prefs.offlineMode || url == null || !isOnline) return
+        AppExecutors.background.execute {
+            try {
+                binding.webView.post {
+                    binding.webView.evaluateJavascript(
+                        """
+                        (function(){
+                          var out=[];
+                          var im=document.images;
+                          for(var i=0;i<im.length && out.length<40;i++)
+                            if(im[i].currentSrc) out.push(im[i].currentSrc);
+                          var ls=document.querySelectorAll('link[rel=stylesheet][href]');
+                          for(var j=0;j<ls.length && out.length<60;j++) out.push(ls[j].href);
+                          return out.join('\n');
+                        })();
+                        """.trimIndent()
+                    ) { res -> cacheUrlsAsync(res) }
+                }
+            } catch (e: Exception) { /* best effort */ }
+        }
+    }
+
+    private fun cacheUrlsAsync(jsResult: String?) {
+        val raw = jsResult ?: return
+        if (raw.length < 4) return
+        AppExecutors.heavyBackground.execute {
+            val list = raw.trim('"').split("\\n").map {
+                it.replace("\\/", "/").trim()
+            }.filter { it.startsWith("http") }
+            for (u in list.take(60)) {
+                if (!isOnline) break
+                try {
+                    if (OfflineCache.has(u)) continue
+                    val conn = (URL(u).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 8000
+                        readTimeout = 10000
+                        setRequestProperty("Accept-Encoding", "identity")
+                        setRequestProperty("User-Agent", binding.webView.settings.userAgentString)
+                        CookieManager.getInstance().getCookie(u)?.let {
+                            setRequestProperty("Cookie", it)
+                        }
+                    }
+                    if (conn.responseCode != 200) { conn.disconnect(); continue }
+                    val enc = conn.contentEncoding
+                    if (enc != null && !enc.equals("identity", true)) {
+                        conn.disconnect(); continue
+                    }
+                    val mime = conn.contentType ?: "application/octet-stream"
+                    val bytes = conn.inputStream.use { it.readBytes() }
+                    conn.disconnect()
+                    OfflineCache.put(u, mime, bytes)
+                } catch (e: Exception) { /* skip this asset */ }
+            }
+            OfflineCache.trimIfNeeded()
+        }
+    }
+
+    /**
+     * Fetch a resource ourselves so the bytes can be stored for offline use.
+     * Only runs for cacheable media; everything else falls through to the
+     * WebView's own networking.
+     */
+    private fun fetchAndCache(request: WebResourceRequest): WebResourceResponse? {
+        val url = request.url.toString()
+        return try {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 12000
+                readTimeout = 15000
+                instanceFollowRedirects = true
+                for ((k, v) in request.requestHeaders) {
+                    // Never forward Accept-Encoding. If we do, the CDN returns
+                    // gzip bytes which we would store verbatim and later replay
+                    // without a Content-Encoding header - the WebView then reads
+                    // compressed bytes as text, every stylesheet and script
+                    // fails to parse, and the page comes up blank on the second
+                    // launch. Asking for identity keeps the cache readable.
+                    if (!k.equals("Accept-Encoding", true) &&
+                        !k.equals("Range", true) &&
+                        !k.equals("If-None-Match", true) &&
+                        !k.equals("If-Modified-Since", true)
+                    ) {
+                        setRequestProperty(k, v)
+                    }
+                }
+                setRequestProperty("Accept-Encoding", "identity")
+                CookieManager.getInstance().getCookie(url)?.let {
+                    setRequestProperty("Cookie", it)
+                }
+            }
+            // Only a plain 200 is cacheable. 206 partial content and 304 are not.
+            if (conn.responseCode != 200) { conn.disconnect(); return null }
+
+            // If the server compressed anyway, do not cache it: we cannot
+            // replay it correctly.
+            val encoding = conn.contentEncoding
+            if (encoding != null && !encoding.equals("identity", true)) {
+                conn.disconnect()
+                return null
+            }
+
+            val mime = conn.contentType ?: "application/octet-stream"
+            val buf = ByteArrayOutputStream()
+            conn.inputStream.use { input ->
+                val chunk = ByteArray(16 * 1024)
+                var n = input.read(chunk)
+                var total = 0
+                while (n > 0) {
+                    buf.write(chunk, 0, n)
+                    total += n
+                    if (total > 25 * 1024 * 1024) { conn.disconnect(); return null }
+                    n = input.read(chunk)
+                }
+            }
+            conn.disconnect()
+            val bytes = buf.toByteArray()
+            OfflineCache.put(url, mime, bytes)
+            WebResourceResponse(
+                mime.substringBefore(';'),
+                "utf-8",
+                200,
+                "OK",
+                mapOf("Access-Control-Allow-Origin" to "*"),
+                java.io.ByteArrayInputStream(bytes)
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // ---------------------------------------------------------------- misc
+
+    private fun hasPermission(p: String) =
+        ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    /* Media permission: the right one depends on the API level.
+       On Android 13+ the gallery picker uses scoped storage
+       and needs READ_MEDIA_IMAGES. Below 13 the older
+       READ_EXTERNAL_STORAGE covers it, and on Q+ scoped
+       storage handles the picker without any explicit
+       permission at all. The file chooser used to launch
+       blind, the picker would return an empty result on
+       13+ when the permission was missing, and the user
+       saw the gallery open and close with no file picked.
+       Round 22 addendum 26: the chooser now asks for
+       permission first and waits for the user response
+       before launching. */
+    private fun hasMediaPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasPermission(Manifest.permission.READ_MEDIA_IMAGES)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            true
+        } else {
+            hasPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+    private fun requestMediaPermission() {
+        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        permissionLauncher.launch(arrayOf(perm))
+    }
+
+    /* A file chooser request that was deferred because the
+       media permission was not yet granted. When the
+       permission dialog returns, the launcher fires this
+       callback with the same arguments. */
+    private var pendingFileChooser: (() -> Unit)? = null
+
+    private fun showPermissionDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.permission_required))
+            .setMessage(getString(R.string.permission_rationale))
+            .setPositiveButton(getString(R.string.grant_permission)) { _, _ ->
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", packageName, null)
+                    }
+                )
+            }
+            .setNegativeButton(getString(R.string.dismiss), null)
+            .show()
+    }
+
+    private fun showErrorPage() {
+        // Recoverable: the WebView comes back on retry.
+        binding.webView.visibility = View.GONE
+        binding.errorView.visibility = View.VISIBLE
+        binding.progressBar.visibility = View.GONE
+
+        // Offer saved content only when we hold items whose media is really
+        // on disk. Counting cache files was wrong: a store full of icons and
+        // stylesheets made the button appear with nothing behind it.
+        val canOffline = prefs.offlineRead && hasAnythingOffline()
+        binding.errorOffline.visibility = if (canOffline) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * Remember where the user was in the offline content so the next session
+     * picks up from the same point instead of starting from the beginning.
+     *
+     * Called from onPause, so it runs while the WebView is still alive and
+     * the page can answer. Uses evaluateJavascript whose callback may not
+     * complete before the process is killed, but the best-effort save is
+     * enough: on the rare miss the user simply starts from the top (which
+     * is what always happened before).
+     */
+    private fun saveOfflinePosition() {
+        if (isOnline) return
+        val url = binding.webView.url ?: return
+        val isReel = url.contains("/reel") || url.contains("/reels") ||
+            url.contains("fb.watch")
+        val isStory = url.contains("/stories/") || url.contains("/story/")
+
+        binding.webView.evaluateJavascript("""
+        (function(){
+          var container = document.querySelector('[data-type="vscroller"]');
+          if (!container) return '';
+          var mid = container.clientHeight / 2;
+          if (container.scrollTop > 0) {
+            return 'FEED:' + container.scrollTop;
+          }
+          var cards = container.querySelectorAll(
+            '[data-video-id],[data-story-id]');
+          var best = '', bestDist = 999999;
+          for (var i = 0; i < cards.length; i++) {
+            var r = cards[i].getBoundingClientRect();
+            var dist = Math.abs((r.top + r.bottom) / 2 - mid);
+            if (dist < bestDist) {
+              bestDist = dist;
+              best = cards[i].getAttribute('data-video-id') ||
+                     cards[i].getAttribute('data-story-id') || '';
+            }
+          }
+          return best;
+        })();
+        """.trimIndent()) { result ->
+            val raw = result?.trim('"')?.takeIf { it.isNotBlank() } ?: return@evaluateJavascript
+            if (raw.startsWith("FEED:")) {
+                prefs.offlineResumeFeed = "SCROLL:" + raw.removePrefix("FEED:")
+            } else if (isReel && raw.isNotBlank()) {
+                prefs.offlineResumeReel = raw
+            } else if (isStory && raw.isNotBlank()) {
+                prefs.offlineResumeStories = raw
+            }
+        }
+    }
+
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    private fun startBgAudioService() {
+        if (AudioService.running) return
+        val intent = Intent(this, AudioService::class.java)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) { /* permission may be denied */ }
+    }
+
+    private fun stopBgAudioService() {
+        if (!AudioService.running) return
+        val intent = Intent(this, AudioService::class.java).apply {
+            action = AudioService.ACTION_STOP
+        }
+        try { startService(intent) } catch (e: Exception) {}
+    }
+
+    /**
+     * Whether a main-frame failure is worth retrying.
+     *
+     * These are the codes a mobile radio produces while it is still coming up:
+     * DNS not yet resolving, the connection refused mid-handover, or a slow
+     * cell timing out. None of them mean the network is unusable a second
+     * later. A certificate or file error, by contrast, will fail identically
+     * however many times it is retried.
+     */
+    private fun isTransientNetworkError(code: Int): Boolean = when (code) {
+        android.webkit.WebViewClient.ERROR_HOST_LOOKUP,
+        android.webkit.WebViewClient.ERROR_CONNECT,
+        android.webkit.WebViewClient.ERROR_TIMEOUT,
+        android.webkit.WebViewClient.ERROR_IO,
+        android.webkit.WebViewClient.ERROR_PROXY_AUTHENTICATION,
+        android.webkit.WebViewClient.ERROR_UNKNOWN -> true
+        else -> false
+    }
+
+    companion object {
+        /** Root of the currently-resumed activity so developer tools can reach it. */
+        @Volatile var resumed: MainActivity? = null
+            private set
+
+        /** Round 28 instrumentation: visible only in debug builds (R8-stripped
+         *  in release), used to verify how often forcePageRelayout fires and
+         *  what the page returns when it does. Reset on every cold start. */
+        const val TAG = "DBPro"
+        private var forcePageRelayoutCount: Int = 0
+
+        /** Silent ring buffer — last 10 unique video CDN URLs captured while
+         *  Log reel video URLs is ON.  Flushed to clipboard only on long-press
+         *  (AdInspector), never automatically. */
+        private val videoUrlRing = mutableListOf<String>()
+
+        private fun addVideoUrl(url: String, headers: Map<String, String>? = null) {
+            synchronized(videoUrlRing) {
+                val sb = StringBuilder(url)
+                if (!headers.isNullOrEmpty()) {
+                    // Only the headers most likely to differ between an ad
+                    // reel and an organic reel, to keep the clip readable.
+                    val keys = headers.keys.filter { k ->
+                        k.equals("Referer", true) ||
+                            k.equals("Origin", true) ||
+                            k.equals("Sec-Fetch-Site", true) ||
+                            k.equals("Sec-Fetch-Dest", true) ||
+                            k.startsWith("X-FB", true)
+                    }
+                    if (keys.isNotEmpty()) {
+                        sb.append("\n    » headers:")
+                        for (k in keys) sb.append("\n      ").append(k)
+                            .append(" = ").append(headers[k])
+                    }
+                }
+                val entry = sb.toString()
+                // De-dupe on the URL itself so re-fetched byte ranges do not
+                // pile up; the header suffix is ignored for the comparison.
+                videoUrlRing.removeAll { it == url || it.startsWith(url + "\n") }
+                videoUrlRing.add(entry)
+                while (videoUrlRing.size > 10) videoUrlRing.removeAt(0)
+            }
+        }
+
+        private fun drainVideoUrls(): List<String> {
+            synchronized(videoUrlRing) {
+                val copy = videoUrlRing.toList()
+                videoUrlRing.clear()
+                return copy
+            }
+        }
+
+        /** Enough to ride out a radio coming up, short enough to stay honest. */
+        const val MAX_MAIN_FRAME_RETRIES = 3
+    }
+}

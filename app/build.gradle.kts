@@ -28,11 +28,11 @@ val hasSigningKey = keystoreFile.exists() &&
     signingValue("storePassword", "KEYSTORE_PASSWORD") != null
 
 android {
-    namespace = "com.dustbook.app"
+    namespace = "org.qbook"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.dustbook.app"
+        applicationId = "org.qbook"
         minSdk = 26
         targetSdk = 34
         versionCode = 136
