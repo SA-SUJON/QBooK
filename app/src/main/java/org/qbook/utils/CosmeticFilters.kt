@@ -83,7 +83,7 @@ object CosmeticFilters {
         val css = plain.joinToString(",") + "{display:none !important;}"
         return """
             (function() {
-              var id = 'dustbook-cosmetic';
+              var id = 'qbook-cosmetic';
               if (document.getElementById(id)) return;
               var s = document.createElement('style');
               s.id = id;

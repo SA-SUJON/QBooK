@@ -107,7 +107,7 @@ object SupportPrompt {
             fun copy(text: String) {
                 activity.runOnUiThread {
                     val cm = activity.getSystemService(ClipboardManager::class.java)
-                    cm?.setPrimaryClip(ClipData.newPlainText("Dustbook", text))
+                    cm?.setPrimaryClip(ClipData.newPlainText("QBooK", text))
                     // Android 13 and up shows its own copy confirmation, so a
                     // toast there would be a second one saying the same thing.
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {

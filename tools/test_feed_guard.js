@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
 
-const KT = path.join(__dirname, '..', 'app/src/main/java/com/dustbook/app/utils/AdBlocker.kt');
+const KT = path.join(__dirname, '..', 'app/src/main/java/org/qbook/utils/AdBlocker.kt');
 
 function extract(fnName, flags) {
   const src = fs.readFileSync(KT, 'utf8');

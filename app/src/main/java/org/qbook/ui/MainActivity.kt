@@ -2447,7 +2447,7 @@ class MainActivity : AppCompatActivity() {
                         } else text
                     } else text
                     cm.setPrimaryClip(
-                        android.content.ClipData.newPlainText("Dustbook ad markup", full)
+                        android.content.ClipData.newPlainText("QBooK ad markup", full)
                     )
                     if (prefs.haptics) {
                         binding.root.performHapticFeedback(

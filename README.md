@@ -1,10 +1,10 @@
-# Dustbook
+# QBooK
 
 An Android client for Facebook that behaves like an installed app rather than a
 browser tab: no ads, no "Get the app" banners, offline reading, and in-app
 updates.
 
-Dustbook wraps the real Facebook mobile site in a WebView and cleans it up. You
+QBooK wraps the real Facebook mobile site in a WebView and cleans it up. You
 sign in on Facebook's own form, you browse Facebook's own pages, and Facebook's
 own layout is what you see — just without the advertising, the install prompts,
 and the parts of the feed you did not ask for.
@@ -35,9 +35,9 @@ Facebook does not grant feed access to third-party apps. Every "native Facebook
 client" either scrapes, or asks for credentials it should not have, or breaks
 whenever Facebook ships a change.
 
-Dustbook takes the opposite approach. The WebView **is** the client. Facebook
+QBooK takes the opposite approach. The WebView **is** the client. Facebook
 renders its own HTML, runs its own JavaScript, and manages its own session
-exactly as it would in Chrome. Dustbook only adds a filtering layer on top and
+exactly as it would in Chrome. QBooK only adds a filtering layer on top and
 a cache underneath.
 
 That has three consequences worth knowing:
@@ -228,7 +228,7 @@ diagnostic toggle for inspecting ad markup.
 ## How offline works
 
 Offline content is **the real Facebook page, served from disk** — not a
-reconstruction. Dustbook stores Facebook's own markup, so an offline post looks
+reconstruction. QBooK stores Facebook's own markup, so an offline post looks
 identical to an online one, with the same Like, Comment and Share controls in
 the same places.
 
@@ -255,7 +255,7 @@ not reappear after you have watched them.
 
 ## Privacy
 
-Dustbook has **no backend**. There is no account, no telemetry, no analytics,
+QBooK has **no backend**. There is no account, no telemetry, no analytics,
 no crash reporting, and no data collection of any kind.
 
 | Data | Where it lives |
@@ -295,8 +295,8 @@ inside the WebView. The app never uses them on its own initiative.
 Requires JDK 17 and the Android SDK (compileSdk 34).
 
 ```bash
-git clone https://github.com/build-rabbi/Dustbook.git
-cd Dustbook
+git clone https://github.com/SA-SUJON/QBooK.git
+cd QBooK
 ./gradlew assembleRelease
 ```
 
@@ -341,7 +341,7 @@ maintainers and are used under their original licences.
 
 ## Disclaimer
 
-Dustbook is an unofficial, independent project. It is not affiliated with,
+QBooK is an unofficial, independent project. It is not affiliated with,
 endorsed by, or connected to Meta Platforms, Inc. "Facebook" is a trademark of
 Meta Platforms, Inc.
 

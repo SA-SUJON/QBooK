@@ -16,7 +16,7 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
-const KT = (f) => path.join(ROOT, 'app/src/main/java/com/dustbook/app', f);
+const KT = (f) => path.join(ROOT, 'app/src/main/java/org/qbook', f);
 /** Defensive: a deleted file must fail a check, not crash the run. */
 const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
 
@@ -210,7 +210,7 @@ console.log('\nSessionState');
     ok('Reset app clears the saved WebView history',
        /SessionState\.clear\(ctx\)/.test(body.slice(0, 900)));
     ok('SettingsActivity imports SessionState',
-       /import com\.dustbook\.app\.utils\.SessionState/.test(sa));
+       /import org\.qbook\.utils\.SessionState/.test(sa));
   }
   ok('pull-to-refresh no longer reloads directly',
      !/setOnRefreshListener\s*\{\s*binding\.webView\.reload\(\)/.test(ma));
@@ -274,7 +274,7 @@ console.log('\nVideo playback');
   // stories stuck, and replacing the player outright lost the like, comment,
   // share and seek controls that come with it. The page's own player is left
   // exactly as Facebook ships it.
-  const files = fs.readdirSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils'));
+  const files = fs.readdirSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils'));
   ok('no video polish script', !files.includes('VideoPolish.kt'));
   ok('no native video bridge', !files.includes('NativeVideo.kt'));
   ok('no native video surface',
@@ -637,7 +637,7 @@ console.log('\nPlayback survives the window being hidden');
   ok('the default behaviour is still reachable',
      /super\.onWindowVisibilityChanged\(visibility\)/.test(mw));
   ok('the layout actually uses it',
-     /com\.dustbook\.app\.ui\.MediaWebView/.test(lay));
+     /org\.qbook\.ui\.MediaWebView/.test(lay));
   ok('the flag is raised only for real playback',
      /keepMediaAlive = keepAudioAlive/.test(ma) &&
      /prefs\.backgroundAudio && mediaPlaying/.test(ma));

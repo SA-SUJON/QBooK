@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Dustbook"
+rootProject.name = "QBooK"
 include(":app")

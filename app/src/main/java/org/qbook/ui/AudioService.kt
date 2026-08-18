@@ -11,7 +11,7 @@ import org.qbook.R
 class AudioService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "dustbook_audio"
+        const val CHANNEL_ID = "qbook_audio"
         const val NOTIFICATION_ID = 9001
         const val ACTION_STOP = "org.qbook.STOP_AUDIO"
         var running = false
@@ -84,7 +84,7 @@ class AudioService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Dustbook")
+            .setContentTitle("QBooK")
             .setContentText("Audio playing")
             .setSmallIcon(R.drawable.ic_reels)
             .setContentIntent(pendingTap)

@@ -20,7 +20,7 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
-const KT = (f) => path.join(ROOT, 'app/src/main/java/com/dustbook/app', f);
+const KT = (f) => path.join(ROOT, 'app/src/main/java/org/qbook', f);
 const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
 
 let pass = 0, fail = 0;
@@ -34,7 +34,7 @@ const store = read(KT('utils/NotificationStore.kt'));
 const presenter = read(KT('utils/NotificationPresenter.kt'));
 const worker = read(KT('utils/NotificationWorker.kt'));
 const prefs = read(KT('utils/Prefs.kt'));
-const app = read(path.join(ROOT, 'app/src/main/java/com/dustbook/app/DustbookApplication.kt'));
+const app = read(path.join(ROOT, 'app/src/main/java/org/qbook/QBooKApplication.kt'));
 const settings = read(KT('ui/SettingsActivity.kt'));
 const manifest = read(path.join(ROOT, 'app/src/main/AndroidManifest.xml'));
 const gradle = read(path.join(ROOT, 'app/build.gradle.kts'));
@@ -109,7 +109,7 @@ console.log('\ntwo channels, so requests can be silenced separately');
   ok('activity and requests are separate channels',
      /CHANNEL_ACTIVITY/.test(presenter) && /CHANNEL_REQUESTS/.test(presenter));
   ok('the channel ids do not collide with the services',
-     !/dustbook_audio|dustbook_sync/.test(presenter));
+     !/qbook_audio|qbook_sync/.test(presenter));
   ok('the notification ids do not collide either',
      /ID_BASE = 4000/.test(presenter));
   ok('no invented icon: it reuses the existing bell',

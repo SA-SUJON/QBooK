@@ -67,7 +67,7 @@ object AppExecutors {
             30L,                                 // keepAliveTime
             TimeUnit.SECONDS,
             LinkedBlockingQueue(64),
-            createThreadFactory("Dustbook-Bg"),
+            createThreadFactory("QBooK-Bg"),
             safeRejectionHandler
         ).apply {
             allowCoreThreadTimeOut(true)
@@ -84,7 +84,7 @@ object AppExecutors {
             60L,                                 // keepAliveTime
             TimeUnit.SECONDS,
             LinkedBlockingQueue(48),
-            createThreadFactory("Dustbook-Heavy"),
+            createThreadFactory("QBooK-Heavy"),
             safeRejectionHandler
         ).apply {
             allowCoreThreadTimeOut(true)
@@ -96,7 +96,7 @@ object AppExecutors {
     // ============================================================
     val diskIO: java.util.concurrent.ExecutorService by lazy {
         Executors.newSingleThreadExecutor(
-            createThreadFactory("Dustbook-DiskIO")
+            createThreadFactory("QBooK-DiskIO")
         )
     }
 

@@ -30,7 +30,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
-const SET = path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt');
+const SET = path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt');
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {

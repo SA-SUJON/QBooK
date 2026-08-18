@@ -311,7 +311,7 @@ class Prefs(context: Context) {
     val inspectAds: Boolean get() = sp.getBoolean(KEY_INSPECT_ADS, false)
     val logVideoUrls: Boolean get() = sp.getBoolean(KEY_LOG_VIDEOS, false)
     /** Diagnostic log: when on, every write path appends to a file in
-     *  cacheDir/diagnostic/dustbook.log. Off by default; turning it on
+     *  cacheDir/diagnostic/qbook.log. Off by default; turning it on
      *  has no effect when the user has no Developer-options entry point.
      *
      *  Two pieces of state: the persisted boolean (what the user

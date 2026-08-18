@@ -85,7 +85,7 @@ object DiagnosticExport {
         val arr = JSONArray()
         for (e in entries) arr.put(e.toJson())
         val root = JSONObject().apply {
-            put("app", "Dustbook")
+            put("app", "QBooK")
             put("versionName", try {
                 ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
             } catch (_: Exception) { "unknown" })
@@ -107,7 +107,7 @@ object DiagnosticExport {
 
     private fun writeText(ctx: Context, entries: List<Diag>): File {
         val sb = StringBuilder()
-        sb.appendLine("Dustbook diagnostic log")
+        sb.appendLine("QBooK diagnostic log")
         sb.appendLine("Exported: " + Diag.fmtTs(System.currentTimeMillis()))
         sb.appendLine("Entries: " + entries.size)
         sb.appendLine("Sessions: " + entries.map { it.sessionId }.filter { it.isNotBlank() }.distinct().joinToString(", "))
@@ -130,7 +130,7 @@ object DiagnosticExport {
         // overwrite each other. The format is sortable as
         // a string.
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val file = File(dir, "dustbook_$stamp.$ext")
+        val file = File(dir, "qbook_$stamp.$ext")
         file.writeText(body, Charsets.UTF_8)
         return file
     }

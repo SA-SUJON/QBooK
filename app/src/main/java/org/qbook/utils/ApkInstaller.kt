@@ -36,7 +36,7 @@ object ApkInstaller {
     private fun target(context: Context, version: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         val dir = File(base, DIR).apply { mkdirs() }
-        return File(dir, "Dustbook-$version.apk")
+        return File(dir, "QBooK-$version.apk")
     }
 
     /**
@@ -49,7 +49,7 @@ object ApkInstaller {
             if (file.exists()) file.delete()
 
             val request = DownloadManager.Request(Uri.parse(url)).apply {
-                setTitle("Dustbook $version")
+                setTitle("QBooK $version")
                 setDescription("Downloading update")
                 setNotificationVisibility(
                     DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED

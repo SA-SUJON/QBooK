@@ -18,7 +18,7 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
-const KT = (f) => path.join(ROOT, 'app/src/main/java/com/dustbook/app', f);
+const KT = (f) => path.join(ROOT, 'app/src/main/java/org/qbook', f);
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {

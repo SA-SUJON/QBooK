@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Dustbook</string>
+    <string name="app_name">QBooK</string>
     <string name="facebook_url">https://www.facebook.com</string>
 
     <string name="loading">Loading…</string>
@@ -263,7 +263,7 @@
     <string name="pref_inapp_msg_sum">Read and send messages without installing Messenger</string>
     <string name="update_installing">Installing…</string>
     <string name="update_progress_fmt">Downloading… %1$d%%</string>
-    <string name="update_need_permission">Allow installing apps from Dustbook, then tap again</string>
+    <string name="update_need_permission">Allow installing apps from QBooK, then tap again</string>
     <string name="grp_debug">Diagnostics</string>
     <string name="grp_permissions">App permissions</string>
     <string name="pref_perm_notifications">Enable notifications</string>
@@ -369,5 +369,5 @@
     <string name="dev_whatsapp">WhatsApp: +8801731410341</string>
     <string name="dev_email">Email: rabbihossainltd@gmail.com</string>
     <string name="dev_website">Website: rabbihossainltd.online</string>
-    <string name="dev_bio">A passionate software developer building tools that make the web better. Creator of Dustbook — a clean, ad-free Facebook experience for Android.</string>
+    <string name="dev_bio">Lead Developer and Technology Researcher. Architect of the QBooK Control Center—a precision-built environment engineered to override algorithmic noise, neutralize telemetry, and deliver a pure, ad-free interface. Focused on high-efficiency execution and absolute user control.</string>
 </resources>

@@ -101,7 +101,7 @@ class DiagnosticLog(private val appContext: Context) {
     private fun file(): File {
         val dir = File(appContext.cacheDir, "diagnostic")
         if (!dir.exists()) dir.mkdirs()
-        return File(dir, "dustbook.log")
+        return File(dir, "qbook.log")
     }
 
     private fun formatLine(tag: String, message: String): String {

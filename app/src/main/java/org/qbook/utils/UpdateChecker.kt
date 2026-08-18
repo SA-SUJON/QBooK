@@ -18,7 +18,7 @@ import java.net.URL
 object UpdateChecker {
 
     private const val API =
-        "https://api.github.com/repos/build-rabbi/Dustbook/releases/latest"
+        "https://api.github.com/repos/SA-SUJON/QBooK/releases/latest"
 
     /** Minimum gap between automatic checks. */
     private const val CHECK_INTERVAL_MS = 12L * 60 * 60 * 1000   // 12 hours
@@ -96,7 +96,7 @@ object UpdateChecker {
                 connectTimeout = 10000
                 readTimeout = 12000
                 setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "Dustbook-Updater")
+                setRequestProperty("User-Agent", "QBooK-Updater")
             }
             val code = conn.responseCode
             if (code == 404) {
@@ -156,7 +156,7 @@ object UpdateChecker {
                 connectTimeout = 10000
                 readTimeout = 12000
                 setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "Dustbook-Updater")
+                setRequestProperty("User-Agent", "QBooK-Updater")
             }
             if (conn.responseCode !in 200..299) {
                 conn.disconnect()

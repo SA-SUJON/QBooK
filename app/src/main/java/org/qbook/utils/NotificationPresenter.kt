@@ -21,8 +21,8 @@ import org.qbook.ui.MainActivity
  */
 object NotificationPresenter {
 
-    const val CHANNEL_ACTIVITY = "dustbook_activity"
-    const val CHANNEL_REQUESTS = "dustbook_requests"
+    const val CHANNEL_ACTIVITY = "qbook_activity"
+    const val CHANNEL_REQUESTS = "qbook_requests"
 
     /** Well clear of the service ids (9001, 9002). */
     private const val ID_BASE = 4000

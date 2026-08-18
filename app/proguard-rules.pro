@@ -56,7 +56,7 @@
     java.lang.Object writeReplace();
     java.lang.Object readResolve();
 }
-# --- Dustbook additions ---
+# --- QBooK additions ---
 # JavaScript bridge used for blob: downloads
 -keepclassmembers class org.qbook.ui.MainActivity$JsBridge {
     @android.webkit.JavascriptInterface <methods>;

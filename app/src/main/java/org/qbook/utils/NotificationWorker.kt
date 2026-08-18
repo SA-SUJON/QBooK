@@ -71,7 +71,7 @@ class NotificationWorker(
     }
 
     companion object {
-        const val WORK_NAME = "dustbook_notifications"
+        const val WORK_NAME = "qbook_notifications"
         private const val INTERVAL_MINUTES = 15L
 
         /** Schedule, or cancel, according to the user's setting. */

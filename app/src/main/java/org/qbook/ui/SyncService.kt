@@ -32,7 +32,7 @@ import org.qbook.utils.BackgroundSyncManager
 class SyncService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "dustbook_sync"
+        const val CHANNEL_ID = "qbook_sync"
         const val NOTIFICATION_ID = 9002
         const val ACTION_STOP = "org.qbook.STOP_SYNC"
 
@@ -133,7 +133,7 @@ class SyncService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Dustbook")
+            .setContentTitle("QBooK")
             .setContentText("Saving content for offline")
             .setSmallIcon(R.drawable.ic_offline)
             .setContentIntent(pendingTap)

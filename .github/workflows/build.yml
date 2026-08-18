@@ -111,13 +111,13 @@ jobs:
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: Dustbook-debug
+          name: QBooK-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Dustbook-release
+          name: QBooK-release
           path: app/build/outputs/apk/release/*.apk
           retention-days: 30
