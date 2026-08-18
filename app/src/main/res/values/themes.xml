@@ -31,7 +31,7 @@
 
     <style name="Theme.QBooK.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
         <item name="postSplashScreenTheme">@style/Theme.QBooK</item>
     </style>
 
@@ -40,6 +40,70 @@
         <item name="android:colorBackground">#000000</item>
         <item name="colorSurface">#000000</item>
         <item name="colorSurfaceContainer">#0A0A0A</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon0" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon1" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt1</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon2" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt2</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon3" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt3</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon4" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt4</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon5" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt5</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon6" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt6</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon7" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt7</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon8" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt8</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon9" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt9</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon10" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt10</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon11" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt11</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon12" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt12</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon13" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt13</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon14" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt14</item>
+    </style>
+
+    <style name="Theme.QBooK.Splash.Icon15" parent="Theme.QBooK.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_alt15</item>
     </style>
 
 </resources>

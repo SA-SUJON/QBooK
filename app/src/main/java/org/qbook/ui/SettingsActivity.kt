@@ -448,7 +448,7 @@ class SettingsActivity : AppCompatActivity() {
 
             // ---- icon switching ----
             val iconPref = findPreference<Preference>(Prefs.KEY_APP_ICON)
-            iconPref?.summary = getString(R.string.pref_icon_sum)
+            iconPref?.summary = iconSummary(prefs.appIcon)
             iconPref?.setOnPreferenceClickListener {
                 showIconPickerDialog(prefs.appIcon)
                 true
@@ -1007,13 +1007,13 @@ class SettingsActivity : AppCompatActivity() {
                 .show()
         }
 
-        /** Enable one launcher alias and disable the other 12. */
+        /** Enable one launcher alias and disable the other 15. */
         private fun applyAppIcon(index: Int) {
             val ctx = requireContext().applicationContext
             val pm = ctx.packageManager
             val pkg = ctx.packageName
 
-            for (i in 0..12) {
+            for (i in 0..15) {
                 val cn = android.content.ComponentName(pkg, "$pkg.ui.SplashActivityIcon$i")
                 val state = if (i == index) {
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED
@@ -1051,18 +1051,23 @@ class SettingsActivity : AppCompatActivity() {
             7 -> R.mipmap.ic_launcher_alt7; 8 -> R.mipmap.ic_launcher_alt8
             9 -> R.mipmap.ic_launcher_alt9; 10 -> R.mipmap.ic_launcher_alt10
             11 -> R.mipmap.ic_launcher_alt11; 12 -> R.mipmap.ic_launcher_alt12
+            13 -> R.mipmap.ic_launcher_alt13; 14 -> R.mipmap.ic_launcher_alt14
+            15 -> R.mipmap.ic_launcher_alt15
             else -> R.mipmap.ic_launcher
         }
 
-
+        private fun iconSummary(index: Int): String {
+            val labels = resources.getStringArray(R.array.icon_entries)
+            return getString(R.string.pref_icon_sum) + " — " + findLabelFor(index, labels)
+        }
 
         private fun showIconPickerDialog(currentIdx: Int) {
             val ctx = requireContext()
             val values = resources.getStringArray(R.array.icon_values)
             val d = resources.displayMetrics.density
 
-            // 3 per row so 9 of the 13 icons are visible without scrolling;
-            // the rest reachable by scrolling the grid itself. Selection is
+            // The existing two-column picker remains unchanged; all 16 icons
+            // are reachable by scrolling the grid. Selection is
             // shown as a ring rather than a name, so it reads at a glance
             // instead of being read. Tapping an icon moves the ring there
             // immediately and zooms the icon slightly - a live preview of
@@ -1122,7 +1127,7 @@ class SettingsActivity : AppCompatActivity() {
 
             for (vi in values.indices) {
                 val i = values[vi].toIntOrNull() ?: continue
-                if (i !in 0..12) continue
+                if (i !in 0..15) continue
 
                 val cell = android.widget.FrameLayout(ctx).apply {
                     layoutParams = android.widget.GridLayout.LayoutParams(

@@ -98,7 +98,7 @@ class QBooKApplication : Application() {
     private fun syncAppIcon(prefs: Prefs) {
         val idx = prefs.appIcon
         val pm = packageManager
-        for (i in 0..12) {
+        for (i in 0..15) {
             val cn = android.content.ComponentName(
                 packageName, "$packageName.ui.SplashActivityIcon$i"
             )

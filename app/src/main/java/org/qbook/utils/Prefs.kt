@@ -133,9 +133,8 @@ class Prefs(context: Context) {
     val amoled: Boolean get() = sp.getBoolean(KEY_AMOLED, true)
     val showProgress: Boolean get() = sp.getBoolean(KEY_SHOW_PROGRESS, false)
 
-    /** 0-12 index for app icon selection. 0 is the default icon;
-     *  5-12 are user-provided custom icons shown first in the picker. */
-    val appIcon: Int get() = (sp.getString(KEY_APP_ICON, "0")?.toIntOrNull() ?: 0).coerceIn(0, 12)
+    /** 0-15 index for app icon selection. 0 is the default icon. */
+    val appIcon: Int get() = (sp.getString(KEY_APP_ICON, "0")?.toIntOrNull() ?: 0).coerceIn(0, 15)
     val backgroundAudio: Boolean get() = sp.getBoolean(KEY_BACKGROUND_AUDIO, false)
     /**
      * Offline saving as a whole. There is no switch for this any more - the

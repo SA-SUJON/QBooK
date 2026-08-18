@@ -64,7 +64,6 @@
         <activity
             android:name=".ui.SplashActivity"
             android:exported="true"
-            android:theme="@style/Theme.QBooK.Splash"
             android:noHistory="true">
         </activity>
 
@@ -73,6 +72,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon0"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon0"
             android:icon="@mipmap/ic_launcher"
             android:roundIcon="@mipmap/ic_launcher_round"
             android:enabled="true"
@@ -85,6 +85,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon1"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon1"
             android:icon="@mipmap/ic_launcher_alt1"
             android:roundIcon="@mipmap/ic_launcher_alt1"
             android:enabled="false"
@@ -97,6 +98,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon2"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon2"
             android:icon="@mipmap/ic_launcher_alt2"
             android:roundIcon="@mipmap/ic_launcher_alt2"
             android:enabled="false"
@@ -109,6 +111,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon3"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon3"
             android:icon="@mipmap/ic_launcher_alt3"
             android:roundIcon="@mipmap/ic_launcher_alt3"
             android:enabled="false"
@@ -121,6 +124,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon4"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon4"
             android:icon="@mipmap/ic_launcher_alt4"
             android:roundIcon="@mipmap/ic_launcher_alt4"
             android:enabled="false"
@@ -133,6 +137,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon5"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon5"
             android:icon="@mipmap/ic_launcher_alt5"
             android:roundIcon="@mipmap/ic_launcher_alt5"
             android:enabled="false"
@@ -145,6 +150,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon6"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon6"
             android:icon="@mipmap/ic_launcher_alt6"
             android:roundIcon="@mipmap/ic_launcher_alt6"
             android:enabled="false"
@@ -157,6 +163,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon7"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon7"
             android:icon="@mipmap/ic_launcher_alt7"
             android:roundIcon="@mipmap/ic_launcher_alt7"
             android:enabled="false"
@@ -169,6 +176,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon8"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon8"
             android:icon="@mipmap/ic_launcher_alt8"
             android:roundIcon="@mipmap/ic_launcher_alt8"
             android:enabled="false"
@@ -181,6 +189,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon9"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon9"
             android:icon="@mipmap/ic_launcher_alt9"
             android:roundIcon="@mipmap/ic_launcher_alt9"
             android:enabled="false"
@@ -193,6 +202,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon10"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon10"
             android:icon="@mipmap/ic_launcher_alt10"
             android:roundIcon="@mipmap/ic_launcher_alt10"
             android:enabled="false"
@@ -205,6 +215,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon11"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon11"
             android:icon="@mipmap/ic_launcher_alt11"
             android:roundIcon="@mipmap/ic_launcher_alt11"
             android:enabled="false"
@@ -217,6 +228,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon12"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon12"
             android:icon="@mipmap/ic_launcher_alt12"
             android:roundIcon="@mipmap/ic_launcher_alt12"
             android:enabled="false"
@@ -230,6 +242,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon13"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon13"
             android:icon="@mipmap/ic_launcher_alt13"
             android:roundIcon="@mipmap/ic_launcher_alt13"
             android:enabled="false"
@@ -242,6 +255,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon14"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon14"
             android:icon="@mipmap/ic_launcher_alt14"
             android:roundIcon="@mipmap/ic_launcher_alt14"
             android:enabled="false"
@@ -254,6 +268,7 @@
         <activity-alias
             android:name=".ui.SplashActivityIcon15"
             android:targetActivity=".ui.SplashActivity"
+            android:theme="@style/Theme.QBooK.Splash.Icon15"
             android:icon="@mipmap/ic_launcher_alt15"
             android:roundIcon="@mipmap/ic_launcher_alt15"
             android:enabled="false"
