@@ -47,7 +47,7 @@
     </queries>
 
     <application
-        android:name=".DustbookApplication"
+        android:name=".QBooKApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -55,7 +55,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Dustbook"
+        android:theme="@style/Theme.QBooK"
         android:usesCleartextTraffic="false"
         android:networkSecurityConfig="@xml/network_security_config"
         android:enableOnBackInvokedCallback="true"
@@ -64,7 +64,7 @@
         <activity
             android:name=".ui.SplashActivity"
             android:exported="true"
-            android:theme="@style/Theme.Dustbook.Splash"
+            android:theme="@style/Theme.QBooK.Splash"
             android:noHistory="true">
         </activity>
 
@@ -227,6 +227,43 @@
             </intent-filter>
         </activity-alias>
 
+        <activity-alias
+            android:name=".ui.SplashActivityIcon13"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt13"
+            android:roundIcon="@mipmap/ic_launcher_alt13"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon14"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt14"
+            android:roundIcon="@mipmap/ic_launcher_alt14"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.SplashActivityIcon15"
+            android:targetActivity=".ui.SplashActivity"
+            android:icon="@mipmap/ic_launcher_alt15"
+            android:roundIcon="@mipmap/ic_launcher_alt15"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
@@ -263,7 +300,7 @@
             android:label="@string/hidden_settings"
             android:excludeFromRecents="true"
             android:parentActivityName=".ui.MainActivity"
-            android:theme="@style/Theme.Dustbook" />
+            android:theme="@style/Theme.QBooK" />
 
         <activity
             android:name=".ui.DiagnosticLogActivity"
@@ -271,7 +308,7 @@
             android:label="@string/diagnostic_log_title"
             android:excludeFromRecents="true"
             android:parentActivityName=".ui.SettingsActivity"
-            android:theme="@style/Theme.Dustbook" />
+            android:theme="@style/Theme.QBooK" />
 
         <service
             android:name=".ui.AudioService"
