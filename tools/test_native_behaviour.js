@@ -1598,17 +1598,80 @@ console.log('\nBackground audio is for Reels, and only when audible');
     // this can be built - so the cheap check runs here first.
     ok('nothing still refers to them',
        !/LayoutProbe|LayoutTrace|LayoutTraceScript|TwoFingerHoldDetector/.test(ma));
-    ok('the touch hook is clean again',
-       /fun dispatchTouchEvent[\s\S]{0,220}gestureDetector\.onTouchEvent/.test(ma) &&
+    const legacyGestureTokens = [
+      'fun dispatch' + 'TouchEvent',
+      'gesture' + 'Detector',
+      'ThreeFinger' + 'DoubleTapDetector'
+    ];
+    ok('the touch hook has no legacy settings observer',
+       legacyGestureTokens.every((token) => !ma.includes(token)) &&
        !/probeDetector/.test(ma));
 
     ok('the setting is gone from Prefs', !/layout_probe|layoutProbe/.test(pf));
     ok('and from the settings screen', !/layout_probe/.test(browsingXml));
     ok('with no orphan strings left behind', !/pref_layout_probe/.test(strings));
 
-    // The three-finger double tap is the real hidden entry point and stays.
-    ok('the hidden settings gesture is untouched',
-       /ThreeFingerDoubleTapDetector/.test(ma) && /openHiddenSettings/.test(ma));
+    // The visible gear is the only normal settings entry point.
+    const legacySettingsTokens = [
+      'ThreeFinger' + 'DoubleTapDetector',
+      'gesture' + 'Detector',
+      'openHidden' + 'Settings',
+      'dispatch' + 'TouchEvent'
+    ];
+    ok('the legacy three-finger settings gesture is removed',
+       legacySettingsTokens.every((token) => !ma.includes(token)));
+
+    const mainLayout = fs.readFileSync(
+      path.join(ROOT, 'app/src/main/res/layout/activity_main.xml'), 'utf8');
+    ok('the settings gear is a native root overlay outside the WebView',
+       /<ImageButton[\s\S]*android:id="@\+id\/settingsButton"/.test(mainLayout) &&
+       mainLayout.indexOf('android:id="@+id/settingsButton"') >
+         mainLayout.indexOf('android:id="@+id/webView"') &&
+       mainLayout.indexOf('android:id="@+id/settingsButton"') <
+         mainLayout.indexOf('android:id="@+id/customViewContainer"'));
+    ok('the settings gear has an accessible 48dp target and label',
+       /android:layout_width="48dp"[\s\S]{0,240}android:layout_height="48dp"/.test(mainLayout) &&
+       /android:contentDescription="@string\/open_settings"/.test(mainLayout));
+    ok('the gear uses a native settings vector and visible ripple treatment',
+       /android:src="@drawable\/ic_settings"/.test(mainLayout) &&
+       /android:background="@drawable\/bg_settings_button"/.test(mainLayout));
+    ok('the gear listener uses the visible Control Center launch path',
+       /setupSettingsButton[\s\S]{0,300}binding\.settingsButton\.setOnClickListener\s*\{\s*openControlCenter\(\)\s*\}/.test(ma) &&
+       /private fun openControlCenter\(\)[\s\S]{0,220}startActivity\(Intent\(this, SettingsActivity::class\.java\)\)/.test(ma));
+    ok('the gear remains reachable on the normal and error screens',
+       /setupSettingsButton\(\)/.test(ma) &&
+       /android:id="@\+id\/errorView"[\s\S]*android:id="@\+id\/settingsButton"/.test(mainLayout));
+    ok('the gear hides only during custom fullscreen and returns afterward',
+       /binding\.contentRoot\.visibility = View\.INVISIBLE[\s\S]{0,140}binding\.settingsButton\.visibility = View\.GONE/.test(ma) &&
+       /binding\.contentRoot\.visibility = View\.VISIBLE[\s\S]{0,140}binding\.settingsButton\.visibility = View\.VISIBLE/.test(ma));
+
+    const sectionKeys = [
+      'section_appearance', 'section_browsing', 'section_blocking',
+      'section_home', 'section_offline', 'section_privacy', 'section_about'
+    ];
+    const settingsActivity = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
+    const preferenceSetup = settingsActivity.slice(
+      settingsActivity.indexOf('override fun onCreatePreferences'),
+      settingsActivity.indexOf('override fun onResume'));
+    const sectionHeaderLayout = fs.readFileSync(
+      path.join(ROOT, 'app/src/main/res/layout/preference_expandable_category.xml'), 'utf8');
+    const categorySource = fs.readFileSync(
+      KT('ui/ExpandablePreferenceCategory.kt'), 'utf8');
+    ok('the custom category enables Preference.performClick dispatch',
+       /override fun isEnabled\(\): Boolean = true/.test(categorySource));
+    ok('all seven sections use one explicit Preference click path',
+       /SECTION_KEYS\.forEach\s*\{ key ->/.test(preferenceSetup) &&
+       /findPreference<ExpandablePreferenceCategory>\(key\)/.test(preferenceSetup) &&
+       /setOnPreferenceClickListener/.test(preferenceSetup) &&
+       /setSectionExpanded\(key, expandedSections\[key\] != true\)/.test(preferenceSetup) &&
+       /true/.test(preferenceSetup) &&
+       sectionKeys.every((key) => new RegExp(key).test(settingsActivity)));
+    ok('the redundant Preference tree-click path is removed',
+       !/override fun onPreferenceTreeClick/.test(settingsActivity) &&
+       !/startsWith\("section_"\)/.test(settingsActivity));
+    ok('the custom header does not intercept Preference row clicks',
+       !/android:clickable="true"/.test(sectionHeaderLayout) &&
+       !/android:focusable="true"/.test(sectionHeaderLayout));
 
     // FBPro.log existed only to carry trace lines out of the page. Every
     // other bridge method is a real feature and must survive.

@@ -20,7 +20,6 @@ import android.os.Environment
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.webkit.CookieManager
@@ -75,7 +74,6 @@ import org.qbook.utils.Prefs
 import org.qbook.utils.VideoHelper
 import org.qbook.utils.SessionState
 import org.qbook.utils.SoftRefresh
-import org.qbook.utils.ThreeFingerDoubleTapDetector
 import org.qbook.utils.UpdateWatcher
 import org.qbook.utils.UrlHelper
 import org.qbook.viewmodel.MainViewModel
@@ -164,10 +162,6 @@ class MainActivity : AppCompatActivity() {
     /** Throttles the diagnostic-log network entry to one per second.
      *  Read/written from the WebView resource thread, hence @Volatile. */
     @Volatile private var lastNetworkLogSecond: Long = 0
-
-    private val gestureDetector by lazy {
-        ThreeFingerDoubleTapDetector { openHiddenSettings() }
-    }
 
     // ---------------------------------------------------------------- launchers
 
@@ -262,6 +256,7 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        setupSettingsButton()
 
         // Blocklist + offline store load off the main thread.
         OfflineCache.init(applicationContext)
@@ -605,25 +600,31 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    // ---------------------------------------------------------------- gestures
+    // ---------------------------------------------------------------- settings access
 
-    /**
-     * Three finger double tap anywhere -> hidden settings.
-     * Purely observational, never consumes the event, so normal scrolling and
-     * tapping are completely unaffected.
-     */
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        gestureDetector.onTouchEvent(ev)
-        return super.dispatchTouchEvent(ev)
-    }
-
-    private fun openHiddenSettings() {
+    private fun openControlCenter() {
         if (prefs.haptics) {
             binding.root.performHapticFeedback(
                 android.view.HapticFeedbackConstants.LONG_PRESS
             )
         }
         startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    private fun setupSettingsButton() {
+        binding.settingsButton.setOnClickListener { openControlCenter() }
+        val density = resources.displayMetrics.density
+        val baseTop = (12f * density + 0.5f).toInt()
+        val baseEnd = (12f * density + 0.5f).toInt()
+        ViewCompat.setOnApplyWindowInsetsListener(binding.settingsButton) { view, insets ->
+            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            val params = view.layoutParams as android.widget.FrameLayout.LayoutParams
+            params.topMargin = baseTop + bars.top
+            params.marginEnd = baseEnd + bars.right
+            view.layoutParams = params
+            insets
+        }
+        ViewCompat.requestApplyInsets(binding.settingsButton)
     }
 
     // ---------------------------------------------------------------- setup
@@ -1922,6 +1923,7 @@ class MainActivity : AppCompatActivity() {
                 // back exactly as it left. It costs nothing: the WebView is
                 // covered by the fullscreen container and is not drawn.
                 binding.contentRoot.visibility = View.INVISIBLE
+                binding.settingsButton.visibility = View.GONE
                 enterImmersive(true)
                 // Entering fullscreen straight after a fast Wi-Fi page load
                 // (the app opening directly into Reels, say) can race the
@@ -1961,6 +1963,7 @@ class MainActivity : AppCompatActivity() {
                 // whatever was there before - the dead-strip-no-tap shape.
                 binding.contentRoot.requestLayout()
                 binding.contentRoot.visibility = View.VISIBLE
+                binding.settingsButton.visibility = View.VISIBLE
                 customView = null
                 customViewCallback?.onCustomViewHidden()
                 customViewCallback = null

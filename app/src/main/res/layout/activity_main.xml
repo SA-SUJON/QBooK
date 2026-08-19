@@ -100,6 +100,22 @@
     </LinearLayout>
 
 
+    <ImageButton
+        android:id="@+id/settingsButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_settings_button"
+        android:contentDescription="@string/open_settings"
+        android:elevation="6dp"
+        android:padding="12dp"
+        android:src="@drawable/ic_settings"
+        android:translationZ="6dp"
+        android:tint="@color/fb_icon"
+        android:visibility="visible" />
+
     <FrameLayout
         android:id="@+id/customViewContainer"
         android:layout_width="match_parent"

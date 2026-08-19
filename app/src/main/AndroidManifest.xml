@@ -307,8 +307,8 @@
             </intent-filter>
         </activity>
 
-        <!-- Hidden: no launcher entry, not exported, only reachable via the
-             three finger double tap gesture inside MainActivity. -->
+        <!-- No launcher entry; opened from the visible QBooK Control Center
+             button inside MainActivity. -->
         <activity
             android:name=".ui.SettingsActivity"
             android:exported="false"
