@@ -24,7 +24,7 @@ const cp = require('child_process');
 const { JSDOM } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
-const KT = (f) => path.join(ROOT, 'app/src/main/java/com/dustbook/app', f);
+const KT = (f) => path.join(ROOT, 'app/src/main/java/org/qbook', f);
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -651,7 +651,7 @@ console.log('\nSaved content is readable whatever the save switches say');
 {
   const prefs = fs.readFileSync(KT('utils/Prefs.kt'), 'utf8');
   const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
-  const app = fs.readFileSync(KT('DustbookApplication.kt'), 'utf8');
+  const app = fs.readFileSync(KT('QBooKApplication.kt'), 'utf8');
   const sa = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
 
   ok('reading has its own flag', /val offlineRead: Boolean/.test(prefs));
@@ -757,7 +757,7 @@ console.log('\nCounting waits for the whole item');
      /fun cardMarkupList\(section: String\)[\s\S]{0,160}vault\(section\)\?\.cards\(\)/
        .test(feedSrc));
   ok('and the vaults never ask the shared chrome cache',
-     !/import com\.dustbook\.app\.utils\.OfflineCache/.test(vaultSrc) &&
+     !/import org\.qbook\.utils\.OfflineCache/.test(vaultSrc) &&
      !/OfflineCache\.(has|put|get|range)\(/.test(vaultSrc));
 
   // Exercise the rule itself via the verbatim-ported predicates, against a
@@ -1826,7 +1826,9 @@ console.log('\nEvery saved card reaches the page');
     const HBug4 = (() => {
       const oldSrc = cp.execSync(
         'git show c367b21:tools/offline_vault_harness.js',
-        { cwd: ROOT }).toString();
+        { cwd: ROOT }).toString().replace(
+          'app/src/main/java/com/dustbook/app',
+          'app/src/main/java/org/qbook');
       const tmp = path.join(ROOT, 'tools', '.harness_bug4_tmp.js');
       fs.writeFileSync(tmp, oldSrc);
       const m = require('./.harness_bug4_tmp.js');
@@ -3486,7 +3488,9 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
     // behavior and every old-side pin lies. e90a8f6 is remote main before
     // this round - immutable, and reachable forever.
     const oldSrc = cp.execSync(
-      'git show e90a8f6:tools/offline_vault_harness.js', { cwd: ROOT }).toString();
+      'git show e90a8f6:tools/offline_vault_harness.js', { cwd: ROOT }).toString().replace(
+        'app/src/main/java/com/dustbook/app',
+        'app/src/main/java/org/qbook');
     const tmp = path.join(ROOT, 'tools', '.harness_prev_tmp.js');
     fs.writeFileSync(tmp, oldSrc);
     const m = require('./.harness_prev_tmp.js');
@@ -3497,7 +3501,9 @@ console.log('\nRound 21 - ten means ten (in-flight seats), one nav row (badge sp
     // 9ba4283 = v5.2.21, the build the device rejected with an empty
     // nav bar: exact species surfaced, both badge forms stayed LEAVE.
     const oldSrc = cp.execSync(
-      'git show 9ba4283:tools/offline_vault_harness.js', { cwd: ROOT }).toString();
+      'git show 9ba4283:tools/offline_vault_harness.js', { cwd: ROOT }).toString().replace(
+        'app/src/main/java/com/dustbook/app',
+        'app/src/main/java/org/qbook');
     const tmp = path.join(ROOT, 'tools', '.harness_521_tmp.js');
     fs.writeFileSync(tmp, oldSrc);
     const m = require('./.harness_521_tmp.js');
@@ -3882,7 +3888,9 @@ console.log('\nRound 25 - online order offline, every reel claims the frame, the
   const H523 = (() => {
     const oldSrc = cp25.execSync(
       'git show 43c9649:tools/offline_vault_harness.js',
-      { cwd: ROOT }).toString();
+      { cwd: ROOT }).toString().replace(
+        'app/src/main/java/com/dustbook/app',
+        'app/src/main/java/org/qbook');
     const tmp = path.join(ROOT, 'tools', '.harness_523_tmp.js');
     fs.writeFileSync(tmp, oldSrc);
     const m = require('./.harness_523_tmp.js');

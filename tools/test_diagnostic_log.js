@@ -2,12 +2,12 @@
 /**
  * Tests for the in-app diagnostic log.
  *
- * The class lives in app/src/main/java/com/dustbook/app/utils/DiagnosticLog.kt
+ * The class lives in app/src/main/java/org/qbook/utils/DiagnosticLog.kt
  * and is intentionally small: a file-backed ring buffer with a 5 MB cap.
  * The test pins the contract that production code relies on:
  *
  *   - when disabled, every write returns immediately (no file IO)
- *   - the file lives at cacheDir/diagnostic/dustbook.log
+ *   - the file lives at cacheDir/diagnostic/qbook.log
  *   - the file is capped at 5 MB and trimmed from the top when over
  *   - clear() deletes the file
  *   - readAll() returns the whole file, newest entry last
@@ -29,7 +29,7 @@ function ok(name, cond, info) {
 }
 
 const code = fs.readFileSync(
-  path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/DiagnosticLog.kt'),
+  path.join(ROOT, 'app/src/main/java/org/qbook/utils/DiagnosticLog.kt'),
   'utf8'
 );
 
@@ -56,8 +56,8 @@ console.log('');
 console.log('=== File location and cap ===');
 ok('the file lives under cacheDir',
    /File\(appContext\.cacheDir, "diagnostic"\)/.test(code));
-ok('the file is named dustbook.log',
-   /return File\(dir, "dustbook\.log"\)/.test(code));
+ok('the file is named qbook.log',
+   /return File\(dir, "qbook\.log"\)/.test(code));
 ok('the cap is 5 MB',
    /MAX_BYTES = 5L \* 1024 \* 1024/.test(code));
 ok('trim drops 256 KB at a time',
@@ -96,53 +96,53 @@ console.log('');
 console.log('=== Wiring ===');
 ok('Prefs exposes diagChannelEnabled and setDiagChannelEnabled for every Diag.Channel',
    /fun diagChannelEnabled\(channel: Diag\.Channel\)/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'), 'utf8')
    ) && /fun setDiagChannelEnabled\(channel: Diag\.Channel, value: Boolean\)/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'), 'utf8')
    ));
 ok('Prefs has a key constant for each per-channel flag',
    /KEY_DIAGNOSTIC_HOME_FEED/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'), 'utf8')
    ) && /KEY_DIAGNOSTIC_REELS/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'), 'utf8')
    ) && /KEY_DIAGNOSTIC_STORY/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'), 'utf8')
    ) && /KEY_DIAGNOSTIC_ADS/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'), 'utf8')
    ));
 ok('Settings wires each per-channel switch to the matching Diag.Channel',
    /Diag\.Channel\.HOME_FEED to Prefs\.KEY_DIAGNOSTIC_HOME_FEED/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ) && /Diag\.Channel\.REELS to Prefs\.KEY_DIAGNOSTIC_REELS/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ) && /Diag\.Channel\.STORY to Prefs\.KEY_DIAGNOSTIC_STORY/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ) && /Diag\.Channel\.ADS to Prefs\.KEY_DIAGNOSTIC_ADS/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('the About entry takes seven taps to enable Developer options (and the 7th tap sets developerEnabled = true)',
    /sevenTap[\s\S]{0,2000}prefs\.developerEnabled = true/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('the developer_unlocked preference is exposed',
    /KEY_DEVELOPER_UNLOCKED = "developer_unlocked"/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'), 'utf8')
    ));
 ok('the developer_enabled preference is exposed (the toolbar toggle on the Developer options screen)',
    /KEY_DEVELOPER_ENABLED = "developer_enabled"/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'), 'utf8')
    ));
 ok('the seven-tap gesture is idempotent: it sets developerEnabled = true on the 7th tap (no separate unlock state)',
    /sevenTap[\s\S]{0,2500}prefs\.developerEnabled = true/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('the seven-tap handler returns early when developerEnabled is already true (no recreate, no toast on re-tap when entry is already shown)',
    /sevenTap[\s\S]{0,1500}if\s*\(prefs\.developerEnabled\)[\s\S]{0,800}return@setOnPreferenceClickListener/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('the About entry\'s visibility is gated on developerEnabled so the toolbar toggle can re-hide it',
    /nav_developer"\)\s*\?\s*\.isVisible\s*=\s*prefs\.developerEnabled/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('app_version in settings_about.xml is NOT selectable="false" (otherwise the click listener never fires)',
    !/<Preference android:key="app_version"[\s\S]{0,100}selectable="false"/.test(
@@ -150,17 +150,17 @@ ok('app_version in settings_about.xml is NOT selectable="false" (otherwise the c
    ));
 ok('the seven-tap handler posts an activity recreate (so the entry appears without the user navigating away and back)',
    /Looper\.getMainLooper\(\)\)\.post[\s\S]{0,300}requireActivity\(\)\.recreate/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('the Developer options screen has a toolbar menu with a SwitchCompat action view',
    /R\.menu\.menu_developer/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ) && /actionLayout="@layout\/action_developer_toggle"/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/res/menu/menu_developer.xml'), 'utf8')
    ));
 ok('the toolbar switch reflects prefs.developerEnabled on every inflation and writes back on every flip',
    /sw\.isChecked = prefs\.developerEnabled[\s\S]{0,400}prefs\.developerEnabled = isChecked/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'), 'utf8')
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ));
 ok('settings_developer.xml no longer has the inline developer_enabled switch (it lives in the toolbar now)',
    !/android:key="developer_enabled"/.test(
@@ -170,7 +170,7 @@ ok('settings_developer.xml no longer has the inline developer_enabled switch (it
 console.log('');
 console.log('=== onCreate reads the persisted value (cold-start path) ===');
 const mainSrc = fs.readFileSync(
-  path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/MainActivity.kt'), 'utf8');
+  path.join(ROOT, 'app/src/main/java/org/qbook/ui/MainActivity.kt'), 'utf8');
 ok('onCreate assigns prefs.diagLog.enabled from prefs.diagnosticLog (the persisted getter)',
    /override fun onCreate[\s\S]{0,1500}prefs\.diagLog\.enabled = prefs\.diagnosticLog/.test(mainSrc));
 ok('onCreate writes a log line that includes the persisted value, so the device can confirm the right state was read',
@@ -179,7 +179,7 @@ ok('onCreate writes a log line that includes the persisted value, so the device 
 console.log('');
 console.log('=== Write-site count (sanity, not a contract) ===');
 const writeSites = (
-  fs.readFileSync(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/MainActivity.kt'), 'utf8')
+  fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/MainActivity.kt'), 'utf8')
 ).match(/prefs\.diagLog\.write\(|this@MainActivity\.prefs\.diagLog\.write\(/g) || [];
 console.log('  write call sites in MainActivity: ' + writeSites.length);
 ok('at least 15 write sites (lifecycle + webview + bridge + relayout)',

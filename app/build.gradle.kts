@@ -22,17 +22,17 @@ val keystoreProps = Properties().apply {
 fun signingValue(propKey: String, envKey: String): String? =
     keystoreProps.getProperty(propKey) ?: System.getenv(envKey)
 
-val keystorePath = signingValue("storeFile", "KEYSTORE_FILE") ?: "dustbook-release.jks"
+val keystorePath = signingValue("storeFile", "KEYSTORE_FILE") ?: "qbook-release.jks"
 val keystoreFile = rootProject.file(keystorePath)
 val hasSigningKey = keystoreFile.exists() &&
     signingValue("storePassword", "KEYSTORE_PASSWORD") != null
 
 android {
-    namespace = "com.dustbook.app"
+    namespace = "org.qbook"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.dustbook.app"
+        applicationId = "org.qbook"
         minSdk = 26
         targetSdk = 34
         versionCode = 136

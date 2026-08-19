@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Dustbook</string>
+    <string name="app_name">QBooK</string>
     <string name="facebook_url">https://www.facebook.com</string>
 
     <string name="loading">Loading…</string>
@@ -17,94 +17,108 @@
     <string name="permission_required">Permission needed</string>
     <string name="permission_rationale">Some features need this permission. You can grant it in system settings.</string>
     <string name="grant_permission">Open settings</string>
+    <string name="open_settings">Open QBooK settings</string>
     <string name="dismiss">Not now</string>
 
-    <string name="hidden_settings">Hidden Settings</string>
-    <string name="cat_blocking">Blocking</string>
-    <string name="cat_appearance">Appearance</string>
+    <string name="hidden_settings">QBooK Control Center</string>
+    <string name="cat_blocking">Privacy Firewall</string>
+    <string name="cat_appearance">Visual Engine</string>
     <string name="cat_feed">Feed cleanup</string>
-    <string name="pref_push">Notifications</string>
-    <string name="pref_push_sum">Check Facebook for likes, comments and friend requests in the background</string>
+    <string name="pref_push">Background Event Polling</string>
+    <string name="pref_push_sum">Poll notifications, reactions, and inbox updates in background</string>
     <string name="notif_channel_activity">Activity</string>
     <string name="notif_channel_activity_sum">Likes, comments, mentions and shares</string>
     <string name="notif_channel_requests">Friend requests</string>
     <string name="notif_channel_requests_sum">New and accepted friend requests</string>
     <string name="grp_notifications">Notifications</string>
-    <string name="pref_support">Support the developer</string>
-    <string name="pref_support_sum">Buy me a coffee</string>
-    <string name="cat_browsing">Browsing</string>
-    <string name="cat_data">Privacy &amp; data</string>
-    <string name="cat_about">About</string>
+    <string name="pref_support">Buy Me A Coffee</string>
+    <string name="pref_support_sum">Contribute to project development</string>
+    <string name="cat_browsing">Behavior &amp; Runtime</string>
+    <string name="cat_data">Security &amp; State</string>
+    <string name="cat_about">System &amp; Updates</string>
 
-    <string name="pref_adblock">Ad blocker</string>
-    <string name="pref_adblock_sum">Block ad and tracker network requests</string>
-    <string name="pref_cosmetic">Hide ad elements</string>
-    <string name="pref_cosmetic_sum">Remove sponsored posts and ad slots from the page</string>
+    <string name="pref_adblock">Network AD Interceptor</string>
+    <string name="pref_adblock_sum">Intercept and drop incoming AD and tracking telemetry requests</string>
+    <string name="pref_cosmetic">DOM Element Purger</string>
+    <string name="pref_cosmetic_sum">Strip sponsored post containers and empty AD slots from view</string>
     <string name="pref_app_promo">Remove app download banners</string>
     <string name="pref_app_promo_sum">Strips every \"Get the app\", Play Store and App Store link on any screen</string>
     <string name="pref_popups">Block popups</string>
     <string name="pref_popups_sum">Block windows the page opens without a tap</string>
-    <string name="pref_stats">Requests blocked</string>
-    <string name="pref_reset_stats">Reset counter</string>
-    <string name="blocked_count_fmt">%1$d blocked in this session</string>
+    <string name="pref_stats">Suppression Counter</string>
+    <string name="pref_reset_stats">Reset Metrics</string>
+    <string name="blocked_count_fmt">%1$d telemetry queries suppressed in current runtime</string>
 
-    <string name="pref_dark">Theme</string>
-    <string name="pref_amoled">AMOLED black</string>
-    <string name="pref_amoled_sum">Pure black background in dark mode</string>
-    <string name="pref_progress">Loading bar</string>
-    <string name="pref_progress_sum">Show page load progress at the top</string>
+    <string name="pref_dark">Color Palette Engine</string>
+    <string name="pref_dark_sum">Active rendering theme (%1$s)</string>
+    <string name="theme_dialog_title">Theme Mode</string>
+    <string name="pref_amoled">OLED True Black</string>
+    <string name="pref_amoled_sum">Enforce zero-pixel background emission in dark mode</string>
+    <string name="pref_progress">Progress Bar Indicator</string>
+    <string name="pref_progress_sum">Display top-edge network activity during page render</string>
 
-    <string name="pref_hide_stories">Hide Stories</string>
-    <string name="pref_hide_reels">Hide Reels</string>
-    <string name="pref_hide_pymk">Hide People You May Know</string>
+    <string name="pref_hide_stories">Suppress Stories Tray</string>
+    <string name="pref_hide_reels">Suppress Reels Module</string>
+    <string name="pref_hide_pymk">Suppress Friend Suggestions</string>
 
-    <string name="pref_desktop">Desktop site</string>
-    <string name="pref_desktop_sum">Request the desktop version of Facebook</string>
-    <string name="pref_zoom">Pinch to zoom</string>
-    <string name="pref_zoom_sum">Allow zooming photos and text</string>
-    <string name="pref_pull">Pull to refresh</string>
-    <string name="pref_autoplay">Autoplay videos</string>
-    <string name="pref_autoplay_sum">Play videos without tapping</string>
-    <string name="pref_external">Open outside links in browser</string>
-    <string name="pref_external_sum">Non-Facebook links open in your default browser</string>
-    <string name="pref_screen_on">Keep screen on</string>
-    <string name="pref_haptics">Haptic feedback</string>
+    <string name="pref_desktop">Desktop Viewport</string>
+    <string name="pref_desktop_sum">Request full desktop web layouts</string>
+    <string name="pref_zoom">Viewport Zoom</string>
+    <string name="pref_zoom_sum">Allow pinch-to-zoom gestures on media and layout blocks</string>
+    <string name="pref_pull">Pull-to-Refresh</string>
+    <string name="pref_pull_sum">Trigger active feed reload on downward drag gesture</string>
+    <string name="pref_autoplay">Autonomous Video Playback</string>
+    <string name="pref_autoplay_sum">Stream video feeds without requiring manual touch input</string>
+    <string name="pref_external">External Link Redirection</string>
+    <string name="pref_external_sum">Route third-party web links directly to system default browser</string>
+    <string name="pref_screen_on">Keep Display Awake</string>
+    <string name="pref_screen_on_sum">Suppress system backlight timeout while viewport is active</string>
+    <string name="pref_haptics">Tactile Haptic Engine</string>
+    <string name="pref_haptics_sum">Provide physical haptic impulse feedback on button actions</string>
     <string name="pref_homepage">Start page</string>
 
-    <string name="pref_session">Remember last page</string>
-    <string name="pref_session_sum">Reopen where you left off</string>
-    <string name="clear_cache">Clear cache</string>
-    <string name="clear_cache_sum">Delete cached pages, images and storage</string>
-    <string name="clear_cookies">Clear cookies</string>
-    <string name="clear_cookies_sum">This will sign you out</string>
-    <string name="clear_all_data">Reset app</string>
-    <string name="clear_all_sum">Erase everything and restart</string>
-    <string name="confirm_logout">You will be signed out of Facebook. Continue?</string>
-    <string name="confirm_reset">This erases all settings, cookies and cache, then restarts the app. Continue?</string>
+    <string name="pref_session">State Persistence</string>
+    <string name="pref_session_sum">Resume runtime at exact screen state upon launch</string>
+    <string name="clear_cache">Purge Cache Memory</string>
+    <string name="clear_cache_sum">Wipe cached DOM pages, image files, and temporary system logs</string>
+    <string name="clear_cookies">Flush Session Tokens</string>
+    <string name="confirm_logout_title">Terminate Session?</string>
+    <string name="clear_cookies_sum">Invalidate active login tokens and revoke authorization</string>
+    <string name="clear_all_data">HARD FACTORY RESET</string>
+    <string name="confirm_reset_title">Factory Re-initialization</string>
+    <string name="clear_all_sum">Erase all local configurations, cache, tokens, and restart app engine</string>
+    <string name="confirm_logout">Flushing cookies will revoke active authorization tokens. You will be signed out immediately.</string>
+    <string name="confirm_reset">Warning: This action will destroy all custom rules, preferences, local media vaults, and session states. The application engine will reboot in its default factory state.</string>
     <string name="cache_cleared">Cache cleared</string>
     <string name="cookies_cleared">Cookies cleared</string>
     <string name="all_data_cleared">All data cleared</string>
 
-    <string name="pref_version">Version</string>
-    <string name="pref_gesture">Open this screen</string>
-    <string name="pref_gesture_sum">Three finger double tap anywhere on the main screen</string>
-    <string name="cat_home">Home page sections</string>
-    <string name="pref_filters">Filter lists</string>
-    <string name="filters_fmt">%1$s domains from AdGuard, EasyList, EasyPrivacy and uBlock Origin</string>
+    <string name="pref_version">Engine Build Version</string>
+    <string name="cat_home">Stream Purifier</string>
+    <string name="pref_filters">Filter Ruleset Matrix</string>
+    <string name="filters_fmt">%1$s compiled domain lists active (AdGuard, EasyList, uBlock Origin)</string>
     <string name="filters_loading">Loading…</string>
-    <string name="pref_hide_stories_sum">Hide the Stories row at the top of the feed</string>
-    <string name="pref_hide_reels_sum">Hide Reels rows and the Reels tab</string>
-    <string name="pref_hide_rooms">Hide Rooms</string>
-    <string name="pref_hide_marketplace">Hide Marketplace</string>
-    <string name="pref_hide_marketplace_sum">Hide Marketplace links and shortcuts</string>
-    <string name="pref_hide_groups">Hide Groups</string>
-    <string name="pref_hide_watch">Hide Watch / Video</string>
-    <string name="pref_hide_events">Hide Events</string>
-    <string name="pref_hide_gaming">Hide Gaming</string>
-    <string name="pref_hide_memories">Hide Memories</string>
-    <string name="pref_hide_birthdays">Hide Birthdays</string>
-    <string name="pref_hide_pymk_sum">Hide friend suggestions in the feed</string>
-    <string name="pref_hide_pages">Hide Pages suggestions</string>
+    <string name="pref_hide_stories_sum">Hide top Stories row from the main feed</string>
+    <string name="pref_hide_reels_sum">Remove inline Reels modules and dedicated navigation tabs</string>
+    <string name="pref_hide_rooms">Suppress Rooms Bar</string>
+    <string name="pref_hide_rooms_sum">Hide group video chat invitation bars</string>
+    <string name="pref_hide_marketplace">Suppress Marketplace Shortcuts</string>
+    <string name="pref_hide_marketplace_sum">Remove store shortcuts, product links, and commerce portals</string>
+    <string name="pref_hide_groups">Suppress Groups Module</string>
+    <string name="pref_hide_groups_sum">Hide community recommendation blocks and group post highlights</string>
+    <string name="pref_hide_watch">Suppress Video Feed</string>
+    <string name="pref_hide_watch_sum">Remove standalone Watch portal and video recommendation blocks</string>
+    <string name="pref_hide_events">Suppress Events Stream</string>
+    <string name="pref_hide_events_sum">Hide upcoming events, invitations, and calendar cards</string>
+    <string name="pref_hide_gaming">Suppress Gaming Widgets</string>
+    <string name="pref_hide_gaming_sum">Strip instant game widgets and gaming stream suggestions</string>
+    <string name="pref_hide_memories">Suppress Memory Reminders</string>
+    <string name="pref_hide_memories_sum">Hide historical throwback post notifications</string>
+    <string name="pref_hide_birthdays">Suppress Birthday Alerts</string>
+    <string name="pref_hide_birthdays_sum">Strip daily contact birthday reminder banners</string>
+    <string name="pref_hide_pymk_sum">Strip “People You May Know” modules from feed</string>
+    <string name="pref_hide_pages">Suppress Page Recommendations</string>
+    <string name="pref_hide_pages_sum">Filter out automated page suggestions and sponsored highlights</string>
     <!-- native chrome -->
     <string name="brand_wordmark">facebook</string>
     <string name="nav_home">Home</string>
@@ -121,34 +135,39 @@
     <string name="view_offline">View saved content</string>
     <string name="offline_screen_missing">%1$s is not saved for offline yet</string>
     <string name="offline_nothing_saved">Nothing saved yet. Open Facebook with a connection first.</string>
-    <string name="pref_offline_feed">Keep home feed</string>
-    <string name="pref_offline_feed_sum">Posts from your feed are saved too, so the home screen still has content with no connection</string>
-    <string name="pref_offline_stories">Keep stories</string>
-    <string name="pref_offline_stories_sum">Stories stay viewable with no connection</string>
-    <string name="pref_offline_status">Downloaded</string>
+    <string name="pref_offline_feed">Pre-Fetch Timeline Stream</string>
+    <string name="pref_offline_feed_sum">Cache recent feed posts to maintain viewability without connection</string>
+    <string name="pref_offline_stories">Pre-Fetch Active Stories</string>
+    <string name="pref_offline_stories_sum">Store current user stories locally before expiration</string>
+    <string name="pref_offline_status">Vault Index Status</string>
     <string name="pref_offline_screens">Saved screens</string>
     <string name="offline_reels_held">%1$d of %2$d reels saved</string>
-    <string name="offline_status_fmt">%1$d of %2$d reels &#183; %3$d posts &#183; %4$d stories &#183; %5$.0f MB\nLast update: %6$s</string>
-    <string name="offline_status_working">Downloading… %1$d of %2$d reels &#183; %3$d posts &#183; %4$d stories &#183; %5$.0f MB\nLast update: %6$s</string>
+    <string name="offline_status_fmt">Posts: %1$d &#183; Reels: %2$d/%3$d &#183; Stories: %4$d &#183; Storage: %5$.0f MB &#183; Sync: %6$s</string>
+    <string name="offline_status_working">Posts: %1$d &#183; Reels: %2$d/%3$d &#183; Stories: %4$d &#183; Storage: %5$.0f MB &#183; Sync: %6$s</string>
     <string name="offline_last_never">never</string>
-    <string name="cat_offline">Offline</string>
-    <string name="cat_offline_sum">Saved content, storage</string>
+    <string name="cat_offline">Local Media Vault</string>
+    <string name="cat_offline_sum">Storage quotas, background pre-fetching, and offline sync</string>
     <string name="grp_offline">Offline reading</string>
     <string name="grp_storage">Storage</string>
     <string name="pref_offline">Save content for offline</string>
     <string name="pref_offline_sum">Keep photos and posts so the feed still works with no connection</string>
     <string name="pref_offline_video">Include videos</string>
     <string name="pref_offline_video_sum">Also save video for offline playback</string>
-    <string name="pref_offline_reels">Keep reels</string>
-    <string name="pref_offline_reels_sum">Reels are downloaded for you in the background and stay playable with no connection</string>
-    <string name="pref_offline_network">Download over</string>
-    <string name="pref_offline_network_wifi">Wi-Fi only</string>
-    <string name="pref_offline_network_any">Wi-Fi and mobile data</string>
-    <string name="pref_offline_network_wifi_sum">Wi-Fi only · saving pauses on mobile data</string>
-    <string name="pref_offline_network_any_sum">Wi-Fi and mobile data · uses your data allowance</string>
-    <string name="offline_paused_metered">Saving paused — waiting for Wi-Fi</string>
-    <string name="pref_offline_reel_count">Reels to download</string>
-    <string name="pref_offline_post_count">Posts to download</string>
+    <string name="pref_offline_reels">Pre-Fetch Reels</string>
+    <string name="pref_offline_reels_sum">Buffer short-form video clips locally for offline playback</string>
+    <string name="pref_offline_network">Connection Preferance</string>
+    <string name="offline_network_dialog_title">Select Connection Preferance</string>
+    <string name="pref_offline_network_wifi">Use Wi-Fi Only</string>
+    <string name="pref_offline_network_any">Wi-Fi &amp; Mobile Data</string>
+    <string name="pref_offline_network_wifi_sum">Use Wi-Fi Only</string>
+    <string name="pref_offline_network_any_sum">Wi-Fi &amp; Mobile Data</string>
+    <string name="offline_paused_metered">Paused — waiting for Wi-Fi</string>
+    <string name="pref_offline_reel_count">Reel Buffer Quota</string>
+    <string name="pref_offline_reel_count_dialog">Select Buffer Limit</string>
+    <string name="pref_offline_reel_count_sum">Limit cached reel capacity (Active: %1$s)</string>
+    <string name="pref_offline_post_count">Posts Buffer Quota</string>
+    <string name="pref_offline_post_count_dialog">Select Posts Limit</string>
+    <string name="pref_offline_post_count_sum">Limit cached posts capacity (Active: %1$s)</string>
     <!--
       These must stay in step with Prefs.offlineReelTarget, which clamps to
       30..250, and with the defaultValue in settings_offline.xml. A default
@@ -156,12 +175,12 @@
       summary and nothing selected.
     -->
     <string-array name="reel_count_labels">
-        <item>30 reels</item>
-        <item>50 reels</item>
-        <item>100 reels</item>
-        <item>150 reels</item>
-        <item>200 reels</item>
-        <item>250 reels</item>
+        <item>30 Clips</item>
+        <item>50 Clips</item>
+        <item>100 Clips</item>
+        <item>150 Clips</item>
+        <item>200 Clips</item>
+        <item>250 Clips</item>
     </string-array>
     <string-array name="reel_count_values">
         <item>30</item>
@@ -177,12 +196,12 @@
       in settings_offline.xml ("50", present here).
     -->
     <string-array name="post_count_labels">
-        <item>10 posts</item>
-        <item>30 posts</item>
-        <item>50 posts</item>
-        <item>100 posts</item>
-        <item>200 posts</item>
-        <item>300 posts</item>
+        <item>10 Posts</item>
+        <item>30 Posts</item>
+        <item>50 Posts</item>
+        <item>100 Posts</item>
+        <item>200 Posts</item>
+        <item>300 Posts</item>
     </string-array>
     <string-array name="post_count_values">
         <item>10</item>
@@ -194,23 +213,24 @@
     </string-array>
     <string name="pref_offline_size">Saved content</string>
     <string name="offline_size_fmt">%1$d items · %2$.1f MB</string>
-    <string name="pref_clear_offline">Clear saved content</string>
-    <string name="pref_clear_offline_sum">Delete everything saved for offline</string>
-    <string name="confirm_clear_offline">Delete all saved offline content?</string>
+    <string name="pref_clear_offline">Purge Offline Reserve</string>
+    <string name="confirm_clear_offline_title">Purge Local Vault?</string>
+    <string name="pref_clear_offline_sum">Permanently delete all local pre-fetched feed media</string>
+    <string name="confirm_clear_offline">This will remove all pre-fetched reels, stories, and feed posts stored on device memory.</string>
     <string name="offline_cleared">Saved content cleared</string>
 
     <!-- category summaries -->
-    <string name="cat_blocking_sum">Ads, trackers, app banners</string>
-    <string name="cat_home_sum">Stories, Reels, Marketplace, suggestions</string>
-    <string name="cat_appearance_sum">Theme, dark mode, icon, layout</string>
-    <string name="pref_icon">App icon</string>
-    <string name="pref_icon_sum">Tap to choose from available styles</string>
-    <string name="pref_bg_audio">Background audio</string>
-    <string name="pref_bg_audio_sum">Keep playing reel audio when the app is in the background</string>
+    <string name="cat_blocking_sum">Real-time script suppression and dynamic filter rules</string>
+    <string name="cat_home_sum">Filter algorithm noise, sponsored modules, and widgets</string>
+    <string name="cat_appearance_sum">Interface matrix, display density, and accent themes</string>
+    <string name="pref_icon">Launcher Icon</string>
+    <string name="pref_icon_sum">Select custom application icon variant</string>
+    <string name="pref_bg_audio">Background Audio</string>
+    <string name="pref_bg_audio_sum">Retain Reel audio playback when app transitions to background</string>
     <string name="grp_icons">Icon</string>
-    <string name="cat_browsing_sum">Zoom, videos, links, start page</string>
-    <string name="cat_data_sum">Session, cache, cookies</string>
-    <string name="cat_about_sum">Version, filters, gesture</string>
+    <string name="cat_browsing_sum">WebView parameters, background execution, and viewport rules</string>
+    <string name="cat_data_sum">Session state control, cache purging, and token resets</string>
+    <string name="cat_about_sum">App build version, filter diagnostics, and developer info</string>
 
     <!-- group headers -->
     <string name="grp_adblock">Ad blocking</string>
@@ -231,8 +251,8 @@
     <string name="pref_chrome_sum">Facebook-style top bar and bottom tabs</string>
     <!-- updates -->
     <string name="grp_update">Updates</string>
-    <string name="pref_check_update">Check for updates</string>
-    <string name="pref_check_update_sum">Look for a newer version now</string>
+    <string name="pref_check_update">Query Software Updates</string>
+    <string name="pref_check_update_sum">Query release server for updated engine builds</string>
     <string name="pref_auto_update">Check automatically</string>
     <string name="pref_auto_update_sum">Offer new versions automatically, on whichever screen you are on</string>
     <string name="update_checking">Checking…</string>
@@ -259,14 +279,14 @@
     <string name="login_empty">Enter your email and password</string>
     <string name="login_wait">Still connecting, try again in a moment</string>
     <string name="login_failed">Login failed. Check your details and try again.</string>
-    <string name="pref_inapp_msg">Messages in app</string>
-    <string name="pref_inapp_msg_sum">Read and send messages without installing Messenger</string>
+    <string name="pref_inapp_msg">Native Inbox Protocol</string>
+    <string name="pref_inapp_msg_sum">Read and send messages inline without external Messenger app</string>
     <string name="update_installing">Installing…</string>
     <string name="update_progress_fmt">Downloading… %1$d%%</string>
-    <string name="update_need_permission">Allow installing apps from Dustbook, then tap again</string>
+    <string name="update_need_permission">Allow installing apps from QBooK, then tap again</string>
     <string name="grp_debug">Diagnostics</string>
     <string name="grp_permissions">App permissions</string>
-    <string name="pref_perm_notifications">Enable notifications</string>
+    <string name="pref_perm_notifications">Enable Notifications</string>
     <string name="pref_perm_notifications_sum">Required to show likes, comments and friend-request alerts. Tap to open the system permission dialog. The app is silent until you grant this.</string>
     <string name="pref_perm_photos">Photos and videos</string>
     <string name="pref_perm_photos_sum">Required to pick a photo or video from your gallery when you share a post. Tap to open the system permission dialog.</string>
@@ -291,8 +311,8 @@
     <string name="inspect_copied">Copied to clipboard. Paste it into the bug report.</string>
 
     <!-- Developer Options — 7-tap on About -->
-    <string name="dev_options_title">Developer Options</string>
-    <string name="dev_options_sum">Diagnostic switches (off by default)</string>
+    <string name="dev_options_title">Advanced Debug Matrix</string>
+    <string name="dev_options_sum">Access network interceptors, DOM extraction, and raw payload logging</string>
     <string name="pref_developer_enabled">Developer options enabled</string>
     <string name="pref_developer_enabled_sum">Master switch for the Developer options page. Turn off to hide the entry back in About without losing the seven-tap unlock. On by default after the seven-tap gesture.</string>
     <string name="dev_unlocked_toast">Developer options unlocked</string>
@@ -362,12 +382,21 @@
 
     <!-- developer info -->
     <string name="grp_developer">Developer</string>
-    <string name="pref_developer">Developer Info</string>
-    <string name="pref_developer_sum">Tap to see contact details</string>
-    <string name="dev_name">Rabbi Hossain</string>
-    <string name="dev_title">Software Developer</string>
-    <string name="dev_whatsapp">WhatsApp: +8801731410341</string>
-    <string name="dev_email">Email: rabbihossainltd@gmail.com</string>
-    <string name="dev_website">Website: rabbihossainltd.online</string>
-    <string name="dev_bio">A passionate software developer building tools that make the web better. Creator of Dustbook — a clean, ad-free Facebook experience for Android.</string>
+    <string name="pref_developer">Architect Credentials</string>
+    <string name="pref_developer_sum">Access lead developer profile and secure communication nodes</string>
+    <string name="dev_name">SAMSUL AREFIN SUJON</string>
+    <string name="dev_title">Lead Developer &amp; Technology Researcher</string>
+
+    <string name="dev_email">E-Mail: imsamsularefinsujon@gmail.com</string>
+    <string name="dev_website">GitHub: https://github.com/SA-SUJON/QBooK</string>
+    <string name="dev_acknowledge">Acknowledge</string>
+    <string name="settings_expand_section">Expand or collapse section</string>
+    <string name="dev_bio">Lead Developer and Technology Researcher. Architect of the QBooK Control Center—a precision-built environment engineered to override algorithmic noise, neutralize telemetry, and deliver a pure, ad-free interface. Focused on high-efficiency execution and absolute user control.</string>
+
+    <string name="confirm_abort">Abort</string>
+    <string name="confirm_execute_purge">Execute Purge</string>
+    <string name="confirm_cancel">Cancel</string>
+    <string name="dialog_dismiss">Dismiss</string>
+    <string name="confirm_sign_out">Confirm Sign-Out</string>
+    <string name="confirm_execute_reset">Execute Hard Reset</string>
 </resources>

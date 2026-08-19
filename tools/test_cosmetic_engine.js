@@ -11,7 +11,7 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
-const KT = path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/CosmeticFilters.kt');
+const KT = path.join(ROOT, 'app/src/main/java/org/qbook/utils/CosmeticFilters.kt');
 const ASSET = path.join(ROOT, 'app/src/main/assets/fb_cosmetic.txt');
 
 const asset = fs.readFileSync(ASSET, 'utf8');

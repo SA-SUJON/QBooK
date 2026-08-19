@@ -3,6 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <PreferenceCategory android:title="@string/grp_theme" app:iconSpaceReserved="false">
         <ListPreference android:key="dark_mode" android:title="@string/pref_dark"
+            android:dialogTitle="@string/theme_dialog_title"
             android:defaultValue="system" android:entries="@array/dark_entries"
             android:entryValues="@array/dark_values"
             app:useSimpleSummaryProvider="true" app:iconSpaceReserved="false" />

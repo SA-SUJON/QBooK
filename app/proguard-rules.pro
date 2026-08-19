@@ -11,13 +11,13 @@
 }
 
 # Keep ViewModel classes
--keep class com.dustbook.app.viewmodel.** { *; }
+-keep class org.qbook.viewmodel.** { *; }
 
 # Keep Application class
--keep class com.dustbook.app.DustbookApplication { *; }
+-keep class org.qbook.QBooKApplication { *; }
 
 # Keep MainActivity
--keep class com.dustbook.app.ui.MainActivity { *; }
+-keep class org.qbook.ui.MainActivity { *; }
 
 # WebView JavaScript interface if any
 -keepclassmembers class * {
@@ -56,11 +56,11 @@
     java.lang.Object writeReplace();
     java.lang.Object readResolve();
 }
-# --- Dustbook additions ---
+# --- QBooK additions ---
 # JavaScript bridge used for blob: downloads
--keepclassmembers class com.dustbook.app.ui.MainActivity$JsBridge {
+-keepclassmembers class org.qbook.ui.MainActivity$JsBridge {
     @android.webkit.JavascriptInterface <methods>;
 }
--keep class com.dustbook.app.utils.** { *; }
--keep class com.dustbook.app.ui.SettingsActivity$HiddenSettingsFragment { *; }
+-keep class org.qbook.utils.** { *; }
+-keep class org.qbook.ui.SettingsActivity$HiddenSettingsFragment { *; }
 -keep class * extends androidx.preference.Preference { *; }

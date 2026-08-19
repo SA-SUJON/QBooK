@@ -1,9 +1,8 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="dark_entries">
-        <item>Follow system</item>
-        <item>Light</item>
-        <item>Dark</item>
+        <item>System Synchronized</item>
+        <item>Light Mode</item>
+        <item>Dark Mode</item>
     </string-array>
     <string-array name="dark_values">
         <item>system</item>
@@ -12,21 +11,30 @@
     </string-array>
 
     <string-array name="icon_entries">
-        <item>Custom Blue</item>
-        <item>Custom Dark</item>
-        <item>Custom Crimson</item>
-        <item>Custom Violet</item>
-        <item>Custom Emerald</item>
-        <item>Custom Gold</item>
-        <item>Custom Teal</item>
-        <item>Custom Rose</item>
-        <item>Default Blue</item>
-        <item>Midnight Blue</item>
-        <item>Amber Glow</item>
-        <item>Forest Green</item>
-        <item>Royal Purple</item>
+        <item>Default Icon</item>
+        <item>Variant 01</item>
+        <item>Variant 02</item>
+        <item>Variant 03</item>
+        <item>Variant 04</item>
+        <item>Variant 05</item>
+        <item>Variant 06</item>
+        <item>Variant 07</item>
+        <item>Variant 08</item>
+        <item>Variant 09</item>
+        <item>Variant 10</item>
+        <item>Variant 11</item>
+        <item>Variant 12</item>
+        <item>Variant 13</item>
+        <item>Variant 14</item>
+        <item>Variant 15</item>
     </string-array>
+
     <string-array name="icon_values">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
         <item>5</item>
         <item>6</item>
         <item>7</item>
@@ -35,18 +43,16 @@
         <item>10</item>
         <item>11</item>
         <item>12</item>
-        <item>0</item>
-        <item>1</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
+        <item>13</item>
+        <item>14</item>
+        <item>15</item>
     </string-array>
 
     <!-- Download network choice. Values are the boolean the preference
          stores, as strings, because ListPreference only handles strings. -->
     <string-array name="offline_network_labels">
-        <item>@string/pref_offline_network_wifi</item>
-        <item>@string/pref_offline_network_any</item>
+        <item>Use Wi-Fi Only</item>
+        <item>Wi-Fi &amp; Mobile Data</item>
     </string-array>
 
     <string-array name="offline_network_values">

@@ -21,12 +21,12 @@ const ROOT = path.join(__dirname, '..');
 const read = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
 
 const html = read(path.join(ROOT, 'app/src/main/assets/support.html'));
-const prompt = read(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SupportPrompt.kt'));
-const prefs = read(path.join(ROOT, 'app/src/main/java/com/dustbook/app/utils/Prefs.kt'));
-const settings = read(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt'));
+const prompt = read(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SupportPrompt.kt'));
+const prefs = read(path.join(ROOT, 'app/src/main/java/org/qbook/utils/Prefs.kt'));
+const settings = read(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'));
 const aboutXml = read(path.join(ROOT, 'app/src/main/res/xml/settings_about.xml'));
-const main = read(path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/MainActivity.kt'));
-const app = read(path.join(ROOT, 'app/src/main/java/com/dustbook/app/DustbookApplication.kt'));
+const main = read(path.join(ROOT, 'app/src/main/java/org/qbook/ui/MainActivity.kt'));
+const app = read(path.join(ROOT, 'app/src/main/java/org/qbook/QBooKApplication.kt'));
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => {

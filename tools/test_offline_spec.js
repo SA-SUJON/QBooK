@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const KT = (f) => path.join(ROOT, 'app/src/main/java/com/dustbook/app', f);
+const KT = (f) => path.join(ROOT, 'app/src/main/java/org/qbook', f);
 const RES = (f) => path.join(ROOT, 'app/src/main/res', f);
 
 let pass = 0, fail = 0;

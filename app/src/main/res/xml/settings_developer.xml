@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Developer Options - reached from Hidden Settings -> About by tapping
+  Developer Options - reached from the Control Center About section by tapping
   the About-this-app entry seven times. The "Developer options enabled"
   switch lives in the toolbar at the top of this screen (set up in
   SettingsActivity.onCreate) - it is the master switch, and turning it

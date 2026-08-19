@@ -19,7 +19,7 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const KT = path.join(__dirname, '..',
-  'app/src/main/java/com/dustbook/app/utils/MFacebookAds.kt');
+  'app/src/main/java/org/qbook/utils/MFacebookAds.kt');
 const src = fs.readFileSync(KT, 'utf8');
 const i = src.indexOf('fun script()');
 const start = src.indexOf('return """', i) + 'return """'.length;

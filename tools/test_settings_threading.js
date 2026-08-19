@@ -30,7 +30,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
-const SET = path.join(ROOT, 'app/src/main/java/com/dustbook/app/ui/SettingsActivity.kt');
+const SET = path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt');
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -134,8 +134,9 @@ if (nb) {
 }
 
 // Call sites unchanged: open, resume, tick - the same moments, the same cadence.
-ok('still called from onCreatePreferences',
-  /setPreferencesFromResource\(res, rootKey\)[\s\S]{0,800}refreshOfflineSize\(\)/.test(src));
+  ok('still called from onCreatePreferences',
+  /setPreferencesFromResource\(R\.xml\.settings_control_center, rootKey\)[\s\S]{0,800}refreshOfflineSize\(\)/.test(src));
+
 ok('still called from onResume',
   /override fun onResume\(\)[\s\S]{0,200}refreshOfflineSize\(\)/.test(src));
 ok('tick cadence unchanged (2 s)',
