@@ -1,337 +1,137 @@
-# QBooK
+<div align="center">
 
-An Android client for Facebook that behaves like an installed app rather than a
-browser tab: no ads, no "Get the app" banners, offline reading, and in-app
-updates.
+# 📘 QBooK
 
-QBooK wraps the real Facebook mobile site in a WebView and cleans it up. You
-sign in on Facebook's own form, you browse Facebook's own pages, and Facebook's
-own layout is what you see — just without the advertising, the install prompts,
-and the parts of the feed you did not ask for.
+**A clean, ad-free, privacy-friendly way to use Facebook on Android.**
 
-**Current release: [v5.2.0](../../releases/latest) · Android 8.0+ · ~14 MB**
+</div>
 
 ---
 
-## Contents
+## 📖 What is QBooK?
 
-- [Why a WebView](#why-a-webview)
-- [Is my account at risk?](#is-my-account-at-risk)
-- [Install](#install)
-- [Hidden settings](#hidden-settings)
-- [Features](#features)
-- [How offline works](#how-offline-works)
-- [Privacy](#privacy)
-- [Permissions](#permissions)
-- [Building from source](#building-from-source)
-- [Credits](#credits)
+QBooK is an Android app that lets you browse Facebook without ads, trackers, or the clutter that Facebook normally shows you. It looks and feels like a real app — not a browser tab — but underneath, it's showing you the actual Facebook website, just cleaned up.
 
----
+There's no separate QBooK account, no sign-up, and no company collecting your data. You log in with your normal Facebook account, exactly as you would in a browser, and QBooK simply makes the experience better:
 
-## Why a WebView
-
-A native Facebook client would have to reverse-engineer a private API, and
-Facebook does not grant feed access to third-party apps. Every "native Facebook
-client" either scrapes, or asks for credentials it should not have, or breaks
-whenever Facebook ships a change.
-
-QBooK takes the opposite approach. The WebView **is** the client. Facebook
-renders its own HTML, runs its own JavaScript, and manages its own session
-exactly as it would in Chrome. QBooK only adds a filtering layer on top and
-a cache underneath.
-
-That has three consequences worth knowing:
-
-- **Nothing is faked.** The feed you see is the feed Facebook served.
-- **Nothing breaks silently.** When Facebook changes their markup, at worst a
-  filter stops matching — the app still works.
-- **Nothing unusual reaches Facebook.** More on that next.
+- 🚫 No ads
+- 🕵️ No trackers watching what you do
+- 📴 Works offline for posts, reels, and stories you've already seen
+- 🎨 Dark mode, custom fonts, custom app icons
+- 👤 Switch between multiple Facebook accounts easily
+- 🔒 Extra privacy and security options
 
 ---
 
-## Is my account at risk?
+## ⚙️ How It Works
 
-**Short answer: no more than using Facebook in Chrome with an ad blocker.**
+Think of QBooK as a smart window into Facebook, rather than a rebuilt copy of it.
 
-This is the most common question, so here is exactly what the app does and does
-not do, all of which you can verify in the source.
+1. **You open QBooK** → it loads the real Facebook website inside the app (the same site you'd get in a browser).
+2. **Before anything appears on screen**, QBooK quietly removes ads, sponsored posts, and tracking scripts.
+3. **Facebook's own features keep working** — Reels, Stories, Messenger, dark mode — because you're using Facebook's real site, just with the annoying parts filtered out.
+4. **While you scroll**, QBooK quietly saves a copy of posts, reels, and stories in the background, so you can still open and view them later even with no internet connection.
+5. **Your login and password never touch QBooK's code.** You always log in through Facebook's own login page, so your account stays exactly as safe as it would be in any browser.
 
-### What Facebook sees
-
-| | |
-|---|---|
-| **Session** | Standard Android `CookieManager`. The same cookie jar any WebView app uses. |
-| **User agent** | The device's own unmodified WebView user agent. Only the `wv` token is dropped, which is what every "open in app" browser does. Nothing is spoofed to impersonate the official app. |
-| **Login** | Typed by you into Facebook's own login form, submitted by Facebook's own button. |
-| **Requests** | Ordinary page loads from a real browser engine. |
-
-There is no fake device fingerprint, no forged official-app headers, and no
-attempt to look like something the app is not. From Facebook's side this is a
-mobile browser session — because that is precisely what it is.
-
-### What the app does *not* do
-
-- **No Facebook API access.** No `access_token`, no Graph API calls, no
-  `read_stream`. Search the source: there are none.
-- **No automation.** No auto-liking, auto-following, auto-posting, auto-adding
-  friends, no bulk actions, no bots. Every interaction is a real tap by you.
-  This matters, because automation is what actually gets accounts restricted.
-- **No credential storage.** Your password is never written to disk, never sent
-  anywhere except Facebook's own form, and is not held in memory after
-  submission.
-- **No third-party servers.** The app talks to `facebook.com` and to GitHub for
-  update checks. That is the complete list.
-- **No account manipulation.** Nothing is posted, sent, deleted, or changed on
-  your behalf.
-
-### The honest caveats
-
-Two things deserve a straight answer rather than a marketing one:
-
-**1. Ad blocking is against Facebook's Terms of Service.**
-So is every ad blocker, on every site. In practice Facebook responds by trying
-to defeat blockers, not by banning readers — there is no known case of an
-account being disabled purely for blocking ads. But "no known case" is not the
-same as a guarantee, and this README will not pretend otherwise.
-
-**2. Offline sync loads pages in the background.**
-To make content available offline, a background WebView opens your feed, reels
-and stories the same way you would by scrolling. It is ordinary browsing at
-ordinary speed, not scraping — but it is still activity you did not personally
-initiate. If that bothers you, turn it off:
-**Offline → Save feed / Save reels / Save stories → all off.**
-
-Everything else — the ad filtering, the banner removal, the section hiding —
-happens locally in the page after Facebook has already served it. Facebook has
-no way to observe it.
-
-> **Use your judgement.** This is an unofficial client that blocks ads. If your
-> account carries something you cannot afford to lose, that is a reason for
-> caution with *any* third-party client, including this one.
+In simple terms: **Facebook runs the app, QBooK just cleans it up and adds nice extras on top.**
 
 ---
 
-## Install
+## ✨ Features
 
-1. Download the APK from [Releases](../../releases/latest).
-2. Allow installation from unknown sources when Android asks.
-3. Open it and sign in on Facebook's own login screen.
+### 🚫 Ad & Tracker Blocking
+QBooK blocks ads and hidden tracking scripts before they ever load, using a huge, regularly updated block-list (the same kind of lists used by popular ad-blocker browser extensions). Facebook's own servers are never blocked, so login and normal features always keep working.
 
-Updates are offered inside the app when a new release is published. Every build
-is signed with the same certificate, so updates install over the previous
-version without uninstalling.
+### 📰 Feed Control
+Turn off things you don't want to see — Stories, Reels, "People You May Know," Suggested Pages, Memories, Birthdays, Marketplace, Groups, Watch, or Gaming — each one can be hidden on its own.
 
----
+### 📴 Offline Reading
+QBooK saves your feed, reels, and stories in the background as you use the app, so you can keep browsing them later even without internet or mobile data. No extra button-pressing needed — it just happens automatically.
 
-## QBooK Control Center
+### 👤 Multiple Accounts
+Keep separate Facebook logins (like Personal, Business, or a Page account) inside QBooK and switch between them without logging out each time. You can also back up your accounts and settings, and restore them later.
 
-Tap the visible settings gear in the upper-right corner of the main screen to
-open **QBooK Control Center**. The button remains available over the normal
-WebView shell and the app’s offline/error state, respects system-bar insets,
-and opens the same single-screen settings experience after navigation,
-rotation, or relaunch.
+### 🎨 Look & Feel
+- Light, dark, or true black (AMOLED) themes
+- Automatic color matching with your phone's theme (Material You, Android 12+)
+- Adjustable text size and a choice of fonts — even your own custom font
+- 16 different app icons to choose from
 
-The Control Center is organized into seven inline sections: Appearance,
-Browsing, Blocking, Home, Offline, Privacy, and About. Tap a section header to
-expand or collapse its preferences without opening a category sub-screen.
+### 🌐 Browsing Extras
+Desktop site mode, pull-to-refresh, background audio (keep listening after you switch apps), pinch-to-zoom, and a choice of opening links inside or outside the app.
 
----
+### 🧪 QBooK Labs (Experimental Extras)
+A separate section for newer, still-being-polished features like:
+- A media Download Center to find and manage everything you've saved
+- Reel downloading with format choices
+- A floating quick-action toolbox
+- A small progress indicator while something downloads
 
-## Features
+### 🔒 Privacy & Security
+- Lock the app with your fingerprint or PIN
+- Appear offline / hide your active status
+- Block screenshots and screen recording while QBooK is open
+- Automatically strip tracking codes from links before you open them
+- One-tap buttons to clear cache, cookies, or all app data
 
-The settings screen is organised into seven sections.
-
-### Blocking
-
-| Setting | Default |
-|---|---|
-| Ad blocker (network level) | On |
-| Hide ad elements (cosmetic) | On |
-| Blocked-request counter, with reset | — |
-| Filter list info | — |
-
-Three independent layers:
-
-1. **Network** — requests to known ad and tracker domains never leave the
-   device, matched against a bundled list of ~656,000 domains. Facebook's own
-   infrastructure (`fbcdn.net`, `graph.facebook.com`, `fbsbx.com`) is on a hard
-   allowlist so media, login and the feed itself are never affected.
-2. **API response** — sponsored posts are removed from Facebook's own GraphQL
-   responses before the page renders them. This is the layer that actually
-   works, because feed CSS class names are randomised and cannot be targeted.
-3. **Cosmetic** — precise selectors plus a small set of structural rules for
-   anything the first two layers miss.
-
-App-install promotion is handled separately and always on: Play Store links,
-`market://`, `fb://` and `intent://` navigations are swallowed, and "Get
-Facebook for Android" style banners are removed before the page paints.
-
-### Home page sections
-
-Hide any of these from the feed — all off by default:
-
-Stories · Reels · Rooms · People You May Know · Suggested Pages · Memories ·
-Birthdays · Marketplace · Groups · Watch · Events · Gaming
-
-### Appearance
-
-- Theme: follow system / light / dark
-- AMOLED black *(on by default)*
-- **13 app icons to choose from** — the launcher icon changes immediately
-- Loading progress bar
-
-### Browsing
-
-- Desktop site
-- Pinch to zoom
-- Pull to refresh
-- Autoplay videos *(on by default)*
-- **Background audio** — audio keeps playing when you leave the app
-- Keep screen on
-- Open outside links in the system browser
-- Haptic feedback
-
-### Offline
-
-Save feed posts, reels and stories for reading with no connection. The number
-of reels to keep is configurable (30–250). A live status line shows what is
-currently stored, and everything can be cleared in one tap.
-
-### Privacy & data
-
-- Remember last page
-- Clear cache
-- Clear cookies
-- Reset everything
-
-Each destructive action asks for confirmation.
-
-### About
-
-App version, filter list details, the gesture reminder, an update check, and a
-diagnostic toggle for inspecting ad markup.
+### 🛠️ No Hidden Backend
+QBooK has no server of its own. There's no account system, no analytics, no crash reporting, and nothing being tracked about how you use the app. The only things QBooK connects to are Facebook itself and, optionally, GitHub (just to check for app updates — and you can turn that off in Settings).
 
 ---
 
-## How offline works
+## 🔑 Opening Settings
 
-Offline content is **the real Facebook page, served from disk** — not a
-reconstruction. QBooK stores Facebook's own markup, so an offline post looks
-identical to an online one, with the same Like, Comment and Share controls in
-the same places.
+Settings are hidden from the main screen on purpose (to keep things simple and clean). To open them:
 
-```
-Background WebView                          Your browsing is never captured;
-  loads feed / reels / stories              only the background pass stores
-        │                                   anything
-        ├─ page markup ──────► document store
-        └─ media URLs ───────► download queue ──► media cache (LRU)
-                                                        │
-                        no connection                   │
-                              └──────────► requests answered from disk
-```
-
-When the connection drops, page requests are answered from the stored document
-and media requests from the cache. Video is served with byte-range support, so
-seeking works exactly as it does online.
-
-Storage is capped and trims itself oldest-first. Nothing you view while online
-is saved — content comes only from the background pass, so the same reels do
-not reappear after you have watched them.
+**Tap the screen three times with three fingers at once.**
 
 ---
 
-## Privacy
+## 🏗️ How to Build It
 
-QBooK has **no backend**. There is no account, no telemetry, no analytics,
-no crash reporting, and no data collection of any kind.
+You'll need a computer with **Android Studio** installed (it's free, from Google) — this is the standard tool for building Android apps.
 
-| Data | Where it lives |
-|---|---|
-| Facebook session cookie | Android's standard cookie store, on your device |
-| Offline pages and media | App-private storage, on your device |
-| Settings | App-private preferences, on your device |
-
-Network connections are made to exactly two places: **Facebook** (including
-`fbcdn.net`, `fbsbx.com` and `messenger.com`, which are Facebook's own
-domains), and **GitHub** to check for updates. Nothing else.
-
-Uninstalling removes all of it.
-
----
-
-## Permissions
-
-| Permission | Why |
-|---|---|
-| `INTERNET`, `ACCESS_NETWORK_STATE` | Load Facebook; detect going offline |
-| `CAMERA`, `RECORD_AUDIO` | Only when you tap a camera or voice control on a Facebook page |
-| `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO` | Attaching photos and videos to posts and messages |
-| `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` | Only when a Facebook page requests location, and only after you allow it |
-| `POST_NOTIFICATIONS` | Download progress |
-| `FOREGROUND_SERVICE`, `..._MEDIA_PLAYBACK` | Background audio playback |
-| `REQUEST_INSTALL_PACKAGES` | Installing in-app updates |
-| `VIBRATE` | Haptic confirmation of the settings gesture |
-
-The media and location permissions exist so that Facebook's own features work
-inside the WebView. The app never uses them on its own initiative.
-
----
-
-## Building from source
-
-Requires JDK 17 and the Android SDK (compileSdk 34).
-
+**Step 1 — Get the code**
 ```bash
 git clone https://github.com/SA-SUJON/QBooK.git
 cd QBooK
+```
+
+**Step 2 — Build the app**
+
+For a test version you can install and try right away:
+```bash
+./gradlew assembleDebug
+```
+
+For the full release version:
+```bash
 ./gradlew assembleRelease
 ```
 
-The release build produced this way is **unsigned** — the signing key is not in
-the repository. To sign your own build, create `keystore.properties` in the
-project root:
+That's it — Android Studio (or the command above) will download everything else it needs on its own and produce an installable app file (`.apk`) you can put on your phone.
 
-```properties
-storeFile=your-key.jks
-storePassword=...
-keyAlias=...
-keyPassword=...
-```
-
-An APK signed with a different key cannot be installed over an official
-release; uninstall first.
-
-### Tests
-
-The regression suites run in CI on every push and must pass before a release:
-
-```bash
-npm install jsdom --no-save
-for t in tools/test_*.js; do node "$t"; done
-```
-
-They cover ad detection, the guarantee that the feed is never hidden wholesale,
-the offline pipeline, the update flow, and app-like behaviour.
+**Note:** The official, signed version of QBooK is signed with a private key that isn't included in this project (for security reasons — anyone with that key could push fake "updates" to real users). If you build it yourself without that key, you'll still get a working app — it just won't be able to receive updates from the official QBooK releases, and you'll need to reinstall manually for future versions.
 
 ---
 
-## Credits
+## 🔐 Permissions QBooK Asks For
 
-Filter rules are derived from
-[uBlock Origin](https://github.com/gorhill/uBlock),
-[AdGuard](https://github.com/AdguardTeam/AdguardFilters),
-[SAMSUL AREFIN SUJON](https://github.com/SA-SUJON),
-EasyList and EasyPrivacy. Those lists are the work of their respective
-maintainers and are used under their original licences.
+| Permission | Why |
+|---|---|
+| 📷 Camera & 🎤 Microphone | For Facebook's own camera, video calls, and voice messages |
+| 🖼️ Photos & Videos | To upload media to Facebook, and to save things you download |
+| 📍 Location | Only used if a Facebook feature asks for it (like check-ins) |
+| 🔔 Notifications | To show you new Facebook notifications |
+| 📦 Install unknown apps | Needed so QBooK can install its own updates |
+
+QBooK never asks for anything it doesn't actually use for a feature you can see and control.
 
 ---
 
-## Disclaimer
+## ©️ Copyright & License
 
-QBooK is an unofficial, independent project. It is not affiliated with,
-endorsed by, or connected to Meta Platforms, Inc. "Facebook" is a trademark of
-Meta Platforms, Inc.
+QBooK is created and owned by its developer. All rights are reserved — this project does not currently include an open-source license, so please don't copy, redistribute, or reuse the code without permission.
 
-The app is provided as-is, with no warranty. You are responsible for your own
-use of it, including compliance with Facebook's Terms of Service.
+**QBooK is an independent, unofficial project.** It is **not made by, affiliated with, endorsed by, or connected to Meta Platforms, Inc.** in any way. "Facebook" and "Meta" are trademarks of Meta Platforms, Inc., and are used here only to describe what QBooK connects to.
+
