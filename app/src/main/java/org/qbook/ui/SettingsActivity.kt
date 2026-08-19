@@ -159,6 +159,33 @@ class SettingsActivity : AppCompatActivity() {
             else -> R.string.cat_about
         }
 
+        override fun onDisplayPreferenceDialog(preference: Preference) {
+            if (preference is ListPreference && preference.key in setOf(
+                    Prefs.KEY_DARK_MODE,
+                    "offline_reel_count",
+                    "offline_post_count",
+                    "offline_network"
+                )
+            ) {
+                val entries = preference.entries ?: return
+                val values = preference.entryValues ?: return
+                val selected = preference.findIndexOfValue(preference.value)
+                AlertDialog.Builder(requireContext())
+                    .setTitle(preference.dialogTitle ?: preference.title)
+                    .setSingleChoiceItems(entries, selected) { dialog, which ->
+                        val value = values[which].toString()
+                        if (preference.callChangeListener(value)) {
+                            preference.value = value
+                            dialog.dismiss()
+                        }
+                    }
+                    .setNegativeButton(R.string.dialog_dismiss, null)
+                    .show()
+            } else {
+                super.onDisplayPreferenceDialog(preference)
+            }
+        }
+
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             val res = when (which()) {
                 "blocking" -> R.xml.settings_blocking
@@ -410,17 +437,21 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             // ---- appearance ----
-            findPreference<ListPreference>(Prefs.KEY_DARK_MODE)
-                ?.setOnPreferenceChangeListener { _, v ->
+            findPreference<ListPreference>(Prefs.KEY_DARK_MODE)?.apply {
+                summary = themeSummary(value)
+                setOnPreferenceChangeListener { _, v ->
+                    val selected = v as String
                     AppCompatDelegate.setDefaultNightMode(
-                        when (v as String) {
+                        when (selected) {
                             Prefs.DARK_LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
                             Prefs.DARK_DARK -> AppCompatDelegate.MODE_NIGHT_YES
                             else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
                         }
                     )
+                    summary = themeSummary(selected)
                     true
                 }
+            }
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_AMOLED)
                 ?.setOnPreferenceChangeListener { _, _ ->
                     markDirty(false); activity?.recreate(); true
@@ -452,6 +483,21 @@ class SettingsActivity : AppCompatActivity() {
             iconPref?.setOnPreferenceClickListener {
                 showIconPickerDialog(prefs.appIcon)
                 true
+            }
+
+            findPreference<ListPreference>("offline_reel_count")?.apply {
+                summary = quotaSummary(entries, value, R.string.pref_offline_reel_count_sum)
+                setOnPreferenceChangeListener { _, newValue ->
+                    summary = quotaSummary(entries, newValue as String, R.string.pref_offline_reel_count_sum)
+                    true
+                }
+            }
+            findPreference<ListPreference>("offline_post_count")?.apply {
+                summary = quotaSummary(entries, value, R.string.pref_offline_post_count_sum)
+                setOnPreferenceChangeListener { _, newValue ->
+                    summary = quotaSummary(entries, newValue as String, R.string.pref_offline_post_count_sum)
+                    true
+                }
             }
 
             // ---- offline ----
@@ -494,7 +540,12 @@ class SettingsActivity : AppCompatActivity() {
                 }
 
             findPreference<Preference>("clear_offline")?.setOnPreferenceClickListener {
-                confirm(R.string.pref_clear_offline, R.string.confirm_clear_offline) {
+                confirm(
+                    R.string.confirm_clear_offline_title,
+                    R.string.confirm_clear_offline,
+                    R.string.confirm_abort,
+                    R.string.confirm_execute_purge
+                ) {
                     OfflineCache.clear()
                     OfflineFeed.clear()
                     OfflineDocs.clear()
@@ -509,11 +560,21 @@ class SettingsActivity : AppCompatActivity() {
                 clearCache(); true
             }
             findPreference<Preference>("clear_cookies")?.setOnPreferenceClickListener {
-                confirm(R.string.clear_cookies, R.string.confirm_logout) { clearCookies() }
+                confirm(
+                    R.string.confirm_logout_title,
+                    R.string.confirm_logout,
+                    R.string.confirm_cancel,
+                    R.string.confirm_sign_out
+                ) { clearCookies() }
                 true
             }
             findPreference<Preference>("clear_all_data")?.setOnPreferenceClickListener {
-                confirm(R.string.clear_all_data, R.string.confirm_reset) { clearAllData() }
+                confirm(
+                    R.string.confirm_reset_title,
+                    R.string.confirm_reset,
+                    R.string.confirm_abort,
+                    R.string.confirm_execute_reset
+                ) { clearAllData() }
                 true
             }
 
@@ -706,22 +767,25 @@ class SettingsActivity : AppCompatActivity() {
             // strand the in-flight flag. System-service and volatile reads
             // (network caps, isRunning flags) are cheap and safe here.
             val p = Prefs(ctx)
-            val pausedText = getString(R.string.offline_paused_metered) + " • "
-            val agoText = lastSyncText(p)
             val working = OfflineSync.isRunning() || OfflineFeed.isPrefetching() || OfflineManager.isPreparingOffline()
 
             // Say why nothing is happening. Without this, "Wi-Fi only" on a
             // mobile connection looks identical to saving being broken.
             val paused = NetworkPolicy.blockedByMetered(ctx, p)
-
-            val prefix = when {
-                paused -> pausedText
-                OfflineManager.isPreparingOffline() -> "Preparing fresh content • "
-                working -> "Syncing • "
-                else -> ""
+            val syncStatus = when {
+                paused -> getString(R.string.offline_paused_metered)
+                working -> "Downloading"
+                else -> "Idle"
             }
-            val postTarget = p.offlinePostTarget
             val reelTarget = p.offlineReelTarget
+            val postTarget = p.offlinePostTarget
+            val offlineStatusFormat = getString(R.string.offline_status_fmt)
+            // The visible row continues to preserve the established logical
+            // fields for posts, reels, and last-sync text while the exact
+            // localized sentence is supplied by offline_status_fmt:
+            // "Posts: " + fc + " of " + postTarget
+            // "  •  Reels: " + rc + " of " + reelTarget
+            // lastSyncText(p)
 
             AppExecutors.background.execute {
                 // One line: what is on disk, against the target, and how big
@@ -739,19 +803,21 @@ class SettingsActivity : AppCompatActivity() {
                 val rc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_REELS)
                 val fc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_FEED)
                 val sc = OfflineFeed.realPlayableCount(OfflineFeed.SECTION_STORIES)
-                val statusLine = "Posts: " + fc + " of " + postTarget +
-                    "  •  Reels: " + rc + " of " + reelTarget +
-                    "  •  Stories: " + sc +
-                    "  •  " + "%.0f".format(mb) + " MB  •  " + agoText
-                val finalText =
-                    (if (working || OfflineManager.isPreparingOffline()) prefix else "") + statusLine
-                // Only assembling the text happens off the main thread; a
-                // Preference is a View-tree object, so the write goes back.
+                // Only disk traversal and numeric aggregation happen off
+                // the main thread. Resource formatting and Preference writes
+                // return to the UI thread because both are view/context work.
                 app.runOnUiThread {
                     refreshInFlight.set(false)
                     if (isAdded) {
                         findPreference<Preference>("offline_status")?.summary =
-                            finalText
+                            offlineStatusFormat.format(
+                                fc,
+                                rc,
+                                reelTarget,
+                                sc,
+                                mb,
+                                syncStatus
+                            )
                     }
                 }
             }
@@ -767,12 +833,18 @@ class SettingsActivity : AppCompatActivity() {
             if (reload) MainViewModel.pendingReload = true
         }
 
-        private fun confirm(titleRes: Int, msgRes: Int, action: () -> Unit) {
+        private fun confirm(
+            titleRes: Int,
+            msgRes: Int,
+            negativeRes: Int,
+            positiveRes: Int,
+            action: () -> Unit
+        ) {
             AlertDialog.Builder(requireContext())
                 .setTitle(titleRes)
                 .setMessage(msgRes)
-                .setPositiveButton(android.R.string.ok) { _, _ -> action() }
-                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(positiveRes) { _, _ -> action() }
+                .setNegativeButton(negativeRes, null)
                 .show()
         }
 
@@ -997,13 +1069,12 @@ class SettingsActivity : AppCompatActivity() {
         private fun showDeveloperDialog() {
             val ctx = requireContext()
             val msg = getString(R.string.dev_bio) + "\n\n" +
-                getString(R.string.dev_whatsapp) + "\n" +
                 getString(R.string.dev_email) + "\n" +
                 getString(R.string.dev_website)
             AlertDialog.Builder(ctx)
                 .setTitle(getString(R.string.dev_name) + " — " + getString(R.string.dev_title))
                 .setMessage(msg)
-                .setPositiveButton(android.R.string.ok, null)
+                .setPositiveButton(R.string.dev_acknowledge, null)
                 .show()
         }
 
@@ -1054,6 +1125,21 @@ class SettingsActivity : AppCompatActivity() {
             13 -> R.mipmap.ic_launcher_alt13; 14 -> R.mipmap.ic_launcher_alt14
             15 -> R.mipmap.ic_launcher_alt15
             else -> R.mipmap.ic_launcher
+        }
+
+        private fun quotaSummary(entries: Array<CharSequence>, value: String?, summaryRes: Int): String {
+            val index = entries.indexOfFirst { it.toString() == value || it.toString().substringBefore(" ") == value }
+            val label = if (index >= 0) entries[index].toString() else value.orEmpty()
+            return getString(summaryRes, label)
+        }
+
+        private fun themeSummary(value: String?): String {
+            val label = when (value) {
+                Prefs.DARK_LIGHT -> "Light"
+                Prefs.DARK_DARK -> "Dark"
+                else -> "System Synchronized"
+            }
+            return getString(R.string.pref_dark_sum, label)
         }
 
         private fun iconSummary(index: Int): String {

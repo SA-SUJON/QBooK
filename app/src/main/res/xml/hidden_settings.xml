@@ -3,20 +3,6 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <Preference
-        android:key="nav_blocking"
-        android:title="@string/cat_blocking"
-        android:summary="@string/cat_blocking_sum"
-        android:icon="@drawable/ic_shield"
-        app:fragment="blocking" />
-
-    <Preference
-        android:key="nav_home"
-        android:title="@string/cat_home"
-        android:summary="@string/cat_home_sum"
-        android:icon="@drawable/ic_layout"
-        app:fragment="home" />
-
-    <Preference
         android:key="nav_appearance"
         android:title="@string/cat_appearance"
         android:summary="@string/cat_appearance_sum"
@@ -29,6 +15,20 @@
         android:summary="@string/cat_browsing_sum"
         android:icon="@drawable/ic_globe"
         app:fragment="browsing" />
+
+    <Preference
+        android:key="nav_blocking"
+        android:title="@string/cat_blocking"
+        android:summary="@string/cat_blocking_sum"
+        android:icon="@drawable/ic_shield"
+        app:fragment="blocking" />
+
+    <Preference
+        android:key="nav_home"
+        android:title="@string/cat_home"
+        android:summary="@string/cat_home_sum"
+        android:icon="@drawable/ic_layout"
+        app:fragment="home" />
 
     <Preference
         android:key="nav_offline"

@@ -1,8 +1,8 @@
 <resources>
     <string-array name="dark_entries">
-        <item>Follow system</item>
-        <item>Light</item>
-        <item>Dark</item>
+        <item>System Synchronized</item>
+        <item>Light Mode</item>
+        <item>Dark Mode</item>
     </string-array>
     <string-array name="dark_values">
         <item>system</item>
@@ -51,8 +51,8 @@
     <!-- Download network choice. Values are the boolean the preference
          stores, as strings, because ListPreference only handles strings. -->
     <string-array name="offline_network_labels">
-        <item>@string/pref_offline_network_wifi</item>
-        <item>@string/pref_offline_network_any</item>
+        <item>Use Wi-Fi Only</item>
+        <item>Wi-Fi &amp; Mobile Data</item>
     </string-array>
 
     <string-array name="offline_network_values">

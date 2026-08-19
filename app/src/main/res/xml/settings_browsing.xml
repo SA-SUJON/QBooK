@@ -9,15 +9,14 @@
             android:title="@string/pref_zoom" android:summary="@string/pref_zoom_sum"
             android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="pull_to_refresh"
-            android:title="@string/pref_pull" android:defaultValue="true"
+            android:title="@string/pref_pull" android:summary="@string/pref_pull_sum" android:defaultValue="true"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_media" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat android:key="autoplay_video"
             android:title="@string/pref_autoplay" android:summary="@string/pref_autoplay_sum"
             android:defaultValue="true" app:iconSpaceReserved="false" />
-        <SwitchPreferenceCompat android:key="keep_screen_on"
-            android:title="@string/pref_screen_on" android:defaultValue="false"
+        <SwitchPreferenceCompat android:key="keep_screen_on" android:title="@string/pref_screen_on" android:summary="@string/pref_screen_on_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="background_audio"
             android:title="@string/pref_bg_audio" android:summary="@string/pref_bg_audio_sum"
@@ -30,8 +29,7 @@
         <SwitchPreferenceCompat android:key="open_links_external"
             android:title="@string/pref_external" android:summary="@string/pref_external_sum"
             android:defaultValue="false" app:iconSpaceReserved="false" />
-        <SwitchPreferenceCompat android:key="haptics_enabled"
-            android:title="@string/pref_haptics" android:defaultValue="false"
+        <SwitchPreferenceCompat android:key="haptics_enabled" android:title="@string/pref_haptics" android:summary="@string/pref_haptics_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_notifications" app:iconSpaceReserved="false">

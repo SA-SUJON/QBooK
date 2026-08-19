@@ -9,7 +9,7 @@
             android:title="@string/pref_hide_reels" android:summary="@string/pref_hide_reels_sum"
             android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_rooms"
-            android:title="@string/pref_hide_rooms" android:defaultValue="false"
+            android:title="@string/pref_hide_rooms" android:summary="@string/pref_hide_rooms_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_feed_sugg" app:iconSpaceReserved="false">
@@ -17,13 +17,13 @@
             android:title="@string/pref_hide_pymk" android:summary="@string/pref_hide_pymk_sum"
             android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_pages"
-            android:title="@string/pref_hide_pages" android:defaultValue="false"
+            android:title="@string/pref_hide_pages" android:summary="@string/pref_hide_pages_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_memories"
-            android:title="@string/pref_hide_memories" android:defaultValue="false"
+            android:title="@string/pref_hide_memories" android:summary="@string/pref_hide_memories_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_birthdays"
-            android:title="@string/pref_hide_birthdays" android:defaultValue="false"
+            android:title="@string/pref_hide_birthdays" android:summary="@string/pref_hide_birthdays_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_shortcuts" app:iconSpaceReserved="false">
@@ -31,16 +31,16 @@
             android:title="@string/pref_hide_marketplace" android:summary="@string/pref_hide_marketplace_sum"
             android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_groups"
-            android:title="@string/pref_hide_groups" android:defaultValue="false"
+            android:title="@string/pref_hide_groups" android:summary="@string/pref_hide_groups_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_watch"
-            android:title="@string/pref_hide_watch" android:defaultValue="false"
+            android:title="@string/pref_hide_watch" android:summary="@string/pref_hide_watch_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_events"
-            android:title="@string/pref_hide_events" android:defaultValue="false"
+            android:title="@string/pref_hide_events" android:summary="@string/pref_hide_events_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_gaming"
-            android:title="@string/pref_hide_gaming" android:defaultValue="false"
+            android:title="@string/pref_hide_gaming" android:summary="@string/pref_hide_gaming_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 </PreferenceScreen>

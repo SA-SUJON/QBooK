@@ -28,9 +28,6 @@
             app:iconSpaceReserved="false" />
         <Preference android:key="filter_info" android:title="@string/pref_filters"
             android:selectable="false" app:iconSpaceReserved="false" />
-        <Preference android:key="gesture_info" android:title="@string/pref_gesture"
-            android:summary="@string/pref_gesture_sum"
-            android:selectable="false" app:iconSpaceReserved="false" />
         <Preference android:key="nav_developer"
             android:title="@string/dev_options_title"
             android:summary="@string/dev_options_sum"

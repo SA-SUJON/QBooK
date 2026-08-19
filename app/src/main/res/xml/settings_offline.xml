@@ -13,20 +13,24 @@
 
         <SwitchPreferenceCompat android:key="offline_reels"
             android:title="@string/pref_offline_reels"
+            android:summary="@string/pref_offline_reels_sum"
             android:defaultValue="true" app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat android:key="offline_feed"
             android:title="@string/pref_offline_feed"
+            android:summary="@string/pref_offline_feed_sum"
             android:defaultValue="true" app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat android:key="offline_stories"
             android:title="@string/pref_offline_stories"
+            android:summary="@string/pref_offline_stories_sum"
             android:defaultValue="true" app:iconSpaceReserved="false" />
 
         <!-- Only meaningful when reels are being kept, so it follows the
              switch above rather than standing on its own. -->
         <ListPreference android:key="offline_reel_count"
             android:title="@string/pref_offline_reel_count"
+            android:dialogTitle="@string/pref_offline_reel_count_dialog"
             android:entries="@array/reel_count_labels"
             android:entryValues="@array/reel_count_values"
             android:defaultValue="30"
@@ -38,6 +42,7 @@
              after which every capture path stops adding. -->
         <ListPreference android:key="offline_post_count"
             android:title="@string/pref_offline_post_count"
+            android:dialogTitle="@string/pref_offline_post_count_dialog"
             android:entries="@array/post_count_labels"
             android:entryValues="@array/post_count_values"
             android:defaultValue="50"
@@ -50,6 +55,7 @@
              mobile allowance. -->
         <ListPreference android:key="offline_network"
             android:title="@string/pref_offline_network"
+            android:dialogTitle="@string/offline_network_dialog_title"
             android:entries="@array/offline_network_labels"
             android:entryValues="@array/offline_network_values"
             android:defaultValue="wifi"
