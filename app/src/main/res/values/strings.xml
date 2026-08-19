@@ -17,6 +17,7 @@
     <string name="permission_required">Permission needed</string>
     <string name="permission_rationale">Some features need this permission. You can grant it in system settings.</string>
     <string name="grant_permission">Open settings</string>
+    <string name="open_settings">Open QBooK settings</string>
     <string name="dismiss">Not now</string>
 
     <string name="hidden_settings">QBooK Control Center</string>
@@ -389,6 +390,7 @@
     <string name="dev_email">E-Mail: imsamsularefinsujon@gmail.com</string>
     <string name="dev_website">GitHub: https://github.com/SA-SUJON/QBooK</string>
     <string name="dev_acknowledge">Acknowledge</string>
+    <string name="settings_expand_section">Expand or collapse section</string>
     <string name="dev_bio">Lead Developer and Technology Researcher. Architect of the QBooK Control Center—a precision-built environment engineered to override algorithmic noise, neutralize telemetry, and deliver a pure, ad-free interface. Focused on high-efficiency execution and absolute user control.</string>
 
     <string name="confirm_abort">Abort</string>

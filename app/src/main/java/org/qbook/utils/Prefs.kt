@@ -6,7 +6,7 @@ import androidx.preference.PreferenceManager
 
 /**
  * Single source of truth for every user setting.
- * Keys must match res/xml/hidden_settings.xml.
+ * Keys must match the active settings resources under res/xml/settings_control_center.xml.
  */
 class Prefs(context: Context) {
 

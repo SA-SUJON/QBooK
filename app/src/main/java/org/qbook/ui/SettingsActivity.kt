@@ -17,6 +17,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.preference.ListPreference
 import androidx.preference.Preference
+import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
 import org.qbook.R
@@ -43,11 +44,11 @@ import org.qbook.utils.UpdateWatcher
 import org.qbook.viewmodel.MainViewModel
 
 /**
- * Hidden settings. Not in the launcher, not reachable by long press.
- * Only entry point: three finger double tap on the main screen.
+ * QBooK Control Center.
  *
- * Structure is a root menu of categories; each opens its own sub-screen so
- * related options live together instead of one endless list.
+ * The host owns one PreferenceFragmentCompat. Each top-level category is an
+ * expandable section in this same screen; preference rows never navigate to a
+ * second settings fragment.
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -72,91 +73,55 @@ class SettingsActivity : AppCompatActivity() {
 
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
-                .replace(R.id.settings_container, RootFragment())
+                .replace(R.id.settings_container, ControlCenterFragment())
                 .commit()
         }
-
-        supportFragmentManager.addOnBackStackChangedListener { updateTitle() }
-        updateTitle()
-    }
-
-    private fun updateTitle() {
-        val f = supportFragmentManager.findFragmentById(R.id.settings_container)
-        supportActionBar?.title = when (f) {
-            is SubFragment -> getString(f.titleRes())
-            else -> getString(R.string.hidden_settings)
-        }
-    }
-
-    fun openSub(which: String) {
-        val frag = SubFragment.create(which)
-        // No transition animation: sub-screens appear instantly.
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.settings_container, frag)
-            .addToBackStack(which)
-            .commit()
+        supportActionBar?.title = getString(R.string.hidden_settings)
     }
 
     override fun onSupportNavigateUp(): Boolean {
-        if (supportFragmentManager.backStackEntryCount > 0) {
-            supportFragmentManager.popBackStack()
-        } else {
-            finish()
-        }
+        finish()
         return true
     }
 
-    // ---------------------------------------------------------------- root
-
-    class RootFragment : PreferenceFragmentCompat() {
-        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            setPreferencesFromResource(R.xml.hidden_settings, rootKey)
-            listOf(
-                "nav_blocking" to "blocking",
-                "nav_home" to "home",
-                "nav_appearance" to "appearance",
-                "nav_browsing" to "browsing",
-                "nav_offline" to "offline",
-                "nav_privacy" to "privacy",
-                "nav_about" to "about"
-            ).forEach { (key, dest) ->
-                findPreference<Preference>(key)?.setOnPreferenceClickListener {
-                    (activity as? SettingsActivity)?.openSub(dest)
-                    true
-                }
-            }
-        }
-    }
-
-    // ---------------------------------------------------------------- sub
-
-    class SubFragment : PreferenceFragmentCompat() {
+    class ControlCenterFragment : PreferenceFragmentCompat() {
 
         private lateinit var prefs: Prefs
+        private val expandedSections = linkedMapOf<String, Boolean>()
+        private var developerExpanded = false
 
         companion object {
-            private const val ARG = "which"
-            // Five minutes is the standard Android "About screen seven-tap"
-            // window: long enough for a deliberate gesture, short enough
-            // that a stray tap a week ago does not count toward today.
+            private const val STATE_EXPANDED = "qbook_expanded_sections"
+            private const val STATE_DEVELOPER_EXPANDED = "qbook_developer_expanded"
             private const val DEV_TAP_WINDOW_MS = 5L * 60L * 1000L
-
-            fun create(which: String) = SubFragment().apply {
-                arguments = Bundle().apply { putString(ARG, which) }
-            }
+            private val SECTION_KEYS = listOf(
+                "section_appearance",
+                "section_browsing",
+                "section_blocking",
+                "section_home",
+                "section_offline",
+                "section_privacy",
+                "section_about"
+            )
         }
 
-        private fun which(): String = arguments?.getString(ARG) ?: "blocking"
+        override fun onCreate(savedInstanceState: Bundle?) {
+            super.onCreate(savedInstanceState)
+            SECTION_KEYS.forEach { key -> expandedSections[key] = false }
+            savedInstanceState?.getStringArrayList(STATE_EXPANDED)?.forEach {
+                if (it in SECTION_KEYS) expandedSections[it] = true
+            }
+            developerExpanded = savedInstanceState?.getBoolean(STATE_DEVELOPER_EXPANDED, false) ?: false
+            setHasOptionsMenu(true)
+        }
 
-        fun titleRes(): Int = when (which()) {
-            "blocking" -> R.string.cat_blocking
-            "home" -> R.string.cat_home
-            "appearance" -> R.string.cat_appearance
-            "browsing" -> R.string.cat_browsing
-            "offline" -> R.string.cat_offline
-            "privacy" -> R.string.cat_data
-            "developer" -> R.string.dev_options_title
-            else -> R.string.cat_about
+        override fun onSaveInstanceState(outState: Bundle) {
+            outState.putStringArrayList(
+                STATE_EXPANDED,
+                ArrayList(expandedSections.filterValues { it }.keys)
+            )
+            outState.putBoolean(STATE_DEVELOPER_EXPANDED, developerExpanded)
+            super.onSaveInstanceState(outState)
         }
 
         override fun onDisplayPreferenceDialog(preference: Preference) {
@@ -187,36 +152,25 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            val res = when (which()) {
-                "blocking" -> R.xml.settings_blocking
-                "home" -> R.xml.settings_home
-                "appearance" -> R.xml.settings_appearance
-                "browsing" -> R.xml.settings_browsing
-                "offline" -> R.xml.settings_offline
-                "privacy" -> R.xml.settings_privacy
-                "developer" -> R.xml.settings_developer
-                else -> R.xml.settings_about
+            setPreferencesFromResource(R.xml.settings_control_center, rootKey)
+            SECTION_KEYS.forEach { key ->
+                findPreference<ExpandablePreferenceCategory>(key)?.apply {
+                    isSelectable = true
+                    setOnPreferenceClickListener {
+                        setSectionExpanded(key, expandedSections[key] != true)
+                        true
+                    }
+                }
             }
-            setPreferencesFromResource(res, rootKey)
             prefs = Prefs(requireContext())
-            // The Developer options screen is the only sub-screen that
-            // has a toolbar action (the master developer-enabled
-            // toggle). Tell the framework to call our menu callbacks;
-            // other sub-screens stay menu-free.
-            if (which() == "developer") setHasOptionsMenu(true)
+            applySectionState()
             wire()
-            // Fill it in now. It used to be written only from a change
-            // listener, so opening the screen showed nothing and the count
-            // appeared only after toggling something at random.
             refreshOfflineSize()
         }
 
         override fun onResume() {
             super.onResume()
             refreshOfflineSize()
-            // Downloading carries on in the background, so keep the number
-            // moving while the screen is open rather than freezing it at
-            // whatever it was when the screen opened.
             tick = object : Runnable {
                 override fun run() {
                     if (!isAdded) return
@@ -231,6 +185,68 @@ class SettingsActivity : AppCompatActivity() {
             super.onPause()
             tick?.let { view?.removeCallbacks(it) }
             tick = null
+        }
+
+        private fun setSectionExpanded(key: String, expanded: Boolean) {
+            expandedSections[key] = expanded
+            val category = findPreference<PreferenceCategory>(key) ?: return
+            forEachChild(category) { child -> setVisibleRecursively(child, expanded) }
+            updateChevron(category, expanded)
+        }
+
+        private fun applySectionState() {
+            SECTION_KEYS.forEach { key ->
+                val category = findPreference<PreferenceCategory>(key) ?: return@forEach
+                val expanded = expandedSections[key] == true
+                forEachChild(category) { child -> setVisibleRecursively(child, expanded) }
+                updateChevron(category, expanded)
+            }
+        }
+
+        private fun setVisibleRecursively(preference: Preference, visible: Boolean) {
+            val effectiveVisible = when (preference.key) {
+                "nav_developer" -> visible && prefs.developerEnabled
+                "developer_options_group" -> visible && prefs.developerEnabled && developerExpanded
+                else -> visible
+            }
+            preference.isVisible = effectiveVisible
+            if (preference is androidx.preference.PreferenceGroup) {
+                forEachChild(preference) { child -> setVisibleRecursively(child, effectiveVisible) }
+            }
+        }
+
+        private fun forEachChild(
+            group: androidx.preference.PreferenceGroup,
+            action: (Preference) -> Unit
+        ) {
+            for (index in 0 until group.preferenceCount) {
+                action(group.getPreference(index))
+            }
+        }
+
+        private fun updateChevron(category: PreferenceCategory, expanded: Boolean) {
+            (category as? ExpandablePreferenceCategory)?.expanded = expanded
+        }
+
+        private fun setDeveloperVisibility() {
+            findPreference<Preference>("nav_developer")?.isVisible = prefs.developerEnabled
+            findPreference<PreferenceCategory>("developer_options_group")?.let { group ->
+                group.isVisible = prefs.developerEnabled && developerExpanded
+                forEachChild(group) {
+                    child -> setVisibleRecursively(child, prefs.developerEnabled && developerExpanded)
+                }
+            }
+            if (!prefs.developerEnabled) developerExpanded = false
+            requireActivity().invalidateOptionsMenu()
+        }
+
+        private fun expandDeveloperOptions() {
+            if (!prefs.developerEnabled) return
+            developerExpanded = !developerExpanded
+            findPreference<PreferenceCategory>("developer_options_group")?.let { group ->
+                group.isVisible = developerExpanded
+                forEachChild(group) { child -> setVisibleRecursively(child, developerExpanded) }
+            }
         }
 
         private var tick: Runnable? = null
@@ -327,12 +343,11 @@ class SettingsActivity : AppCompatActivity() {
             // is inflated (the user has to leave the About screen to
             // see the switch), so we cannot rely on layout time alone -
             // we re-read it on every entry into About.
-            findPreference<Preference>("nav_developer")?.isVisible =
-                prefs.developerEnabled
+            setDeveloperVisibility()
 
             // ---- about → developer nav ----
             findPreference<Preference>("nav_developer")?.setOnPreferenceClickListener {
-                (activity as? SettingsActivity)?.openSub("developer")
+                expandDeveloperOptions()
                 true
             }
 
@@ -438,7 +453,6 @@ class SettingsActivity : AppCompatActivity() {
 
             // ---- appearance ----
             findPreference<ListPreference>(Prefs.KEY_DARK_MODE)?.apply {
-                summary = themeSummary(value)
                 setOnPreferenceChangeListener { _, v ->
                     val selected = v as String
                     AppCompatDelegate.setDefaultNightMode(
@@ -448,7 +462,6 @@ class SettingsActivity : AppCompatActivity() {
                             else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
                         }
                     )
-                    summary = themeSummary(selected)
                     true
                 }
             }
@@ -714,7 +727,7 @@ class SettingsActivity : AppCompatActivity() {
          */
         override fun onCreateOptionsMenu(menu: android.view.Menu, inflater: android.view.MenuInflater) {
             super.onCreateOptionsMenu(menu, inflater)
-            if (which() != "developer") return
+            if (!prefs.developerEnabled) return
             inflater.inflate(R.menu.menu_developer, menu)
             val item = menu.findItem(R.id.action_developer_toggle)
             val sw = item?.actionView?.findViewById<androidx.appcompat.widget.SwitchCompat>(
@@ -727,6 +740,7 @@ class SettingsActivity : AppCompatActivity() {
                 sw.isChecked = prefs.developerEnabled
                 sw.setOnCheckedChangeListener { _, isChecked ->
                     prefs.developerEnabled = isChecked
+                    setDeveloperVisibility()
                     if (!isChecked) {
                         toast(getString(R.string.dev_disabled_toast))
                     } else {
@@ -743,9 +757,8 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
-            // The switch's own change listener handles the toggle, so
-            // the menu item only needs to return true to consume.
-            return true
+            if (item.itemId == R.id.action_developer_toggle) return true
+            return super.onOptionsItemSelected(item)
         }
 
         private fun refreshOfflineSize() {
