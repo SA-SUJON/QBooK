@@ -123,29 +123,17 @@ version without uninstalling.
 
 ---
 
-## Hidden settings
+## QBooK Control Center
 
-**There is no settings icon anywhere in the app.** This is deliberate: the
-interface should be Facebook's, not a wrapper's.
+Tap the visible settings gear in the upper-right corner of the main screen to
+open **QBooK Control Center**. The button remains available over the normal
+WebView shell and the app’s offline/error state, respects system-bar insets,
+and opens the same single-screen settings experience after navigation,
+rotation, or relaunch.
 
-### Put three fingers on the screen and double-tap
-
-<table>
-<tr><td><b>Gesture</b></td><td>Three fingers down, tap twice</td></tr>
-<tr><td><b>Where</b></td><td>Anywhere on the main screen — over the feed, over a video, over anything</td></tr>
-<tr><td><b>Timing</b></td><td>Each tap under 500 ms; both taps within 900 ms of each other</td></tr>
-<tr><td><b>Movement</b></td><td>Keep your fingers still — a drag is read as a scroll, not a tap</td></tr>
-</table>
-
-A short vibration confirms it worked (this can be turned off later under
-*Browsing → Haptic feedback*).
-
-**If it does not open,** you are most likely tapping too slowly or moving
-slightly. Rest three fingertips on the glass and tap twice quickly, like a
-double-click.
-
-The detector only *watches* touch events and never consumes them, so scrolling,
-tapping and long-pressing are completely unaffected by it.
+The Control Center is organized into seven inline sections: Appearance,
+Browsing, Blocking, Home, Offline, Privacy, and About. Tap a section header to
+expand or collapse its preferences without opening a category sub-screen.
 
 ---
 
@@ -333,7 +321,7 @@ the offline pipeline, the update flow, and app-like behaviour.
 Filter rules are derived from
 [uBlock Origin](https://github.com/gorhill/uBlock),
 [AdGuard](https://github.com/AdguardTeam/AdguardFilters),
-[Rabbihossainltd](https://facebook.com/rabbihossainltd),
+[SAMSUL AREFIN SUJON](https://github.com/SA-SUJON),
 EasyList and EasyPrivacy. Those lists are the work of their respective
 maintainers and are used under their original licences.
 

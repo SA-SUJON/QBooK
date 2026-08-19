@@ -43,8 +43,8 @@ jobs:
             echo "SIGNED=false" >> "$GITHUB_ENV"
             exit 0
           fi
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > dustbook-release.jks
-          echo "keystore restored: $(stat -c%s dustbook-release.jks) bytes"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > qbook-release.jks
+          echo "keystore restored: $(stat -c%s qbook-release.jks) bytes"
           echo "SIGNED=true" >> "$GITHUB_ENV"
 
       - name: Verify blocklist asset
