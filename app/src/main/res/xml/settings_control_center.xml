@@ -1,128 +1,81 @@
 <?xml version='1.0' encoding='utf-8'?>
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"><org.qbook.ui.ExpandablePreferenceCategory android:key="section_appearance" android:title="@string/cat_appearance" android:summary="@string/cat_appearance_sum" android:icon="@drawable/ic_settings_appearance" android:layout="@layout/preference_expandable_category"><PreferenceCategory android:title="@string/grp_theme" app:iconSpaceReserved="false">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <org.qbook.ui.ExpandablePreferenceCategory android:key="section_appearance" android:title="@string/cat_appearance" android:summary="@string/cat_appearance_sum" android:icon="@drawable/ic_settings_appearance" android:layout="@layout/preference_expandable_category">
         <ListPreference android:key="dark_mode" android:title="@string/pref_dark" android:dialogTitle="@string/theme_dialog_title" android:defaultValue="system" android:entries="@array/dark_entries" android:entryValues="@array/dark_values" app:useSimpleSummaryProvider="true" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="amoled_black" android:title="@string/pref_amoled" android:summary="@string/pref_amoled_sum" android:defaultValue="true" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_icons" app:iconSpaceReserved="false">
         <Preference android:key="app_icon" android:title="@string/pref_icon" android:summary="@string/pref_icon_sum" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_chrome" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat android:key="show_progress_bar" android:title="@string/pref_progress" android:summary="@string/pref_progress_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-</org.qbook.ui.ExpandablePreferenceCategory><org.qbook.ui.ExpandablePreferenceCategory android:key="section_browsing" android:title="@string/cat_browsing" android:summary="@string/cat_browsing_sum" android:icon="@drawable/ic_settings_browsing" android:layout="@layout/preference_expandable_category"><PreferenceCategory android:title="@string/grp_page" app:iconSpaceReserved="false">
+    </org.qbook.ui.ExpandablePreferenceCategory>
+    <org.qbook.ui.ExpandablePreferenceCategory android:key="section_browsing" android:title="@string/cat_browsing" android:summary="@string/cat_browsing_sum" android:icon="@drawable/ic_settings_browsing" android:layout="@layout/preference_expandable_category">
         <SwitchPreferenceCompat android:key="desktop_mode" android:title="@string/pref_desktop" android:summary="@string/pref_desktop_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="allow_zoom" android:title="@string/pref_zoom" android:summary="@string/pref_zoom_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="pull_to_refresh" android:title="@string/pref_pull" android:summary="@string/pref_pull_sum" android:defaultValue="true" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_media" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat android:key="autoplay_video" android:title="@string/pref_autoplay" android:summary="@string/pref_autoplay_sum" android:defaultValue="true" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="keep_screen_on" android:title="@string/pref_screen_on" android:summary="@string/pref_screen_on_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="background_audio" android:title="@string/pref_bg_audio" android:summary="@string/pref_bg_audio_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_behaviour" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat android:key="inapp_messaging" android:title="@string/pref_inapp_msg" android:summary="@string/pref_inapp_msg_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="open_links_external" android:title="@string/pref_external" android:summary="@string/pref_external_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="haptics_enabled" android:title="@string/pref_haptics" android:summary="@string/pref_haptics_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_notifications" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat android:key="push_notifications" android:title="@string/pref_push" android:summary="@string/pref_push_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-</org.qbook.ui.ExpandablePreferenceCategory><org.qbook.ui.ExpandablePreferenceCategory android:key="section_blocking" android:title="@string/cat_blocking" android:summary="@string/cat_blocking_sum" android:icon="@drawable/ic_settings_blocking" android:layout="@layout/preference_expandable_category"><PreferenceCategory android:title="@string/grp_adblock" app:iconSpaceReserved="false">
+    </org.qbook.ui.ExpandablePreferenceCategory>
+    <org.qbook.ui.ExpandablePreferenceCategory android:key="section_blocking" android:title="@string/cat_blocking" android:summary="@string/cat_blocking_sum" android:icon="@drawable/ic_settings_blocking" android:layout="@layout/preference_expandable_category">
         <SwitchPreferenceCompat android:key="ad_block_enabled" android:title="@string/pref_adblock" android:summary="@string/pref_adblock_sum" android:defaultValue="true" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="cosmetic_filter_enabled" android:title="@string/pref_cosmetic" android:summary="@string/pref_cosmetic_sum" android:defaultValue="true" android:dependency="ad_block_enabled" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_stats" app:iconSpaceReserved="false">
         <Preference android:key="block_stats" android:title="@string/pref_stats" android:selectable="false" app:iconSpaceReserved="false" />
         <Preference android:key="filter_info" android:title="@string/pref_filters" android:selectable="false" app:iconSpaceReserved="false" />
         <Preference android:key="reset_stats" android:title="@string/pref_reset_stats" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-</org.qbook.ui.ExpandablePreferenceCategory><org.qbook.ui.ExpandablePreferenceCategory android:key="section_home" android:title="@string/cat_home" android:summary="@string/cat_home_sum" android:icon="@drawable/ic_settings_home" android:layout="@layout/preference_expandable_category"><PreferenceCategory android:title="@string/grp_feed_top" app:iconSpaceReserved="false">
+    </org.qbook.ui.ExpandablePreferenceCategory>
+    <org.qbook.ui.ExpandablePreferenceCategory android:key="section_home" android:title="@string/cat_home" android:summary="@string/cat_home_sum" android:icon="@drawable/ic_settings_home" android:layout="@layout/preference_expandable_category">
         <SwitchPreferenceCompat android:key="hide_stories" android:title="@string/pref_hide_stories" android:summary="@string/pref_hide_stories_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_reels" android:title="@string/pref_hide_reels" android:summary="@string/pref_hide_reels_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_rooms" android:title="@string/pref_hide_rooms" android:summary="@string/pref_hide_rooms_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_feed_sugg" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat android:key="hide_pymk" android:title="@string/pref_hide_pymk" android:summary="@string/pref_hide_pymk_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_pages" android:title="@string/pref_hide_pages" android:summary="@string/pref_hide_pages_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_memories" android:title="@string/pref_hide_memories" android:summary="@string/pref_hide_memories_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_birthdays" android:title="@string/pref_hide_birthdays" android:summary="@string/pref_hide_birthdays_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_shortcuts" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat android:key="hide_marketplace" android:title="@string/pref_hide_marketplace" android:summary="@string/pref_hide_marketplace_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_groups" android:title="@string/pref_hide_groups" android:summary="@string/pref_hide_groups_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_watch" android:title="@string/pref_hide_watch" android:summary="@string/pref_hide_watch_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_events" android:title="@string/pref_hide_events" android:summary="@string/pref_hide_events_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="hide_gaming" android:title="@string/pref_hide_gaming" android:summary="@string/pref_hide_gaming_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-</org.qbook.ui.ExpandablePreferenceCategory><org.qbook.ui.ExpandablePreferenceCategory android:key="section_offline" android:title="@string/cat_offline" android:summary="@string/cat_offline_sum" android:icon="@drawable/ic_settings_offline" android:layout="@layout/preference_expandable_category"><PreferenceCategory android:title="@string/grp_offline" app:iconSpaceReserved="false">
-
+    </org.qbook.ui.ExpandablePreferenceCategory>
+    <org.qbook.ui.ExpandablePreferenceCategory android:key="section_offline" android:title="@string/cat_offline" android:summary="@string/cat_offline_sum" android:icon="@drawable/ic_settings_offline" android:layout="@layout/preference_expandable_category">
         <SwitchPreferenceCompat android:key="offline_reels" android:title="@string/pref_offline_reels" android:summary="@string/pref_offline_reels_sum" android:defaultValue="true" app:iconSpaceReserved="false" />
-
         <SwitchPreferenceCompat android:key="offline_feed" android:title="@string/pref_offline_feed" android:summary="@string/pref_offline_feed_sum" android:defaultValue="true" app:iconSpaceReserved="false" />
-
         <SwitchPreferenceCompat android:key="offline_stories" android:title="@string/pref_offline_stories" android:summary="@string/pref_offline_stories_sum" android:defaultValue="true" app:iconSpaceReserved="false" />
-
-
         <ListPreference android:key="offline_reel_count" android:title="@string/pref_offline_reel_count" android:dialogTitle="@string/pref_offline_reel_count_dialog" android:entries="@array/reel_count_labels" android:entryValues="@array/reel_count_values" android:defaultValue="30" android:summary="%s" android:dependency="offline_reels" app:iconSpaceReserved="false" />
-
-
         <ListPreference android:key="offline_post_count" android:title="@string/pref_offline_post_count" android:dialogTitle="@string/pref_offline_post_count_dialog" android:entries="@array/post_count_labels" android:entryValues="@array/post_count_values" android:defaultValue="50" android:summary="%s" android:dependency="offline_feed" app:iconSpaceReserved="false" />
-
-
         <ListPreference android:key="offline_network" android:title="@string/pref_offline_network" android:dialogTitle="@string/offline_network_dialog_title" android:entries="@array/offline_network_labels" android:entryValues="@array/offline_network_values" android:defaultValue="wifi" android:summary="%s" app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory android:title="@string/grp_storage" app:iconSpaceReserved="false">
-
         <Preference android:key="offline_status" android:title="@string/pref_offline_status" android:selectable="false" app:iconSpaceReserved="false" />
-
         <Preference android:key="clear_offline" android:title="@string/pref_clear_offline" android:summary="@string/pref_clear_offline_sum" app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
-</org.qbook.ui.ExpandablePreferenceCategory><org.qbook.ui.ExpandablePreferenceCategory android:key="section_privacy" android:title="@string/cat_data" android:summary="@string/cat_data_sum" android:icon="@drawable/ic_settings_privacy" android:layout="@layout/preference_expandable_category"><PreferenceCategory android:title="@string/grp_session" app:iconSpaceReserved="false">
+    </org.qbook.ui.ExpandablePreferenceCategory>
+    <org.qbook.ui.ExpandablePreferenceCategory android:key="section_privacy" android:title="@string/cat_data" android:summary="@string/cat_data_sum" android:icon="@drawable/ic_settings_privacy" android:layout="@layout/preference_expandable_category">
         <SwitchPreferenceCompat android:key="save_session" android:title="@string/pref_session" android:summary="@string/pref_session_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_clear" app:iconSpaceReserved="false">
         <Preference android:key="clear_cache" android:title="@string/clear_cache" android:summary="@string/clear_cache_sum" app:iconSpaceReserved="false" />
         <Preference android:key="clear_cookies" android:title="@string/clear_cookies" android:summary="@string/clear_cookies_sum" app:iconSpaceReserved="false" />
         <Preference android:key="clear_all_data" android:title="@string/clear_all_data" android:summary="@string/clear_all_sum" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-</org.qbook.ui.ExpandablePreferenceCategory><org.qbook.ui.ExpandablePreferenceCategory android:key="section_about" android:title="@string/cat_about" android:summary="@string/cat_about_sum" android:icon="@drawable/ic_settings_about" android:layout="@layout/preference_expandable_category"><PreferenceCategory android:title="@string/grp_update" app:iconSpaceReserved="false">
+    </org.qbook.ui.ExpandablePreferenceCategory>
+    <org.qbook.ui.ExpandablePreferenceCategory android:key="section_about" android:title="@string/cat_about" android:summary="@string/cat_about_sum" android:icon="@drawable/ic_settings_about" android:layout="@layout/preference_expandable_category">
         <Preference android:key="check_update" android:title="@string/pref_check_update" android:summary="@string/pref_check_update_sum" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_permissions" app:iconSpaceReserved="false">
         <Preference android:key="perm_notifications" android:title="@string/pref_perm_notifications" android:summary="@string/pref_perm_notifications_sum" app:iconSpaceReserved="false" />
         <Preference android:key="perm_photos" android:title="@string/pref_perm_photos" android:summary="@string/pref_perm_photos_sum" app:iconSpaceReserved="false" />
         <Preference android:key="perm_camera" android:title="@string/pref_perm_camera" android:summary="@string/pref_perm_camera_sum" app:iconSpaceReserved="false" />
         <Preference android:key="check_notifications" android:title="@string/pref_check_notifications" android:summary="@string/pref_check_notifications_sum" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/cat_about" app:iconSpaceReserved="false">
         <Preference android:key="app_version" android:title="@string/pref_version" app:iconSpaceReserved="false" />
         <Preference android:key="nav_developer" android:title="@string/dev_options_title" android:summary="@string/dev_options_sum" android:visibility="gone" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/grp_developer" app:iconSpaceReserved="false">
         <Preference android:key="dev_info" android:title="@string/pref_developer" android:summary="@string/pref_developer_sum" app:iconSpaceReserved="false" />
         <Preference android:key="support_dev" android:title="@string/pref_support" android:summary="@string/pref_support_sum" app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-<PreferenceCategory android:key="developer_options_group" android:title="@string/dev_options_title" android:summary="@string/dev_options_sum" android:visible="false"><SwitchPreferenceCompat android:key="diag_all" android:title="@string/diag_all" android:summary="@string/diag_all_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-
-    <Preference android:key="diag_mark" android:title="@string/diag_mark" android:summary="@string/diag_mark_sum" app:iconSpaceReserved="false" />
-
-    <SwitchPreferenceCompat android:key="diag_home_feed" android:title="@string/diag_ch_home_feed" android:summary="@string/diag_ch_home_feed_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-
-    <SwitchPreferenceCompat android:key="diag_reels" android:title="@string/diag_ch_reels" android:summary="@string/diag_ch_reels_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-
-    <SwitchPreferenceCompat android:key="diag_story" android:title="@string/diag_ch_story" android:summary="@string/diag_ch_story_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-
-    <SwitchPreferenceCompat android:key="diag_ads" android:title="@string/diag_ch_ads" android:summary="@string/diag_ch_ads_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-
-    <SwitchPreferenceCompat android:key="diag_network" android:title="@string/diag_ch_network" android:summary="@string/diag_ch_network_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-
-    <SwitchPreferenceCompat android:key="diag_offline_save" android:title="@string/diag_ch_offline_save" android:summary="@string/diag_ch_offline_save_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-
-    <SwitchPreferenceCompat android:key="diag_lifecycle" android:title="@string/diag_ch_lifecycle" android:summary="@string/diag_ch_lifecycle_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
-
-    <Preference android:key="view_diagnostic_log" android:title="@string/diag_viewer_button" android:summary="@string/diag_viewer_button_sum" app:iconSpaceReserved="false" />
-
-</PreferenceCategory></org.qbook.ui.ExpandablePreferenceCategory></PreferenceScreen>
+        <PreferenceCategory android:key="developer_options_group" android:title="@string/dev_options_title" android:summary="@string/dev_options_sum" android:visible="false">
+            <SwitchPreferenceCompat android:key="diag_all" android:title="@string/diag_all" android:summary="@string/diag_all_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
+            <Preference android:key="diag_mark" android:title="@string/diag_mark" android:summary="@string/diag_mark_sum" app:iconSpaceReserved="false" />
+            <SwitchPreferenceCompat android:key="diag_home_feed" android:title="@string/diag_ch_home_feed" android:summary="@string/diag_ch_home_feed_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
+            <SwitchPreferenceCompat android:key="diag_reels" android:title="@string/diag_ch_reels" android:summary="@string/diag_ch_reels_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
+            <SwitchPreferenceCompat android:key="diag_story" android:title="@string/diag_ch_story" android:summary="@string/diag_ch_story_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
+            <SwitchPreferenceCompat android:key="diag_ads" android:title="@string/diag_ch_ads" android:summary="@string/diag_ch_ads_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
+            <SwitchPreferenceCompat android:key="diag_network" android:title="@string/diag_ch_network" android:summary="@string/diag_ch_network_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
+            <SwitchPreferenceCompat android:key="diag_offline_save" android:title="@string/diag_ch_offline_save" android:summary="@string/diag_ch_offline_save_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
+            <SwitchPreferenceCompat android:key="diag_lifecycle" android:title="@string/diag_ch_lifecycle" android:summary="@string/diag_ch_lifecycle_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
+            <Preference android:key="view_diagnostic_log" android:title="@string/diag_viewer_button" android:summary="@string/diag_viewer_button_sum" app:iconSpaceReserved="false" />
+        </PreferenceCategory>
+    </org.qbook.ui.ExpandablePreferenceCategory>
+</PreferenceScreen>

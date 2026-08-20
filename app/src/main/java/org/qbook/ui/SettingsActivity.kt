@@ -169,6 +169,11 @@ class SettingsActivity : AppCompatActivity() {
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                post {
+                    if (itemDecorationCount == 0) {
+                        addItemDecoration(SettingsSectionCardDecoration(requireContext(), SECTION_KEYS.toSet()))
+                    }
+                }
             }
         }
 
