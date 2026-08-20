@@ -18,6 +18,17 @@
              settings screen in every previous build. -->
         <item name="preferenceTheme">@style/PreferenceThemeOverlay</item>
 
+        <!-- Settings surfaces resolve through theme attributes so OLED can use true black. -->
+        <item name="qbookSettingsBackground">@color/settings_background</item>
+        <item name="qbookSettingsCardSurface">@color/settings_card_surface</item>
+        <item name="qbookSettingsOptionSurface">@color/settings_option_surface</item>
+        <item name="qbookSettingsIconContainer">@color/settings_icon_container</item>
+        <item name="qbookSettingsGlassSurface">@color/settings_glass_surface</item>
+        <item name="qbookSettingsGlassSurfacePressed">@color/settings_glass_surface_pressed</item>
+        <item name="qbookSettingsGlassStroke">@color/settings_glass_stroke</item>
+        <item name="qbookSettingsGlassHighlight">@color/settings_glass_highlight</item>
+        <item name="qbookSettingsGlassShadow">@color/settings_glass_shadow</item>
+
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
@@ -39,7 +50,18 @@
     <style name="ThemeOverlay.Amoled" parent="">
         <item name="android:colorBackground">#000000</item>
         <item name="colorSurface">#000000</item>
-        <item name="colorSurfaceContainer">#0A0A0A</item>
+        <item name="colorSurfaceContainer">#050505</item>
+
+        <!-- OLED liquid-glass palette from the supplied Stitch reference. -->
+        <item name="qbookSettingsBackground">#000000</item>
+        <item name="qbookSettingsCardSurface">#050505</item>
+        <item name="qbookSettingsOptionSurface">#0A0A0A</item>
+        <item name="qbookSettingsIconContainer">#0A080F</item>
+        <item name="qbookSettingsGlassSurface">#66000000</item>
+        <item name="qbookSettingsGlassSurfacePressed">#88000000</item>
+        <item name="qbookSettingsGlassStroke">#1AFFFFFF</item>
+        <item name="qbookSettingsGlassHighlight">#14FFFFFF</item>
+        <item name="qbookSettingsGlassShadow">#CC000000</item>
     </style>
 
     <style name="Theme.QBooK.Splash.Icon0" parent="Theme.QBooK.Splash">

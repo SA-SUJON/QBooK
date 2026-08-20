@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="qbookSettingsBackground" format="color" />
+    <attr name="qbookSettingsCardSurface" format="color" />
+    <attr name="qbookSettingsOptionSurface" format="color" />
+    <attr name="qbookSettingsIconContainer" format="color" />
+    <attr name="qbookSettingsGlassSurface" format="color" />
+    <attr name="qbookSettingsGlassSurfacePressed" format="color" />
+    <attr name="qbookSettingsGlassStroke" format="color" />
+    <attr name="qbookSettingsGlassHighlight" format="color" />
+    <attr name="qbookSettingsGlassShadow" format="color" />
+</resources>

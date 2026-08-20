@@ -60,9 +60,12 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_settings)
 
         toolbar = findViewById(R.id.toolbar)
+        toolbar.setContentInsetsRelative(0, 0)
         setSupportActionBar(toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        toolbar.setNavigationOnClickListener { onSupportNavigateUp() }
+        supportActionBar?.setDisplayHomeAsUpEnabled(false)
+        supportActionBar?.title = ""
+        findViewById<android.view.View>(R.id.settings_back_button)
+            .setOnClickListener { onSupportNavigateUp() }
 
         val root = findViewById<android.view.View>(R.id.settings_root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
@@ -76,7 +79,8 @@ class SettingsActivity : AppCompatActivity() {
                 .replace(R.id.settings_container, ControlCenterFragment())
                 .commit()
         }
-        supportActionBar?.title = getString(R.string.hidden_settings)
+        findViewById<android.widget.TextView>(R.id.settings_title)
+            .text = getString(R.string.hidden_settings)
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -148,6 +152,23 @@ class SettingsActivity : AppCompatActivity() {
                     .show()
             } else {
                 super.onDisplayPreferenceDialog(preference)
+            }
+        }
+
+        override fun onViewCreated(view: android.view.View, savedInstanceState: Bundle?) {
+            super.onViewCreated(view, savedInstanceState)
+            // The Stitch layout uses card spacing rather than list separators.
+            // PreferenceFragmentCompat installs a full-width DividerDecoration
+            // by default; remove it so no rules appear behind the glass cards.
+            setDivider(null)
+            setDividerHeight(0)
+            val density = resources.displayMetrics.density
+            listView?.apply {
+                setPadding((16 * density).toInt(), (84 * density).toInt(), (16 * density).toInt(), (28 * density).toInt())
+                clipToPadding = false
+                isVerticalScrollBarEnabled = false
+                isHorizontalScrollBarEnabled = false
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
             }
         }
 

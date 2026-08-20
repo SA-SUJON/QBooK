@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="@color/settings_icon_foreground" android:pathData="M17,8H16V6C16,3.79 14.21,2 12,2S8,3.79 8,6V8H7C5.9,8 5,8.9 5,10V20C5,21.1 5.9,22 7,22H17C18.1,22 19,21.1 19,20V10C19,8.9 18.1,8 17,8M10,6C10,4.9 10.9,4 12,4S14,4.9 14,6V8H10V6M17,20H7V10H17V20M12,12C10.9,12 10,12.9 10,14C10,14.74 10.4,15.39 11,15.73V18H13V15.73C13.6,15.39 14,14.74 14,14C14,12.9 13.1,12 12,12Z" />
+</vector>

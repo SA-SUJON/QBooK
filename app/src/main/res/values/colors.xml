@@ -13,6 +13,25 @@
     <color name="on_surface">#1C1B1F</color>
 
     <color name="splash_background">#FFFFFF</color>
+
+    <!-- QBooK Control Center: Stitch-inspired liquid glass tokens -->
+    <color name="settings_background">#FAF9F6</color>
+    <color name="settings_card_surface">#F5F2EA</color>
+    <color name="settings_option_surface">#EFECE5</color>
+    <color name="settings_icon_container">#EAE6DF</color>
+    <color name="settings_icon_foreground">#514A44</color>
+    <color name="settings_title_foreground">#211E1B</color>
+    <color name="settings_body_foreground">#6F6861</color>
+    <color name="settings_divider">#DCD7CE</color>
+    <color name="settings_accent">#B9783D</color>
+    <color name="settings_accent_on">#FFFFFF</color>
+    <color name="settings_glass_surface">#66FFFFFF</color>
+    <color name="settings_glass_surface_pressed">#80FFFFFF</color>
+    <color name="settings_glass_stroke">#99FFFFFF</color>
+    <color name="settings_glass_highlight">#B3FFFFFF</color>
+    <color name="settings_glass_shadow">#1A000000</color>
+    <color name="settings_switch_track">#D5D1CA</color>
+    <color name="settings_switch_thumb">#FFFFFF</color>
     <!-- Native Facebook chrome (light) -->
     <color name="fb_bg">#F0F2F5</color>
     <color name="fb_surface">#FFFFFF</color>

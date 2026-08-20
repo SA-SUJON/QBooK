@@ -11,6 +11,25 @@
     <color name="on_surface">#E3E3E3</color>
 
     <color name="splash_background">#18191A</color>
+
+    <!-- QBooK Control Center: dark/OLED liquid glass tokens -->
+    <color name="settings_background">#0A0A0A</color>
+    <color name="settings_card_surface">#121212</color>
+    <color name="settings_option_surface">#1C1C1C</color>
+    <color name="settings_icon_container">#24212A</color>
+    <color name="settings_icon_foreground">#E0D4F5</color>
+    <color name="settings_title_foreground">#F2EDF7</color>
+    <color name="settings_body_foreground">#BDB5C6</color>
+    <color name="settings_divider">#332E3A</color>
+    <color name="settings_accent">#D2BBFF</color>
+    <color name="settings_accent_on">#25005A</color>
+    <color name="settings_glass_surface">#22FFFFFF</color>
+    <color name="settings_glass_surface_pressed">#38FFFFFF</color>
+    <color name="settings_glass_stroke">#42FFFFFF</color>
+    <color name="settings_glass_highlight">#55FFFFFF</color>
+    <color name="settings_glass_shadow">#66000000</color>
+    <color name="settings_switch_track">#4A4650</color>
+    <color name="settings_switch_thumb">#F5F0FF</color>
     <!-- Native Facebook chrome (dark) -->
     <color name="fb_bg">#18191A</color>
     <color name="fb_surface">#242526</color>

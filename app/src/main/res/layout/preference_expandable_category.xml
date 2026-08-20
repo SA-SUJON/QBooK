@@ -3,27 +3,31 @@
     android:id="@android:id/background"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:minHeight="64dp"
-    android:layout_marginStart="12dp"
+    android:minHeight="88dp"
+    android:layout_marginStart="0dp"
     android:layout_marginTop="6dp"
-    android:layout_marginEnd="12dp"
-    android:layout_marginBottom="2dp"
+    android:layout_marginEnd="0dp"
+    android:layout_marginBottom="6dp"
     android:background="@drawable/bg_settings_section"
+    android:clickable="true"
+    android:focusable="true"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingStart="16dp"
-    android:paddingTop="10dp"
+    android:paddingTop="14dp"
     android:paddingEnd="12dp"
-    android:paddingBottom="10dp">
+    android:paddingBottom="14dp">
 
     <ImageView
         android:id="@android:id/icon"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:layout_marginEnd="14dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_settings_icon_container"
         android:contentDescription="@null"
+        android:padding="11dp"
         android:scaleType="centerInside"
-        android:tint="?attr/colorPrimary" />
+        android:tint="@color/settings_icon_foreground" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -35,26 +39,30 @@
             android:id="@android:id/title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:fontFamily="sans"
             android:textAppearance="?attr/textAppearanceTitleMedium"
-            android:textColor="?attr/colorOnSurface"
+            android:textColor="@color/settings_title_foreground"
+            android:textSize="19sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@android:id/summary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="3dp"
+            android:fontFamily="sans"
             android:maxLines="2"
             android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:textColor="@color/settings_body_foreground"
+            android:textSize="14sp" />
     </LinearLayout>
 
     <ImageView
         android:id="@+id/expand_indicator"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
         android:contentDescription="@string/settings_expand_section"
-        android:padding="4dp"
-        android:src="@drawable/ic_expand_more"
-        android:tint="?attr/colorOnSurfaceVariant" />
+        android:padding="8dp"
+        android:src="@drawable/ic_settings_expand_more"
+        android:tint="@color/settings_body_foreground" />
 </LinearLayout>
