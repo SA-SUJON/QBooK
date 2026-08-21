@@ -518,9 +518,17 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             // ---- appearance ----
+            val oledPreference = findPreference<SwitchPreferenceCompat>(Prefs.KEY_AMOLED)
+            oledPreference?.isEnabled = prefs.darkMode == Prefs.DARK_DARK
+            oledPreference?.isChecked = prefs.amoled
             findPreference<ListPreference>(Prefs.KEY_DARK_MODE)?.apply {
                 setOnPreferenceChangeListener { _, v ->
                     val selected = v as String
+                    if (selected != Prefs.DARK_DARK) {
+                        prefs.amoled = false
+                        oledPreference?.isChecked = false
+                    }
+                    oledPreference?.isEnabled = selected == Prefs.DARK_DARK
                     AppCompatDelegate.setDefaultNightMode(
                         when (selected) {
                             Prefs.DARK_LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
@@ -531,12 +539,15 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 }
             }
-            findPreference<SwitchPreferenceCompat>(Prefs.KEY_AMOLED)
-                ?.setOnPreferenceChangeListener { _, _ ->
-                    markDirty(false); activity?.recreate(); true
-                }
+            oledPreference?.setOnPreferenceChangeListener { _, _ ->
+                markDirty(false); activity?.recreate(); true
+            }
+            findPreference<SwitchPreferenceCompat>(Prefs.KEY_MATERIAL_YOU)
+                ?.setOnPreferenceChangeListener { _, _ -> markDirty(true); true }
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_SHOW_PROGRESS)
                 ?.setOnPreferenceChangeListener { _, _ -> markDirty(false); true }
+            findPreference<SwitchPreferenceCompat>(Prefs.KEY_MEDIA_DOWNLOADER)
+                ?.setOnPreferenceChangeListener { _, _ -> markDirty(true); true }
 
             // Notifications: schedule or cancel the background check as soon
             // as the switch moves, rather than waiting for the next launch.

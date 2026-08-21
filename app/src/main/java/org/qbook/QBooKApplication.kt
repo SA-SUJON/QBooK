@@ -1,8 +1,10 @@
 package org.qbook
 
+import android.app.Activity
 import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Build
+import com.google.android.material.color.DynamicColors
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatDelegate
 import org.qbook.utils.AdBlocker
@@ -24,6 +26,16 @@ class QBooKApplication : Application() {
 
         // Apply the user's theme choice before any Activity is created.
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode())
+
+        // On Android 12+, let Material Components resolve the device's Monet
+        // palette for the app and settings screens. AMOLED black remains an
+        // explicit user choice and must not be overridden by dynamic colors.
+        DynamicColors.applyToActivitiesIfAvailable(this,
+            object : DynamicColors.Precondition {
+                override fun shouldApplyDynamicColors(activity: Activity, theme: Int): Boolean =
+                    Prefs(activity).materialYou && !Prefs(activity).amoled
+            }
+        )
 
         // Seed the blocker state so the very first request is filtered.
         AdBlocker.enabled = prefs.adBlock

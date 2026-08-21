@@ -49,6 +49,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
 import androidx.webkit.WebSettingsCompat
+import com.google.android.material.color.MaterialColors
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.qbook.BuildConfig
@@ -71,6 +72,8 @@ import org.qbook.utils.AppExecutors
 import org.qbook.offline.OfflineVaults
 import org.qbook.utils.OfflineSync
 import org.qbook.utils.Prefs
+import org.qbook.utils.QBookDownloadBridge
+import org.qbook.utils.QBookMaterialYouBridge
 import org.qbook.utils.VideoHelper
 import org.qbook.utils.SessionState
 import org.qbook.utils.SoftRefresh
@@ -90,6 +93,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val viewModel: MainViewModel by viewModels()
     private lateinit var prefs: Prefs
+    private lateinit var qbookDownloadBridge: QBookDownloadBridge
+    private var materialYouEnabledAtCreation = true
+    private var mediaDownloaderEnabledAtCreation = true
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraPhotoUri: Uri? = null
@@ -106,6 +112,8 @@ class MainActivity : AppCompatActivity() {
 
     private var settingsPromptShown = false
     private var earlyScriptHandle: androidx.webkit.ScriptHandler? = null
+    private val materialYouScript by lazy { loadRawScript(R.raw.material_you) }
+    private val mediaDownloaderScript by lazy { loadRawScript(R.raw.download_content) }
 
     /** Live network state, updated by the ConnectivityManager callback. */
     @Volatile private var isOnline: Boolean = true
@@ -190,6 +198,11 @@ class MainActivity : AppCompatActivity() {
             pendingFileChooser = null
             runOnUiThread { cb() }
         }
+        result[Manifest.permission.WRITE_EXTERNAL_STORAGE]?.let { granted ->
+            if (::qbookDownloadBridge.isInitialized) {
+                qbookDownloadBridge.onLegacyPermissionResult(granted)
+            }
+        }
         if (result.values.any { !it } && !settingsPromptShown) {
             settingsPromptShown = true
             showPermissionDialog()
@@ -226,6 +239,8 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs(this)
+        materialYouEnabledAtCreation = prefs.materialYou
+        mediaDownloaderEnabledAtCreation = prefs.mediaDownloader
         // Initialise the per-channel diagnostic capture store
         // before anything else can write to it. The store
         // is a singleton on the application context, so the
@@ -453,6 +468,15 @@ class MainActivity : AppCompatActivity() {
         applyRuntimeOptions()
         applyOfflineFlags()
         // Settings may have changed while we were away.
+        if (viewModel.settingsDirty &&
+            (materialYouEnabledAtCreation != prefs.materialYou ||
+                mediaDownloaderEnabledAtCreation != prefs.mediaDownloader)
+        ) {
+            viewModel.settingsDirty = false
+            viewModel.needsReload = false
+            recreate()
+            return
+        }
         // V4: Trigger proactive offline preparation on every resume
         // (lightweight if already running).
         binding.root.postDelayed({
@@ -785,6 +809,27 @@ class MainActivity : AppCompatActivity() {
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             addJavascriptInterface(JsBridge(), "FBPro")
+            if (prefs.mediaDownloader) {
+                qbookDownloadBridge = QBookDownloadBridge(this@MainActivity) {
+                    permissionLauncher.launch(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE))
+                }
+                addJavascriptInterface(qbookDownloadBridge, "QBookDownloadBridge")
+            }
+            addJavascriptInterface(
+                QBookMaterialYouBridge(
+                    primary = MaterialColors.getColor(
+                        this@MainActivity,
+                        com.google.android.material.R.attr.colorPrimary,
+                        ContextCompat.getColor(this@MainActivity, R.color.primary)
+                    ),
+                    onPrimary = MaterialColors.getColor(
+                        this@MainActivity,
+                        com.google.android.material.R.attr.colorOnPrimary,
+                        ContextCompat.getColor(this@MainActivity, R.color.on_primary)
+                    )
+                ),
+                "MaterialYouBridge"
+            )
             webViewClient = createWebViewClient()
             webChromeClient = createWebChromeClient()
         }
@@ -1751,7 +1796,20 @@ class MainActivity : AppCompatActivity() {
             ),
             null
         )
+
+        // These are additive to QBooK’s existing scripts: Material You
+        // recolors Facebook blue tokens, while the downloader adds a button
+        // only in story/reel/photo/video contexts.
+        if (prefs.materialYou) {
+            view.evaluateJavascript(materialYouScript, null)
+        }
+        if (prefs.mediaDownloader) {
+            view.evaluateJavascript(mediaDownloaderScript, null)
+        }
     }
+
+    private fun loadRawScript(resourceId: Int): String =
+        resources.openRawResource(resourceId).bufferedReader().use { it.readText() }
 
     private fun createWebChromeClient(): WebChromeClient {
         return object : WebChromeClient() {

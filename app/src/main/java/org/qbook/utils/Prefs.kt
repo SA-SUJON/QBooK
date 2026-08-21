@@ -13,6 +13,16 @@ class Prefs(context: Context) {
     val sp: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
     val diagLog: DiagnosticLog = DiagnosticLog(context.applicationContext)
 
+    init {
+        // OLED is valid only in explicit Dark Mode. Clear stale state when
+        // System Synchronized or Light Mode is active.
+        if (sp.getString(KEY_DARK_MODE, DARK_SYSTEM) != DARK_DARK &&
+            sp.getBoolean(KEY_AMOLED, false)
+        ) {
+            sp.edit().putBoolean(KEY_AMOLED, false).apply()
+        }
+    }
+
     companion object {
         // Blocking
         const val KEY_AD_BLOCK = "ad_block_enabled"
@@ -39,6 +49,7 @@ class Prefs(context: Context) {
         const val KEY_DARK_MODE = "dark_mode"          // system | light | dark
         const val KEY_AMOLED = "amoled_black"
         const val KEY_SHOW_PROGRESS = "show_progress_bar"
+        const val KEY_MATERIAL_YOU = "material_you"
         const val KEY_APP_ICON = "app_icon"
         const val KEY_BACKGROUND_AUDIO = "background_audio"
 
@@ -76,6 +87,7 @@ class Prefs(context: Context) {
         const val KEY_PULL_REFRESH = "pull_to_refresh"
         const val KEY_ZOOM = "allow_zoom"
         const val KEY_AUTOPLAY_VIDEO = "autoplay_video"
+        const val KEY_MEDIA_DOWNLOADER = "media_downloader"
         const val KEY_EXTERNAL_BROWSER = "open_links_external"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_HAPTICS = "haptics_enabled"
@@ -130,9 +142,13 @@ class Prefs(context: Context) {
     val blockPopups: Boolean get() = sp.getBoolean(KEY_BLOCK_POPUPS, true)
 
     val darkMode: String get() = sp.getString(KEY_DARK_MODE, DARK_SYSTEM) ?: DARK_SYSTEM
-    val amoled: Boolean get() = sp.getBoolean(KEY_AMOLED, true)
+    var amoled: Boolean
+        get() = darkMode == DARK_DARK && sp.getBoolean(KEY_AMOLED, false)
+        set(value) {
+            sp.edit().putBoolean(KEY_AMOLED, value && darkMode == DARK_DARK).apply()
+        }
     val showProgress: Boolean get() = sp.getBoolean(KEY_SHOW_PROGRESS, false)
-
+    val materialYou: Boolean get() = sp.getBoolean(KEY_MATERIAL_YOU, true)
     /** 0-15 index for app icon selection. 0 is the default icon. */
     val appIcon: Int get() = (sp.getString(KEY_APP_ICON, "0")?.toIntOrNull() ?: 0).coerceIn(0, 15)
     val backgroundAudio: Boolean get() = sp.getBoolean(KEY_BACKGROUND_AUDIO, false)
@@ -302,6 +318,7 @@ class Prefs(context: Context) {
     val pullToRefresh: Boolean get() = sp.getBoolean(KEY_PULL_REFRESH, true)
     val allowZoom: Boolean get() = sp.getBoolean(KEY_ZOOM, false)
     val autoplayVideo: Boolean get() = sp.getBoolean(KEY_AUTOPLAY_VIDEO, true)
+    val mediaDownloader: Boolean get() = sp.getBoolean(KEY_MEDIA_DOWNLOADER, true)
     val openLinksExternal: Boolean get() = sp.getBoolean(KEY_EXTERNAL_BROWSER, false)
     val keepScreenOn: Boolean get() = sp.getBoolean(KEY_KEEP_SCREEN_ON, false)
     val haptics: Boolean get() = sp.getBoolean(KEY_HAPTICS, false)

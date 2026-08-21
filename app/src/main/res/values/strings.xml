@@ -54,6 +54,8 @@
     <string name="theme_dialog_title">Theme Mode</string>
     <string name="pref_amoled">OLED True Black</string>
     <string name="pref_amoled_sum">Enforce zero-pixel background emission in dark mode</string>
+    <string name="pref_material_you">Material You</string>
+    <string name="pref_material_you_sum">Adapt QBooK and Facebook accents to the device color palette</string>
     <string name="pref_progress">Progress Bar Indicator</string>
     <string name="pref_progress_sum">Display top-edge network activity during page render</string>
 
@@ -227,6 +229,8 @@
     <string name="pref_icon_sum">Select custom application icon variant</string>
     <string name="pref_bg_audio">Background Audio</string>
     <string name="pref_bg_audio_sum">Retain Reel audio playback when app transitions to background</string>
+    <string name="pref_media_downloader">Media Downloader</string>
+    <string name="pref_media_downloader_sum">Show the download action for photos, stories, reels, videos, and audio</string>
     <string name="grp_icons">Icon</string>
     <string name="cat_browsing_sum">WebView parameters, background execution, and viewport rules</string>
     <string name="cat_data_sum">Session state control, cache purging, and token resets</string>
