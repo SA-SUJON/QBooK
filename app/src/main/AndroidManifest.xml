@@ -318,6 +318,14 @@
             android:theme="@style/Theme.QBooK" />
 
         <activity
+            android:name=".ui.DownloadCenterActivity"
+            android:exported="false"
+            android:label="@string/labs_download_center"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".ui.SettingsActivity"
+            android:theme="@style/Theme.QBooK" />
+
+        <activity
             android:name=".ui.DiagnosticLogActivity"
             android:exported="false"
             android:label="@string/diagnostic_log_title"

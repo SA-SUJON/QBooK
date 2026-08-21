@@ -114,6 +114,7 @@ class MainActivity : AppCompatActivity() {
     private var earlyScriptHandle: androidx.webkit.ScriptHandler? = null
     private val materialYouScript by lazy { loadRawScript(R.raw.material_you) }
     private val mediaDownloaderScript by lazy { loadRawScript(R.raw.download_content) }
+    private val labsToolboxScript by lazy { loadRawScript(R.raw.labs_toolbox) }
 
     /** Live network state, updated by the ConnectivityManager callback. */
     @Volatile private var isOnline: Boolean = true
@@ -166,6 +167,8 @@ class MainActivity : AppCompatActivity() {
 
     /** True while a soft refresh is waiting for the page to answer. */
     @Volatile private var softRefreshPending: Boolean = false
+
+    private var downloadIndicatorHide: Runnable? = null
 
     /** Throttles the diagnostic-log network entry to one per second.
      *  Read/written from the WebView resource thread, hence @Volatile. */
@@ -810,9 +813,18 @@ class MainActivity : AppCompatActivity() {
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             addJavascriptInterface(JsBridge(), "FBPro")
             if (prefs.mediaDownloader) {
-                qbookDownloadBridge = QBookDownloadBridge(this@MainActivity) {
-                    permissionLauncher.launch(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE))
-                }
+                qbookDownloadBridge = QBookDownloadBridge(
+                    this@MainActivity,
+                    requestLegacyStoragePermission = {
+                        permissionLauncher.launch(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE))
+                    },
+                    onStatus = { status ->
+                        runOnUiThread {
+                            if (status == "saving") showDownloadIndicator(getString(R.string.download_started))
+                            else hideDownloadIndicatorDelayed()
+                        }
+                    }
+                )
                 addJavascriptInterface(qbookDownloadBridge, "QBookDownloadBridge")
             }
             addJavascriptInterface(
@@ -1803,8 +1815,11 @@ class MainActivity : AppCompatActivity() {
         if (prefs.materialYou) {
             view.evaluateJavascript(materialYouScript, null)
         }
-        if (prefs.mediaDownloader) {
+        if (prefs.mediaDownloader && prefs.labsReelOptions) {
             view.evaluateJavascript(mediaDownloaderScript, null)
+        }
+        if (prefs.labsToolbox) {
+            view.evaluateJavascript(labsToolboxScript, null)
         }
     }
 
@@ -2416,11 +2431,58 @@ class MainActivity : AppCompatActivity() {
                 setAllowedOverMetered(true)
                 setAllowedOverRoaming(true)
             }
-            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            val downloadId = (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            if (prefs.labsDynamicIndicator) watchDownload(downloadId, name)
             toast(getString(R.string.download_started))
         } catch (e: Exception) {
             toast(getString(R.string.download_failed))
         }
+    }
+
+    private fun showDownloadIndicator(text: String) {
+        if (!prefs.labsDynamicIndicator) return
+        downloadIndicatorHide?.let { binding.root.removeCallbacks(it) }
+        binding.downloadIndicator.text = text
+        binding.downloadIndicator.visibility = View.VISIBLE
+    }
+
+    private fun hideDownloadIndicatorDelayed() {
+        val hide = Runnable { binding.downloadIndicator.visibility = View.GONE }
+        downloadIndicatorHide = hide
+        binding.root.postDelayed(hide, 1800)
+    }
+
+    private fun watchDownload(id: Long, name: String) {
+        showDownloadIndicator(getString(R.string.download_started))
+        val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val poll = object : Runnable {
+            override fun run() {
+                if (isFinishing || isDestroyed) return
+                val query = DownloadManager.Query().setFilterById(id)
+                manager.query(query)?.use { cursor ->
+                    if (!cursor.moveToFirst()) {
+                        hideDownloadIndicatorDelayed()
+                        return
+                    }
+                    val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                    val progress = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                    val total = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                    when (status) {
+                        DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PENDING -> {
+                            val percent = if (total > 0) (progress * 100L / total).toInt() else 0
+                            showDownloadIndicator(getString(R.string.labs_downloading, percent))
+                            binding.root.postDelayed(this, 450)
+                        }
+                        DownloadManager.STATUS_SUCCESSFUL -> {
+                            showDownloadIndicator(getString(R.string.labs_download_complete))
+                            hideDownloadIndicatorDelayed()
+                        }
+                        else -> hideDownloadIndicatorDelayed()
+                    }
+                }
+            }
+        }
+        binding.root.post(poll)
     }
 
     private fun uniqueName(base: String): String {
@@ -2473,6 +2535,69 @@ class MainActivity : AppCompatActivity() {
     }
 
     inner class JsBridge {
+        @JavascriptInterface
+        fun openLabsDownloadCenter() {
+            runOnUiThread {
+                if (prefs.labsDownloadCenter && prefs.labsGallery) {
+                    startActivity(Intent(this@MainActivity, DownloadCenterActivity::class.java))
+                } else {
+                    toast(getString(R.string.labs_download_center_toggle_sum))
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun copyCurrentLink() {
+            val value = binding.webView.url ?: return
+            runOnUiThread {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("QBooK link", value))
+                toast(getString(R.string.link_copied))
+            }
+        }
+
+        @JavascriptInterface
+        fun captureScreenshot() {
+            runOnUiThread { saveWebViewScreenshot() }
+        }
+
+        private fun saveWebViewScreenshot() {
+            val webView = binding.webView
+            if (webView.width <= 0 || webView.height <= 0) return
+            val bitmap = Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888)
+            webView.draw(android.graphics.Canvas(bitmap))
+            AppExecutors.diskIO.execute {
+                runCatching {
+                    val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val values = android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "QBooK_$stamp.png")
+                            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/QBooK")
+                            put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+                        }
+                        val uri = contentResolver.insert(
+                            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values
+                        ) ?: error("image insert failed")
+                        contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        contentResolver.update(uri, android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+                        }, null, null)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                            .apply { mkdirs() }
+                        File(dir, "QBooK_$stamp.png").outputStream().use {
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                        }
+                    }
+                    runOnUiThread { toast(getString(R.string.screenshot_saved)) }
+                }.onFailure {
+                    runOnUiThread { toast(getString(R.string.download_failed)) }
+                }
+            }
+        }
+
         @JavascriptInterface
         fun onBlobDownload(dataUrl: String, filename: String) {
             runOnUiThread { saveDataUrl(dataUrl, filename) }

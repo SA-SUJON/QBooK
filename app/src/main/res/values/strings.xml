@@ -13,6 +13,8 @@
     <string name="download_started">Download started</string>
     <string name="download_completed">Saved to Downloads</string>
     <string name="download_failed">Download failed</string>
+    <string name="link_copied">Link copied</string>
+    <string name="screenshot_saved">Screenshot saved to Pictures/QBooK</string>
 
     <string name="permission_required">Permission needed</string>
     <string name="permission_rationale">Some features need this permission. You can grant it in system settings.</string>
@@ -21,6 +23,7 @@
     <string name="dismiss">Not now</string>
 
     <string name="hidden_settings">QBooK Control Center</string>
+    <string name="settings_enter_section">Enter section</string>
     <string name="cat_blocking">Privacy Firewall</string>
     <string name="cat_appearance">Visual Engine</string>
     <string name="cat_feed">Feed cleanup</string>
@@ -235,6 +238,48 @@
     <string name="cat_browsing_sum">WebView parameters, background execution, and viewport rules</string>
     <string name="cat_data_sum">Session state control, cache purging, and token resets</string>
     <string name="cat_about_sum">App build version, filter diagnostics, and developer info</string>
+
+    <!-- QBooK Labs -->
+    <string name="cat_labs">QBooK Labs</string>
+    <string name="labs_features_title">Labs Features</string>
+    <string name="advanced_debug_matrix_title">Advanced Debug Matrix</string>
+    <string name="turn_off_advanced_debug">Turn Off Advanced Debug Matrix</string>
+    <string name="turn_off_advanced_debug_sum">Hide this diagnostic section until it is unlocked again from the app version entry</string>
+    <string name="cat_labs_sum">Optional experimental media, workflow, and visual features</string>
+    <string name="labs_download_center">Download Center</string>
+    <string name="labs_download_center_sum">Browse, preview, share, and manage media saved in Downloads</string>
+    <string name="labs_download_center_toggle">Enable Download Center</string>
+    <string name="labs_download_center_toggle_sum">Expose QBooK’s in-app saved-media index and quick actions</string>
+    <string name="labs_reel_options">Reel Downloader++</string>
+    <string name="labs_reel_options_sum">Keep the media downloader available on Reel, Story, photo, and video views</string>
+    <string name="labs_save_paths">Organized Save Paths</string>
+    <string name="labs_save_paths_sum">Use predictable QBooK filenames and the public Downloads location</string>
+    <string name="labs_audio_extraction">Audio Extraction</string>
+    <string name="labs_audio_extraction_sum">Experimental audio-only workflow for supported downloaded video files</string>
+    <string name="labs_gallery">Built-in Media Gallery</string>
+    <string name="labs_gallery_sum">Open saved media from QBooK instead of leaving the app to find Downloads</string>
+    <string name="labs_batch_save">Batch Save</string>
+    <string name="labs_batch_save_sum">Experimental save-all action for supported media on the current screen</string>
+    <string name="labs_dynamic_indicator">Dynamic Download Indicator</string>
+    <string name="labs_dynamic_indicator_sum">Show a compact live status pill while Android downloads are active</string>
+    <string name="labs_animated_theme">Animated Theme Engine</string>
+    <string name="labs_animated_theme_sum">Experimental no-surprise theme transitions; disabled by default</string>
+    <string name="labs_toolbox">Floating Toolbox</string>
+    <string name="labs_toolbox_sum">Experimental quick actions for save, copy link, screenshot, and reader mode</string>
+    <string name="labs_extended_material">Extended Material You</string>
+    <string name="labs_extended_material_sum">Apply the device palette consistently across media and Labs surfaces</string>
+    <string name="labs_liquid_glass">Liquid Glass UI</string>
+    <string name="labs_liquid_glass_sum">Use the glass treatment on the Control Center header and cards</string>
+    <string name="labs_download_center_empty">Download Center · 0 items</string>
+    <string name="labs_download_center_count">Download Center · %1$d items</string>
+    <string name="labs_download_center_empty_detail">Saved files will appear here after you download media from Facebook.</string>
+    <string name="labs_unknown_file">Unnamed file</string>
+    <string name="labs_preview">Preview</string>
+    <string name="labs_share">Share</string>
+    <string name="labs_no_handler">No compatible app can open this file</string>
+    <string name="labs_downloading">Downloading · %1$d%%</string>
+    <string name="labs_download_complete">Download complete</string>
+
 
     <!-- group headers -->
     <string name="grp_adblock">Ad blocking</string>

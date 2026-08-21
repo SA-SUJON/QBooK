@@ -52,6 +52,13 @@ import org.qbook.viewmodel.MainViewModel
  */
 class SettingsActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_OPEN_LABS = "org.qbook.open_labs"
+    }
+
+    private val isLabsScreen: Boolean
+        get() = intent.getBooleanExtra(EXTRA_OPEN_LABS, false)
+
     private lateinit var toolbar: androidx.appcompat.widget.Toolbar
     private var glassSource: android.view.View? = null
     private var glassBackButton: android.view.View? = null
@@ -71,16 +78,18 @@ class SettingsActivity : AppCompatActivity() {
         val backButton = findViewById<android.view.View>(R.id.settings_back_button)
         val titlePill = findViewById<android.view.View>(R.id.settings_title)
         val settingsSource = findViewById<android.view.View>(R.id.settings_container)
-        backButton.background = LiquidGlassDrawable(
-            this,
-            settingsSource,
-            LiquidGlassDrawable.Shape.CIRCLE
-        )
-        titlePill.background = LiquidGlassDrawable(
-            this,
-            settingsSource,
-            LiquidGlassDrawable.Shape.PILL
-        )
+        if (Prefs(this).labsLiquidGlass) {
+            backButton.background = LiquidGlassDrawable(
+                this,
+                settingsSource,
+                LiquidGlassDrawable.Shape.CIRCLE
+            )
+            titlePill.background = LiquidGlassDrawable(
+                this,
+                settingsSource,
+                LiquidGlassDrawable.Shape.PILL
+            )
+        }
         backButton.setOnClickListener { onSupportNavigateUp() }
         glassSource = settingsSource
         glassBackButton = backButton
@@ -101,11 +110,14 @@ class SettingsActivity : AppCompatActivity() {
 
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
-                .replace(R.id.settings_container, ControlCenterFragment())
+                .replace(
+                    R.id.settings_container,
+                    if (isLabsScreen) LabsFragment() else ControlCenterFragment()
+                )
                 .commit()
         }
         findViewById<android.widget.TextView>(R.id.settings_title)
-            .text = getString(R.string.hidden_settings)
+            .text = getString(if (isLabsScreen) R.string.cat_labs else R.string.hidden_settings)
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -155,8 +167,7 @@ class SettingsActivity : AppCompatActivity() {
             savedInstanceState?.getStringArrayList(STATE_EXPANDED)?.forEach {
                 if (it in SECTION_KEYS) expandedSections[it] = true
             }
-            developerExpanded = savedInstanceState?.getBoolean(STATE_DEVELOPER_EXPANDED, false) ?: false
-            setHasOptionsMenu(true)
+            developerExpanded = false
         }
 
         override fun onSaveInstanceState(outState: Bundle) {
@@ -549,6 +560,16 @@ class SettingsActivity : AppCompatActivity() {
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_MEDIA_DOWNLOADER)
                 ?.setOnPreferenceChangeListener { _, _ -> markDirty(true); true }
 
+            // ---- QBooK Labs navigation ----
+            findPreference<Preference>("labs_navigation")
+                ?.setOnPreferenceClickListener {
+                    startActivity(
+                        Intent(requireContext(), SettingsActivity::class.java)
+                            .putExtra(EXTRA_OPEN_LABS, true)
+                    )
+                    true
+                }
+
             // Notifications: schedule or cancel the background check as soon
             // as the switch moves, rather than waiting for the next launch.
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_PUSH_NOTIFICATIONS)
@@ -802,42 +823,6 @@ class SettingsActivity : AppCompatActivity() {
          * mistook the update-check's executor (further up, on a click) for
          * this path; verified line by line: these calls sat on the caller.
          */
-        override fun onCreateOptionsMenu(menu: android.view.Menu, inflater: android.view.MenuInflater) {
-            super.onCreateOptionsMenu(menu, inflater)
-            if (!prefs.developerEnabled) return
-            inflater.inflate(R.menu.menu_developer, menu)
-            val item = menu.findItem(R.id.action_developer_toggle)
-            val sw = item?.actionView?.findViewById<androidx.appcompat.widget.SwitchCompat>(
-                R.id.developer_toggle_switch)
-            if (sw != null) {
-                // Reflect the persisted state on every inflation. The
-                // switch is the only thing the user can flip from this
-                // screen to re-hide the Developer options entry, so
-                // its visible state must match the persisted value.
-                sw.isChecked = prefs.developerEnabled
-                sw.setOnCheckedChangeListener { _, isChecked ->
-                    prefs.developerEnabled = isChecked
-                    setDeveloperVisibility()
-                    if (!isChecked) {
-                        toast(getString(R.string.dev_disabled_toast))
-                    } else {
-                        toast(getString(R.string.dev_enabled_toast))
-                    }
-                    // The About fragment reads developerEnabled in
-                    // wire() - it will see the new value the next time
-                    // the user navigates to About. We do not call
-                    // activity.recreate() here because the user is on
-                    // this screen, not on About, and a recreate would
-                    // lose the menu state.
-                }
-            }
-        }
-
-        override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
-            if (item.itemId == R.id.action_developer_toggle) return true
-            return super.onOptionsItemSelected(item)
-        }
-
         private fun refreshOfflineSize() {
             if (findPreference<Preference>("offline_status") == null) return
             // Skip rather than stack: one refresh may still be counting a

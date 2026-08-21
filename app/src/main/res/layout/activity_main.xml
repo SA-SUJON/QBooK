@@ -100,6 +100,22 @@
     </LinearLayout>
 
 
+    <TextView
+        android:id="@+id/downloadIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/bg_settings_button"
+        android:elevation="8dp"
+        android:paddingStart="14dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="8dp"
+        android:textColor="@color/fb_text"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
     <ImageButton
         android:id="@+id/settingsButton"
         android:layout_width="48dp"

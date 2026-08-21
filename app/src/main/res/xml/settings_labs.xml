@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        android:key="labs_features_section"
+        android:title="@string/labs_features_title"
+        android:layout="@layout/preference_category_material" />
+
+    <Preference
+        android:key="labs_download_center_open"
+        android:title="@string/labs_download_center"
+        android:summary="@string/labs_download_center_sum"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_download_center"
+        android:title="@string/labs_download_center_toggle"
+        android:summary="@string/labs_download_center_toggle_sum"
+        android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_reel_options"
+        android:title="@string/labs_reel_options"
+        android:summary="@string/labs_reel_options_sum"
+        android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_save_paths"
+        android:title="@string/labs_save_paths"
+        android:summary="@string/labs_save_paths_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_audio_extraction"
+        android:title="@string/labs_audio_extraction"
+        android:summary="@string/labs_audio_extraction_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_gallery"
+        android:title="@string/labs_gallery"
+        android:summary="@string/labs_gallery_sum"
+        android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_batch_save"
+        android:title="@string/labs_batch_save"
+        android:summary="@string/labs_batch_save_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_dynamic_indicator"
+        android:title="@string/labs_dynamic_indicator"
+        android:summary="@string/labs_dynamic_indicator_sum"
+        android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_animated_theme"
+        android:title="@string/labs_animated_theme"
+        android:summary="@string/labs_animated_theme_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_toolbox"
+        android:title="@string/labs_toolbox"
+        android:summary="@string/labs_toolbox_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_extended_material"
+        android:title="@string/labs_extended_material"
+        android:summary="@string/labs_extended_material_sum"
+        android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_liquid_glass"
+        android:title="@string/labs_liquid_glass"
+        android:summary="@string/labs_liquid_glass_sum"
+        android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="advanced_debug_divider"
+        android:title="@string/advanced_debug_matrix_title"
+        android:selectable="false"
+        android:layout="@layout/preference_section_divider"
+        app:iconSpaceReserved="false" />
+
+    <PreferenceCategory
+        android:key="advanced_debug_options"
+        android:visible="false">
+        <SwitchPreferenceCompat
+            app:widgetLayout="@layout/preference_widget_material_switch"
+            android:key="diag_all"
+            android:title="@string/diag_all"
+            android:summary="@string/diag_all_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <Preference
+            android:key="diag_mark"
+            android:title="@string/diag_mark"
+            android:summary="@string/diag_mark_sum"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:widgetLayout="@layout/preference_widget_material_switch"
+            android:key="diag_home_feed"
+            android:title="@string/diag_ch_home_feed"
+            android:summary="@string/diag_ch_home_feed_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:widgetLayout="@layout/preference_widget_material_switch"
+            android:key="diag_reels"
+            android:title="@string/diag_ch_reels"
+            android:summary="@string/diag_ch_reels_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:widgetLayout="@layout/preference_widget_material_switch"
+            android:key="diag_story"
+            android:title="@string/diag_ch_story"
+            android:summary="@string/diag_ch_story_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:widgetLayout="@layout/preference_widget_material_switch"
+            android:key="diag_ads"
+            android:title="@string/diag_ch_ads"
+            android:summary="@string/diag_ch_ads_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:widgetLayout="@layout/preference_widget_material_switch"
+            android:key="diag_network"
+            android:title="@string/diag_ch_network"
+            android:summary="@string/diag_ch_network_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:widgetLayout="@layout/preference_widget_material_switch"
+            android:key="diag_offline_save"
+            android:title="@string/diag_ch_offline_save"
+            android:summary="@string/diag_ch_offline_save_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:widgetLayout="@layout/preference_widget_material_switch"
+            android:key="diag_lifecycle"
+            android:title="@string/diag_ch_lifecycle"
+            android:summary="@string/diag_ch_lifecycle_sum"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <Preference
+            android:key="view_diagnostic_log"
+            android:title="@string/diag_viewer_button"
+            android:summary="@string/diag_viewer_button_sum"
+            app:iconSpaceReserved="false" />
+        <Preference
+            android:key="turn_off_advanced_debug"
+            android:title="@string/turn_off_advanced_debug"
+            android:summary="@string/turn_off_advanced_debug_sum"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+</PreferenceScreen>

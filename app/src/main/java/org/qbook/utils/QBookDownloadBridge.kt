@@ -21,7 +21,8 @@ import java.util.concurrent.Executors
  */
 class QBookDownloadBridge(
     context: Context,
-    private val requestLegacyStoragePermission: () -> Unit
+    private val requestLegacyStoragePermission: () -> Unit,
+    private val onStatus: (String) -> Unit = {}
 ) {
     private val appContext = context.applicationContext
     private val executor = Executors.newSingleThreadExecutor { runnable ->
@@ -54,6 +55,7 @@ class QBookDownloadBridge(
     }
 
     private fun saveAsync(dataUrl: String, mimeType: String) {
+        onStatus("saving")
         executor.execute {
             runCatching {
                 val comma = dataUrl.indexOf(',')
@@ -84,6 +86,8 @@ class QBookDownloadBridge(
                 showToast(R.string.download_completed)
             }.onFailure {
                 showToast(R.string.download_failed)
+            }.also {
+                onStatus("finished")
             }
         }
     }

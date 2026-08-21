@@ -108,6 +108,19 @@ class Prefs(context: Context) {
         const val KEY_DEV_TAP_FIRST_AT = "dev_tap_first_at"
         const val KEY_HOMEPAGE = "homepage_url"
 
+        // QBooK Labs (optional experimental features)
+        const val KEY_LABS_DOWNLOAD_CENTER = "labs_download_center"
+        const val KEY_LABS_REEL_OPTIONS = "labs_reel_options"
+        const val KEY_LABS_SAVE_PATHS = "labs_save_paths"
+        const val KEY_LABS_AUDIO_EXTRACTION = "labs_audio_extraction"
+        const val KEY_LABS_GALLERY = "labs_gallery"
+        const val KEY_LABS_BATCH_SAVE = "labs_batch_save"
+        const val KEY_LABS_DYNAMIC_INDICATOR = "labs_dynamic_indicator"
+        const val KEY_LABS_ANIMATED_THEME = "labs_animated_theme"
+        const val KEY_LABS_TOOLBOX = "labs_toolbox"
+        const val KEY_LABS_EXTENDED_MATERIAL = "labs_extended_material"
+        const val KEY_LABS_LIQUID_GLASS = "labs_liquid_glass"
+
         // Data
         const val KEY_SAVE_SESSION = "save_session"
         const val KEY_LAST_URL = "last_url"
@@ -319,6 +332,21 @@ class Prefs(context: Context) {
     val allowZoom: Boolean get() = sp.getBoolean(KEY_ZOOM, false)
     val autoplayVideo: Boolean get() = sp.getBoolean(KEY_AUTOPLAY_VIDEO, true)
     val mediaDownloader: Boolean get() = sp.getBoolean(KEY_MEDIA_DOWNLOADER, true)
+
+    // Labs defaults preserve the currently shipped downloader/glass behavior while
+    // keeping newer experimental surfaces opt-in.
+    val labsDownloadCenter: Boolean get() = sp.getBoolean(KEY_LABS_DOWNLOAD_CENTER, true)
+    val labsReelOptions: Boolean get() = sp.getBoolean(KEY_LABS_REEL_OPTIONS, true)
+    val labsSavePaths: Boolean get() = sp.getBoolean(KEY_LABS_SAVE_PATHS, false)
+    val labsAudioExtraction: Boolean get() = sp.getBoolean(KEY_LABS_AUDIO_EXTRACTION, false)
+    val labsGallery: Boolean get() = sp.getBoolean(KEY_LABS_GALLERY, true)
+    val labsBatchSave: Boolean get() = sp.getBoolean(KEY_LABS_BATCH_SAVE, false)
+    val labsDynamicIndicator: Boolean get() = sp.getBoolean(KEY_LABS_DYNAMIC_INDICATOR, true)
+    val labsAnimatedTheme: Boolean get() = sp.getBoolean(KEY_LABS_ANIMATED_THEME, false)
+    val labsToolbox: Boolean get() = sp.getBoolean(KEY_LABS_TOOLBOX, false)
+    val labsExtendedMaterial: Boolean get() = sp.getBoolean(KEY_LABS_EXTENDED_MATERIAL, true)
+    val labsLiquidGlass: Boolean get() = sp.getBoolean(KEY_LABS_LIQUID_GLASS, true)
+
     val openLinksExternal: Boolean get() = sp.getBoolean(KEY_EXTERNAL_BROWSER, false)
     val keepScreenOn: Boolean get() = sp.getBoolean(KEY_KEEP_SCREEN_ON, false)
     val haptics: Boolean get() = sp.getBoolean(KEY_HAPTICS, false)

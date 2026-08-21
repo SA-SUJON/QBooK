@@ -40,6 +40,7 @@
     <color name="fb_text">#050505</color>
     <color name="fb_text_dim">#65676B</color>
     <color name="fb_circle">#E4E6EB</color>
+    <color name="fb_border">#D8DADF</color>
     <color name="fb_offline">#65676B</color>
     <color name="fb_field">#FFFFFF</color>
     <color name="fb_field_stroke">#CCD0D5</color>
