@@ -152,17 +152,20 @@ ok('the seven-tap handler posts an activity recreate (so the entry appears witho
    /Looper\.getMainLooper\(\)\)\.post[\s\S]{0,300}requireActivity\(\)\.recreate/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
    ));
-ok('the Developer options screen has a toolbar menu with a SwitchCompat action view',
-   /R\.menu\.menu_developer/.test(
+ok('Advanced Debug Matrix no longer has a toolbar hide/show toggle',
+   !/inflater\.inflate\(R\.menu\.menu_developer/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
-   ) && /actionLayout="@layout\/action_developer_toggle"/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/res/menu/menu_developer.xml'), 'utf8')
+   ) && !fs.existsSync(path.join(ROOT, 'app/src/main/res/menu/menu_developer.xml'))
+     && !fs.existsSync(path.join(ROOT, 'app/src/main/res/layout/action_developer_toggle.xml')));
+ok('Labs owns the Advanced Debug Matrix shutdown control and conditional visibility',
+   /turn_off_advanced_debug/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/res/xml/settings_labs.xml'), 'utf8')
+   ) && /prefs\.developerEnabled = false/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/LabsFragment.kt'), 'utf8')
+   ) && /advanced_debug_divider/.test(
+     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/LabsFragment.kt'), 'utf8')
    ));
-ok('the toolbar switch reflects prefs.developerEnabled on every inflation and writes back on every flip',
-   /sw\.isChecked = prefs\.developerEnabled[\s\S]{0,400}prefs\.developerEnabled = isChecked/.test(
-     fs.readFileSync(path.join(ROOT, 'app/src/main/java/org/qbook/ui/SettingsActivity.kt'), 'utf8')
-   ));
-ok('settings_developer.xml no longer has the inline developer_enabled switch (it lives in the toolbar now)',
+ok('settings_developer.xml no longer has an inline developer_enabled switch',
    !/android:key="developer_enabled"/.test(
      fs.readFileSync(path.join(ROOT, 'app/src/main/res/xml/settings_developer.xml'), 'utf8')
    ));
