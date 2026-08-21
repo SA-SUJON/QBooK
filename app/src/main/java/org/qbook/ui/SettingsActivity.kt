@@ -53,6 +53,10 @@ import org.qbook.viewmodel.MainViewModel
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var toolbar: androidx.appcompat.widget.Toolbar
+    private var glassSource: android.view.View? = null
+    private var glassBackButton: android.view.View? = null
+    private var glassTitle: android.view.View? = null
+    private var glassScrollListener: android.view.ViewTreeObserver.OnScrollChangedListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         if (Prefs(this).amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
@@ -64,8 +68,29 @@ class SettingsActivity : AppCompatActivity() {
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(false)
         supportActionBar?.title = ""
-        findViewById<android.view.View>(R.id.settings_back_button)
-            .setOnClickListener { onSupportNavigateUp() }
+        val backButton = findViewById<android.view.View>(R.id.settings_back_button)
+        val titlePill = findViewById<android.view.View>(R.id.settings_title)
+        val settingsSource = findViewById<android.view.View>(R.id.settings_container)
+        backButton.background = LiquidGlassDrawable(
+            this,
+            settingsSource,
+            LiquidGlassDrawable.Shape.CIRCLE
+        )
+        titlePill.background = LiquidGlassDrawable(
+            this,
+            settingsSource,
+            LiquidGlassDrawable.Shape.PILL
+        )
+        backButton.setOnClickListener { onSupportNavigateUp() }
+        glassSource = settingsSource
+        glassBackButton = backButton
+        glassTitle = titlePill
+        val scrollListener = android.view.ViewTreeObserver.OnScrollChangedListener {
+            glassBackButton?.invalidate()
+            glassTitle?.invalidate()
+        }
+        glassScrollListener = scrollListener
+        settingsSource.viewTreeObserver.addOnScrollChangedListener(scrollListener)
 
         val root = findViewById<android.view.View>(R.id.settings_root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
@@ -86,6 +111,21 @@ class SettingsActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
+    }
+
+    override fun onDestroy() {
+        glassSource?.viewTreeObserver?.let { observer ->
+            if (observer.isAlive) {
+                glassScrollListener?.let(observer::removeOnScrollChangedListener)
+            }
+        }
+        (glassBackButton?.background as? LiquidGlassDrawable)?.release()
+        (glassTitle?.background as? LiquidGlassDrawable)?.release()
+        glassScrollListener = null
+        glassSource = null
+        glassBackButton = null
+        glassTitle = null
+        super.onDestroy()
     }
 
     class ControlCenterFragment : PreferenceFragmentCompat() {
