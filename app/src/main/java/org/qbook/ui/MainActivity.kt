@@ -239,6 +239,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs(this)
+        prefs.diagLog.enabled = prefs.diagnosticLog
         materialYouEnabledAtCreation = prefs.materialYou
         mediaDownloaderEnabledAtCreation = prefs.mediaDownloader
         // Initialise the per-channel diagnostic capture store
@@ -262,7 +263,6 @@ class MainActivity : AppCompatActivity() {
         // the persisted value is read; every later read of
         // prefs.diagnosticLog returns the same persisted value, while
         // diagLog.enabled stays in sync.
-        prefs.diagLog.enabled = prefs.diagnosticLog
         prefs.diagLog.write("lifecycle", "onCreate savedInstanceState=$savedInstanceState diagnosticLog=${prefs.diagnosticLog}")
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode())
         if (prefs.amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
