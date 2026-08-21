@@ -52,6 +52,10 @@ class Prefs(context: Context) {
         const val KEY_MATERIAL_YOU = "material_you"
         const val KEY_APP_ICON = "app_icon"
         const val KEY_BACKGROUND_AUDIO = "background_audio"
+        const val KEY_FONT_FAMILY = "font_family"
+        const val KEY_FONT_SCALE = "font_scale"
+        const val KEY_CUSTOM_FONT_NAME = "custom_font_name"
+        const val KEY_CUSTOM_FONT_MIME = "custom_font_mime"
 
         // Offline
         const val KEY_OFFLINE_MODE = "offline_mode"
@@ -165,6 +169,20 @@ class Prefs(context: Context) {
     /** 0-15 index for app icon selection. 0 is the default icon. */
     val appIcon: Int get() = (sp.getString(KEY_APP_ICON, "0")?.toIntOrNull() ?: 0).coerceIn(0, 15)
     val backgroundAudio: Boolean get() = sp.getBoolean(KEY_BACKGROUND_AUDIO, false)
+    /** Active bundled font asset name, `system`, or `custom`. */
+    var fontFamily: String
+        get() = sp.getString(KEY_FONT_FAMILY, FontManager.SYSTEM_VALUE) ?: FontManager.SYSTEM_VALUE
+        set(value) = sp.edit().putString(KEY_FONT_FAMILY, value).apply()
+    /** Native WebView text zoom percentage. 100 is the Facebook default. */
+    var fontScale: Int
+        get() = sp.getString(KEY_FONT_SCALE, "100")?.toIntOrNull()?.coerceIn(75, 175) ?: 100
+        set(value) = sp.edit().putString(KEY_FONT_SCALE, value.coerceIn(75, 175).toString()).apply()
+    var customFontName: String
+        get() = sp.getString(KEY_CUSTOM_FONT_NAME, "") ?: ""
+        set(value) = sp.edit().putString(KEY_CUSTOM_FONT_NAME, value).apply()
+    var customFontMime: String
+        get() = sp.getString(KEY_CUSTOM_FONT_MIME, "font/ttf") ?: "font/ttf"
+        set(value) = sp.edit().putString(KEY_CUSTOM_FONT_MIME, value).apply()
     /**
      * Offline saving as a whole. There is no switch for this any more - the
      * three per-section switches are the control - so it follows them.

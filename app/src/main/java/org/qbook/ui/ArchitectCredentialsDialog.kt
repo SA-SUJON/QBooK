@@ -12,6 +12,7 @@ import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import org.qbook.R
+import org.qbook.utils.NativeTypography
 
 /** Reference-style developer profile popup for Architect Credentials. */
 object ArchitectCredentialsDialog {
@@ -49,6 +50,7 @@ object ArchitectCredentialsDialog {
             }
         }
         dialog.show()
+        NativeTypography.applyDialog(dialog, context)
     }
 
     private fun openEmail(context: Context) {

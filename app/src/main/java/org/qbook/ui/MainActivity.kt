@@ -72,6 +72,8 @@ import org.qbook.utils.AppExecutors
 import org.qbook.offline.OfflineVaults
 import org.qbook.utils.OfflineSync
 import org.qbook.utils.Prefs
+import org.qbook.utils.FontManager
+import org.qbook.utils.NativeTypography
 import org.qbook.utils.QBookDownloadBridge
 import org.qbook.utils.QBookMaterialYouBridge
 import org.qbook.utils.VideoHelper
@@ -87,6 +89,7 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.lang.ref.WeakReference
 
 class MainActivity : AppCompatActivity() {
 
@@ -96,6 +99,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var qbookDownloadBridge: QBookDownloadBridge
     private var materialYouEnabledAtCreation = true
     private var mediaDownloaderEnabledAtCreation = true
+    /** True only while the WebView is intentionally serving Messenger web. */
+    private var messengerMode = false
+    private var standardUserAgent: String? = null
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraPhotoUri: Uri? = null
@@ -241,6 +247,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        liveInstance = WeakReference(this)
         prefs = Prefs(this)
         prefs.diagLog.enabled = prefs.diagnosticLog
         materialYouEnabledAtCreation = prefs.materialYou
@@ -332,8 +339,12 @@ class MainActivity : AppCompatActivity() {
             ?.let { binding.webView.url }
 
         if (restoredUrl != null && SessionState.isUsable(restoredUrl)) {
-            // History came back. Nothing to load: the WebView repaints the
-            // page it was on, header and tab bar included.
+            // History came back. Messenger needs its desktop identity before
+            // a Facebook message document is reused; reroute it instead of
+            // repainting the mobile-browser-unavailable page.
+            if (prefs.inAppMessaging && UrlHelper.isMessagingUrl(restoredUrl)) {
+                loadUrlWithMessagingMode(restoredUrl)
+            }
         } else {
             if (restoredUrl != null) {
                 // The restore already put a dead page in the WebView. Drop it
@@ -351,7 +362,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 resolveStartUrl(intent)
             }
-            binding.webView.loadUrl(target)
+            loadUrlWithMessagingMode(target)
         }
 
         applyRuntimeOptions()
@@ -370,7 +381,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val url = urlFromIntent(intent)
-        if (url != null) binding.webView.loadUrl(url)
+        if (url != null) loadUrlWithMessagingMode(url)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -535,7 +546,14 @@ class MainActivity : AppCompatActivity() {
             registerEarlyScript()
             if (viewModel.needsReload) {
                 viewModel.needsReload = false
-                binding.webView.reload()
+                val current = binding.webView.url
+                if (prefs.inAppMessaging && current != null && UrlHelper.isMessagingUrl(current) &&
+                    !UrlHelper.isMessengerWebUrl(current)
+                ) {
+                    loadUrlWithMessagingMode(current)
+                } else {
+                    binding.webView.reload()
+                }
             } else {
                 // Apply cosmetic changes live, without losing scroll position.
                 injectAll(binding.webView)
@@ -613,6 +631,7 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {}
         }
         connectivityCallback = null
+        if (liveInstance?.get() === this) liveInstance = null
         AppExecutors.diskIO.execute { OfflineCache.trimIfNeeded() }
         try { earlyScriptHandle?.remove() } catch (e: Exception) {}
         earlyScriptHandle = null
@@ -842,6 +861,7 @@ class MainActivity : AppCompatActivity() {
                 ),
                 "MaterialYouBridge"
             )
+            if (standardUserAgent == null) standardUserAgent = settings.userAgentString
             webViewClient = createWebViewClient()
             webChromeClient = createWebChromeClient()
         }
@@ -871,11 +891,13 @@ class MainActivity : AppCompatActivity() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         try {
             earlyScriptHandle?.remove()
-            earlyScriptHandle = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
+                            earlyScriptHandle = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
                 binding.webView,
                 AdBlocker.getEarlyScript(prefs.adBlock, prefs.blockAppPromo) + "\n" +
+                    FontManager.cssScript(this) + "\n" +
                     (if (prefs.adBlock && prefs.cosmeticFilter) MFacebookAds.script() else ""),
                 setOf("https://*.facebook.com", "https://*.messenger.com")
+
             )
         } catch (e: Exception) {
             earlyScriptHandle = null
@@ -922,11 +944,16 @@ class MainActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = !prefs.autoplayVideo
             safeBrowsingEnabled = true
 
-            userAgentString = buildUserAgent(userAgentString)
+            userAgentString = if (messengerMode) {
+                UrlHelper.DESKTOP_UA
+            } else {
+                buildUserAgent(standardUserAgent ?: userAgentString)
+            }
 
             // Native-feel tuning
             setGeolocationEnabled(true)
             defaultTextEncodingName = "utf-8"
+            textZoom = prefs.fontScale
         }
 
         // Follow the app theme inside the page so Facebook renders dark mode
@@ -951,6 +978,18 @@ class MainActivity : AppCompatActivity() {
      * checkpoints. A normal mobile browser is a genuine, supported way to
      * use Facebook.
      */
+    private fun setMessengerMode(enabled: Boolean) {
+        if (messengerMode == enabled) return
+        messengerMode = enabled
+        if (!::binding.isInitialized) return
+        binding.webView.settings.userAgentString = if (enabled) {
+            UrlHelper.DESKTOP_UA
+        } else {
+            buildUserAgent(standardUserAgent ?: binding.webView.settings.userAgentString)
+        }
+        OfflineDocs.userAgent = binding.webView.settings.userAgentString
+    }
+
     private fun buildUserAgent(current: String): String {
         val clean = current
             .replace("; wv", "")
@@ -1144,8 +1183,24 @@ class MainActivity : AppCompatActivity() {
         binding.swipeRefresh.visibility = View.VISIBLE
     }
 
+    /** Apply typography to the already-created app surface without a reload. */
+    fun applyTypographyImmediately() {
+        if (!::binding.isInitialized || !::prefs.isInitialized) return
+        binding.webView.settings.textZoom = prefs.fontScale
+        NativeTypography.apply(binding.root, this, prefs.fontFamily, prefs.fontScale)
+        binding.webView.evaluateJavascript(FontManager.cssScript(this), null)
+    }
+
     private fun applyRuntimeOptions() {
         updateChromeVisibility()
+        val currentUrl = binding.webView.url
+        if (!prefs.inAppMessaging || (currentUrl != null && !UrlHelper.isMessagingUrl(currentUrl))) {
+            setMessengerMode(false)
+        } else if (UrlHelper.isMessengerWebUrl(currentUrl)) {
+            setMessengerMode(true)
+        }
+        binding.webView.settings.textZoom = prefs.fontScale
+        NativeTypography.apply(binding.root, this, prefs.fontFamily, prefs.fontScale)
         binding.swipeRefresh.isEnabled = prefs.pullToRefresh
         if (prefs.keepScreenOn) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1376,6 +1431,16 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------------------------------------------------------- start url
 
+    private fun loadUrlWithMessagingMode(rawUrl: String) {
+        if (prefs.inAppMessaging && UrlHelper.isMessagingUrl(rawUrl)) {
+            setMessengerMode(true)
+            binding.webView.loadUrl(UrlHelper.toInAppMessaging(rawUrl))
+        } else {
+            setMessengerMode(false)
+            binding.webView.loadUrl(rawUrl)
+        }
+    }
+
     private fun resolveStartUrl(intent: Intent?): String {
         urlFromIntent(intent)?.let { return it }
         if (prefs.saveSession) {
@@ -1418,6 +1483,11 @@ class MainActivity : AppCompatActivity() {
                 // Decide chrome visibility before the page paints, so the
                 // login screen never flashes a top bar.
                 evaluateAuthState(url)
+                if (prefs.inAppMessaging && UrlHelper.isMessengerWebUrl(url)) {
+                    setMessengerMode(true)
+                } else if (!UrlHelper.isMessagingUrl(url)) {
+                    setMessengerMode(false)
+                }
 
                 // Inject the CSS blocks as early as possible.
                 view?.evaluateJavascript(
@@ -1635,6 +1705,8 @@ class MainActivity : AppCompatActivity() {
                 // back online, a reload, a link tap: all mean live again.
                 if (request.isForMainFrame) isShowingOfflinePage = false
 
+                FontManager.intercept(this@MainActivity, request.url.toString())?.let { return it }
+
                 // Developer: silently capture video CDN URLs for reel ad blocking.
                 // Enable in Hidden Settings → About → Developer Options.
                 // URLs are flushed to clipboard ONLY on long-press (AdInspector).
@@ -1730,20 +1802,32 @@ class MainActivity : AppCompatActivity() {
             prefs.diagLog.write("routeblock", "BLOCKED shouldOverrideUrlLoading url=" + url.take(120))
             return true // swallow silently
         }
-        // 1. Play Store / app install links are killed outright.
+        // 1. Native Inbox Protocol: Messenger web requires a desktop browser
+        // identity. Translate Facebook message routes and fb-messenger:// links
+        // before the app-promo blocker can swallow them.
+        if (prefs.inAppMessaging &&
+            (UrlHelper.isMessagingUrl(url) || UrlHelper.isMessengerAppLink(url))) {
+            if (UrlHelper.isMessengerWebUrl(url) && messengerMode) return false
+            setMessengerMode(true)
+            binding.webView.loadUrl(UrlHelper.toInAppMessaging(url))
+            return true
+        }
+        if (messengerMode && !UrlHelper.isMessagingUrl(url)) {
+            setMessengerMode(false)
+        }
+        // 2. Play Store / app install links are killed outright.
         if (prefs.blockAppPromo && UrlHelper.isAppStoreLink(url)) {
             return true // swallow silently, no store, no chooser
         }
-        // 2. tel:/mailto:/sms:
+        // 3. tel:/mailto:/sms:
         if (UrlHelper.isSpecialScheme(url)) {
             return openExternally(url)
         }
-        // 3. Messaging is deliberately left alone. The desktop-UA switch
-        //    leaked into the rest of the session and broke the home feed
-        //    ("Something went wrong"), so it was removed in 3.6.2.
-
-        // 4. Facebook + auth providers stay inside.
+                // 4. Facebook + auth providers stay inside. With the protocol off,
+        // messaging reaches this unchanged branch and retains the existing
+        // default browser-style behavior.
         if (UrlHelper.isInternal(url)) return false
+
         // 5. Everything else, per user setting.
         return if (prefs.openLinksExternal) openExternally(url) else false
     }
@@ -1821,6 +1905,9 @@ class MainActivity : AppCompatActivity() {
         if (prefs.labsToolbox) {
             view.evaluateJavascript(labsToolboxScript, null)
         }
+        // Typography is last so it wins over Facebook and QBooK's other
+        // presentation sheets, and it is re-applied after SPA route changes.
+        view.evaluateJavascript(FontManager.cssScript(this), null)
     }
 
     private fun loadRawScript(resourceId: Int): String =
@@ -3145,7 +3232,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingFileChooser: (() -> Unit)? = null
 
     private fun showPermissionDialog() {
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.permission_required))
             .setMessage(getString(R.string.permission_rationale))
             .setPositiveButton(getString(R.string.grant_permission)) { _, _ ->
@@ -3156,7 +3243,9 @@ class MainActivity : AppCompatActivity() {
                 )
             }
             .setNegativeButton(getString(R.string.dismiss), null)
-            .show()
+            .create()
+        dialog.show()
+        NativeTypography.applyDialog(dialog, this)
     }
 
     private fun showErrorPage() {
@@ -3265,6 +3354,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private var liveInstance: WeakReference<MainActivity>? = null
+        val live: MainActivity?
+            get() = liveInstance?.get()
         /** Root of the currently-resumed activity so developer tools can reach it. */
         @Volatile var resumed: MainActivity? = null
             private set

@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -38,6 +39,9 @@ import org.qbook.utils.OfflineFeed
 import org.qbook.utils.OfflineManager
 import org.qbook.utils.OfflineSync
 import org.qbook.utils.Prefs
+import org.qbook.utils.FontManager
+import org.qbook.utils.NativeTypography
+import org.qbook.utils.PredefinedFonts
 import org.qbook.utils.SessionState
 import org.qbook.utils.UpdateChecker
 import org.qbook.utils.UpdateWatcher
@@ -64,6 +68,27 @@ class SettingsActivity : AppCompatActivity() {
     private var glassBackButton: android.view.View? = null
     private var glassTitle: android.view.View? = null
     private var glassScrollListener: android.view.ViewTreeObserver.OnScrollChangedListener? = null
+
+    private val customFontPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        try {
+            val name = FontManager.importCustomFont(this, uri)
+            Toast.makeText(this, getString(R.string.font_import_success_fmt, name), Toast.LENGTH_SHORT).show()
+            (supportFragmentManager.findFragmentById(R.id.settings_container) as? ControlCenterFragment)?.let {
+                it.refreshFontPreferences()
+                it.applyTypographyNow()
+            }
+            MainViewModel.pendingSettingsChange = true
+        } catch (_: Exception) {
+            Toast.makeText(this, R.string.font_import_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun openCustomFontPicker() {
+        customFontPicker.launch(arrayOf("font/*", "application/octet-stream"))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         if (Prefs(this).amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
@@ -182,6 +207,8 @@ class SettingsActivity : AppCompatActivity() {
         override fun onDisplayPreferenceDialog(preference: Preference) {
             if (preference is ListPreference && preference.key in setOf(
                     Prefs.KEY_DARK_MODE,
+                    Prefs.KEY_FONT_FAMILY,
+                    Prefs.KEY_FONT_SCALE,
                     "offline_reel_count",
                     "offline_post_count",
                     "offline_network"
@@ -200,7 +227,11 @@ class SettingsActivity : AppCompatActivity() {
                         }
                     }
                     .setNegativeButton(R.string.dialog_dismiss, null)
-                    .show()
+                    .create()
+                    .also { dialog ->
+                        dialog.show()
+                        NativeTypography.applyDialog(dialog, requireContext())
+                    }
             } else {
                 super.onDisplayPreferenceDialog(preference)
             }
@@ -208,6 +239,7 @@ class SettingsActivity : AppCompatActivity() {
 
         override fun onViewCreated(view: android.view.View, savedInstanceState: Bundle?) {
             super.onViewCreated(view, savedInstanceState)
+            if (::prefs.isInitialized) applyTypographyNow()
             // The Stitch layout uses card spacing rather than list separators.
             // PreferenceFragmentCompat installs a full-width DividerDecoration
             // by default; remove it so no rules appear behind the glass cards.
@@ -560,6 +592,70 @@ class SettingsActivity : AppCompatActivity() {
             findPreference<SwitchPreferenceCompat>(Prefs.KEY_MEDIA_DOWNLOADER)
                 ?.setOnPreferenceChangeListener { _, _ -> markDirty(true); true }
 
+            // ---- typography ----
+            findPreference<ListPreference>(Prefs.KEY_FONT_SCALE)
+                ?.setOnPreferenceChangeListener { _, newValue ->
+                    prefs.fontScale = (newValue as String).toIntOrNull() ?: 100
+                    applyTypographyNow()
+                    markDirty(false)
+                    true
+                }
+
+            val fontPreference = findPreference<ListPreference>(Prefs.KEY_FONT_FAMILY)
+            fontPreference?.setOnPreferenceChangeListener { _, newValue ->
+                val selected = newValue as String
+                if (selected == FontManager.CUSTOM_VALUE && !FontManager.hasCustomFont(requireContext())) {
+                    toast(getString(R.string.font_custom_missing))
+                    false
+                } else {
+                    prefs.fontFamily = selected
+                    updateFontPreferenceSummary(fontPreference)
+                    applyTypographyNow()
+                    markDirty(false)
+                    true
+                }
+            }
+            findPreference<Preference>("custom_font")?.setOnPreferenceClickListener {
+                (activity as? SettingsActivity)?.openCustomFontPicker()
+                true
+            }
+            findPreference<Preference>("font_preview")?.setOnPreferenceClickListener {
+                TypographyPreviewDialog.show(
+                    requireContext(), prefs.fontFamily, prefs.fontScale
+                ) { family, scale ->
+                    prefs.fontFamily = family
+                    prefs.fontScale = scale
+                    refreshFontPreferences()
+                    applyTypographyNow()
+                    markDirty(false)
+                }
+                true
+            }
+            findPreference<Preference>("reset_typography")?.setOnPreferenceClickListener {
+                prefs.fontFamily = FontManager.SYSTEM_VALUE
+                prefs.fontScale = 100
+                refreshFontPreferences()
+                applyTypographyNow()
+                markDirty(false)
+                toast(getString(R.string.pref_reset_typography))
+                true
+            }
+            findPreference<Preference>("remove_custom_font")?.setOnPreferenceClickListener {
+                confirm(
+                    R.string.pref_remove_custom_font,
+                    R.string.pref_remove_custom_font_sum,
+                    R.string.dialog_dismiss,
+                    R.string.pref_remove_custom_font
+                ) {
+                    FontManager.clearCustomFont(requireContext())
+                    refreshFontPreferences()
+                    markDirty(false)
+                    toast(getString(R.string.font_removed))
+                }
+                true
+            }
+            refreshFontPreferences()
+
             // ---- QBooK Labs navigation ----
             findPreference<Preference>("labs_navigation")
                 ?.setOnPreferenceClickListener {
@@ -903,6 +999,58 @@ class SettingsActivity : AppCompatActivity() {
          *               Cosmetic changes re-run the filter in place instead,
          *               so the user keeps their position in the feed.
          */
+        fun applyTypographyNow() {
+            if (!isAdded) return
+            NativeTypography.apply(
+                requireActivity().window.decorView,
+                requireActivity(),
+                prefs.fontFamily,
+                prefs.fontScale
+            )
+            MainActivity.live?.applyTypographyImmediately()
+        }
+
+        fun refreshFontPreferences() {
+            if (!isAdded) return
+            val context = requireContext()
+            val fontPreference = findPreference<ListPreference>(Prefs.KEY_FONT_FAMILY) ?: return
+            val customAvailable = FontManager.hasCustomFont(context)
+            if (prefs.fontFamily == FontManager.CUSTOM_VALUE && !customAvailable) {
+                prefs.fontFamily = FontManager.SYSTEM_VALUE
+            }
+            val entries = mutableListOf(getString(R.string.font_system))
+            val values = mutableListOf(FontManager.SYSTEM_VALUE)
+            PredefinedFonts.all.forEach {
+                entries += it.name
+                values += it.asset
+            }
+            if (customAvailable) {
+                entries += getString(R.string.font_custom_fmt, prefs.customFontName.ifBlank { "Custom font" })
+                values += FontManager.CUSTOM_VALUE
+            }
+            fontPreference.entries = entries.toTypedArray()
+            fontPreference.entryValues = values.toTypedArray()
+            fontPreference.value = prefs.fontFamily
+            updateFontPreferenceSummary(fontPreference)
+            findPreference<Preference>("remove_custom_font")?.isVisible = customAvailable
+            findPreference<ListPreference>(Prefs.KEY_FONT_SCALE)?.value = prefs.fontScale.toString()
+            findPreference<Preference>("custom_font")?.summary = if (customAvailable) {
+                getString(R.string.font_custom_fmt, prefs.customFontName.ifBlank { "Custom font" })
+            } else {
+                getString(R.string.pref_custom_font_sum)
+            }
+        }
+
+        private fun updateFontPreferenceSummary(preference: ListPreference) {
+            preference.summary = when {
+                prefs.fontFamily == FontManager.CUSTOM_VALUE && FontManager.hasCustomFont(requireContext()) ->
+                    getString(R.string.font_custom_fmt, prefs.customFontName.ifBlank { "Custom font" })
+                prefs.fontFamily == FontManager.SYSTEM_VALUE -> getString(R.string.font_system)
+                else -> PredefinedFonts.all.firstOrNull { it.asset == prefs.fontFamily }?.name
+                    ?: getString(R.string.font_system)
+            }
+        }
+
         private fun markDirty(reload: Boolean) {
             MainViewModel.pendingSettingsChange = true
             if (reload) MainViewModel.pendingReload = true
@@ -915,12 +1063,14 @@ class SettingsActivity : AppCompatActivity() {
             positiveRes: Int,
             action: () -> Unit
         ) {
-            AlertDialog.Builder(requireContext())
+            val dialog = AlertDialog.Builder(requireContext())
                 .setTitle(titleRes)
                 .setMessage(msgRes)
                 .setPositiveButton(positiveRes) { _, _ -> action() }
                 .setNegativeButton(negativeRes, null)
-                .show()
+                .create()
+            dialog.show()
+            NativeTypography.applyDialog(dialog, requireContext())
         }
 
         /** Application context: never leaks the Activity. */
@@ -1127,7 +1277,7 @@ class SettingsActivity : AppCompatActivity() {
                 org.qbook.utils.BackgroundSyncManager.lastBlockReason +
                 "\n\nWorker (OfflineSync.run):\n" +
                 org.qbook.utils.OfflineSync.lastRunBlockReason
-            AlertDialog.Builder(ctx)
+            val dialog = AlertDialog.Builder(ctx)
                 .setTitle("Sync diagnostics")
                 .setMessage(msg)
                 .setPositiveButton("Copy") { _, _ ->
@@ -1137,11 +1287,13 @@ class SettingsActivity : AppCompatActivity() {
                         android.content.ClipData.newPlainText("Sync diagnostics", msg))
                     toast("Copied")
                 }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
+                                .setNegativeButton(android.R.string.cancel, null)
+                .create()
+            dialog.show()
+            NativeTypography.applyDialog(dialog, ctx)
         }
-
         private fun showDeveloperDialog() {
+
             ArchitectCredentialsDialog.show(requireContext())
         }
 
@@ -1329,6 +1481,7 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             dialog.show()
+            NativeTypography.applyDialog(dialog, ctx)
         }
     }
 }

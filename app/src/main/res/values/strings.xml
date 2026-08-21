@@ -61,6 +61,24 @@
     <string name="pref_material_you_sum">Adapt QBooK and Facebook accents to the device color palette</string>
     <string name="pref_progress">Progress Bar Indicator</string>
     <string name="pref_progress_sum">Display top-edge network activity during page render</string>
+    <string name="pref_font_scale">Font Scale</string>
+    <string name="pref_font_scale_dialog">Choose Font Scale</string>
+    <string name="pref_font_family">Font Style</string>
+    <string name="pref_font_family_sum">Choose from 160 bundled fonts or use the imported custom font</string>
+    <string name="pref_custom_font">Import Custom Font</string>
+    <string name="pref_custom_font_sum">Copy a TTF, OTF, or WOFF2 file into QBooK private storage</string>
+    <string name="pref_remove_custom_font">Remove Custom Font</string>
+    <string name="pref_remove_custom_font_sum">Delete the stored custom font and return to the system font</string>
+    <string name="font_system">System Default</string>
+    <string name="font_custom_fmt">Custom: %1$s</string>
+    <string name="font_custom_missing">Custom font is unavailable; choose Import Custom Font again</string>
+    <string name="font_import_success_fmt">Custom font saved: %1$s</string>
+    <string name="font_import_failed">Could not import that font file</string>
+    <string name="font_removed">Custom font removed</string>
+    <string name="pref_font_preview">Preview Typography</string>
+    <string name="pref_font_preview_sum">Try font style and size changes before applying them</string>
+    <string name="pref_reset_typography">Reset Typography to Default</string>
+    <string name="pref_reset_typography_sum">Restore the original QBooK and Facebook font style and 100% size</string>
 
     <string name="pref_hide_stories">Suppress Stories Tray</string>
     <string name="pref_hide_reels">Suppress Reels Module</string>

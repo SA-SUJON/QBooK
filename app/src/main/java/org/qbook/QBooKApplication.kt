@@ -11,6 +11,7 @@ import org.qbook.utils.AdBlocker
 import org.qbook.utils.AppExecutors
 import org.qbook.utils.NotificationPresenter
 import org.qbook.utils.NotificationWorker
+import org.qbook.utils.NativeTypography
 import org.qbook.utils.OfflineCache
 import org.qbook.utils.OfflineDocs
 import org.qbook.utils.OfflineFeed
@@ -54,6 +55,20 @@ class QBooKApplication : Application() {
         OfflineCache.writeEnabled = prefs.offlineMode
         OfflineFeed.writeEnabled = prefs.offlineMode
         OfflineDocs.writeEnabled = prefs.offlineMode
+
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, state: android.os.Bundle?) {
+                NativeTypography.applyActivity(activity)
+            }
+            override fun onActivityResumed(activity: Activity) {
+                NativeTypography.applyActivity(activity)
+            }
+            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityPaused(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, state: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) = Unit
+        })
 
         // Watch for releases process-wide. Checking only in MainActivity's
         // onCreate meant an update published while the app was open went

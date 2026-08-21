@@ -16,6 +16,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import org.qbook.R
 import org.qbook.utils.Prefs
+import org.qbook.utils.NativeTypography
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
@@ -43,11 +44,15 @@ class DownloadCenterActivity : AppCompatActivity() {
         summary = findViewById(R.id.download_center_summary)
         list = findViewById(R.id.download_center_list)
         loadItems()
+        NativeTypography.applyActivity(this)
     }
 
     override fun onResume() {
         super.onResume()
-        if (::list.isInitialized) loadItems()
+        if (::list.isInitialized) {
+            loadItems()
+            NativeTypography.applyActivity(this)
+        }
     }
 
     private fun loadItems() {

@@ -15,6 +15,7 @@ import org.qbook.utils.Diag
 import org.qbook.utils.DiagCapture
 import org.qbook.utils.DiagnosticExport
 import org.qbook.utils.Prefs
+import org.qbook.utils.NativeTypography
 
 /**
  * Read-only viewer for the per-channel diagnostic log files.
@@ -67,7 +68,7 @@ class DiagnosticLogActivity : AppCompatActivity() {
             render()
         }
         findViewById<View>(R.id.diag_clear_all).setOnClickListener {
-            AlertDialog.Builder(this)
+            val dialog = AlertDialog.Builder(this)
                 .setTitle(R.string.diag_clear_all_title)
                 .setMessage(R.string.diag_clear_all_msg)
                 .setPositiveButton(R.string.diag_clear_all_yes) { _, _ ->
@@ -76,7 +77,9 @@ class DiagnosticLogActivity : AppCompatActivity() {
                     render()
                 }
                 .setNegativeButton(android.R.string.cancel, null)
-                .show()
+                .create()
+            dialog.show()
+            NativeTypography.applyDialog(dialog, this)
         }
         findViewById<View>(R.id.diag_export_json).setOnClickListener {
             exportChannels(DiagnosticExport.FORMAT_JSON)
@@ -86,6 +89,7 @@ class DiagnosticLogActivity : AppCompatActivity() {
         }
 
         render()
+        NativeTypography.applyActivity(this)
     }
 
     override fun onResume() {
@@ -96,6 +100,7 @@ class DiagnosticLogActivity : AppCompatActivity() {
         // one in the developer-options page and come
         // back here to see the captures.
         render()
+        NativeTypography.applyActivity(this)
     }
 
     /** Render the current channel's entries into the
@@ -117,7 +122,10 @@ class DiagnosticLogActivity : AppCompatActivity() {
             }
             b.text = sb.toString()
         }
-        b.post { b.scrollTo(0, b.height) }
+        b.post {
+            b.scrollTo(0, b.height)
+            NativeTypography.applyActivity(this)
+        }
     }
 
     /** Export every channel that is currently enabled

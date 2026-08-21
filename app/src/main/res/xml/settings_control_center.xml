@@ -4,6 +4,12 @@
         <ListPreference android:key="dark_mode" android:title="@string/pref_dark" android:dialogTitle="@string/theme_dialog_title" android:defaultValue="system" android:entries="@array/dark_entries" android:entryValues="@array/dark_values" app:useSimpleSummaryProvider="true" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat app:widgetLayout="@layout/preference_widget_material_switch" android:key="amoled_black" android:title="@string/pref_amoled" android:summary="@string/pref_amoled_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat app:widgetLayout="@layout/preference_widget_material_switch" android:key="material_you" android:title="@string/pref_material_you" android:summary="@string/pref_material_you_sum" android:defaultValue="true" app:iconSpaceReserved="false" />
+        <ListPreference android:key="font_scale" android:title="@string/pref_font_scale" android:dialogTitle="@string/pref_font_scale_dialog" android:defaultValue="100" android:entries="@array/font_scale_labels" android:entryValues="@array/font_scale_values" app:useSimpleSummaryProvider="true" app:iconSpaceReserved="false" />
+        <ListPreference android:key="font_family" android:title="@string/pref_font_family" android:summary="@string/pref_font_family_sum" android:defaultValue="system" app:iconSpaceReserved="false" />
+        <Preference android:key="custom_font" android:title="@string/pref_custom_font" android:summary="@string/pref_custom_font_sum" app:iconSpaceReserved="false" />
+        <Preference android:key="font_preview" android:title="@string/pref_font_preview" android:summary="@string/pref_font_preview_sum" app:iconSpaceReserved="false" />
+        <Preference android:key="remove_custom_font" android:title="@string/pref_remove_custom_font" android:summary="@string/pref_remove_custom_font_sum" app:iconSpaceReserved="false" />
+        <Preference android:key="reset_typography" android:title="@string/pref_reset_typography" android:summary="@string/pref_reset_typography_sum" app:iconSpaceReserved="false" />
         <Preference android:key="app_icon" android:title="@string/pref_icon" android:summary="@string/pref_icon_sum" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat app:widgetLayout="@layout/preference_widget_material_switch" android:key="show_progress_bar" android:title="@string/pref_progress" android:summary="@string/pref_progress_sum" android:defaultValue="false" app:iconSpaceReserved="false" />
     </org.qbook.ui.ExpandablePreferenceCategory>

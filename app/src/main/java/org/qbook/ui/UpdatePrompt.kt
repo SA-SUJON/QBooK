@@ -9,6 +9,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import org.qbook.R
 import org.qbook.utils.ApkInstaller
+import org.qbook.utils.NativeTypography
 import org.qbook.utils.UpdateChecker
 import org.qbook.utils.UpdateWatcher
 
@@ -65,6 +66,7 @@ object UpdatePrompt {
         showing = dialog
         dialog.setOnDismissListener { if (showing === dialog) showing = null }
         dialog.show()
+        NativeTypography.applyDialog(dialog, activity)
 
         button.setOnClickListener {
             val apk = rel.apkUrl

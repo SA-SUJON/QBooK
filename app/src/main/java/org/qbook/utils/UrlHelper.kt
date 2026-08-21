@@ -62,6 +62,11 @@ object UrlHelper {
     }
 
     /** Play Store / App Store / app-install links that must never open. */
+    fun isMessengerAppLink(url: String?): Boolean {
+        val value = url?.lowercase(Locale.ROOT) ?: return false
+        return value.startsWith("fb-messenger:") || value.startsWith("messenger:")
+    }
+
     fun isAppStoreLink(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
         val u = url.lowercase(Locale.ROOT)
@@ -120,6 +125,11 @@ object UrlHelper {
      * thread on m.facebook.com. mbasic serves a working chat UI instead, so
      * messaging keeps functioning inside the app.
      */
+    fun isMessengerWebUrl(url: String?): Boolean {
+        val h = hostOf(url) ?: return false
+        return h == "messenger.com" || h.endsWith(".messenger.com")
+    }
+
     fun isMessagingUrl(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
         val u = url.lowercase(Locale.ROOT)
@@ -154,9 +164,14 @@ object UrlHelper {
                 return if (who.isBlank()) "https://www.messenger.com/"
                        else "https://www.messenger.com/t/$who"
             }
-            // Already Messenger: keep the thread path.
+            // Already Messenger: keep the thread path, query and fragment.
             if (h.endsWith("messenger.com")) {
-                return "https://www.messenger.com" + (if (path.isBlank()) "/" else path)
+                return uri.buildUpon()
+                    .scheme("https")
+                    .authority("www.messenger.com")
+                    .path(if (path.isBlank()) "/" else path)
+                    .build()
+                    .toString()
             }
             // facebook.com/messages/... -> messenger.com equivalent
             val tid = uri.getQueryParameter("tid")

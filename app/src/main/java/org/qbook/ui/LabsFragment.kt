@@ -14,6 +14,7 @@ import org.qbook.utils.DiagnosticExport
 import org.qbook.utils.Diag
 import org.qbook.utils.DiagCapture
 import org.qbook.utils.Prefs
+import org.qbook.utils.NativeTypography
 import org.qbook.viewmodel.MainViewModel
 
 /** Dedicated QBooK Labs screen. Feature behavior is intentionally unchanged. */
@@ -46,11 +47,15 @@ class LabsFragment : PreferenceFragmentCompat() {
             isHorizontalScrollBarEnabled = false
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
         }
+        NativeTypography.applyActivity(requireActivity())
     }
 
     override fun onResume() {
         super.onResume()
-        if (::prefs.isInitialized) updateAdvancedDebugVisibility()
+        if (::prefs.isInitialized) {
+            updateAdvancedDebugVisibility()
+            NativeTypography.applyActivity(requireActivity())
+        }
     }
 
     private fun wireLabsFeatures() {
