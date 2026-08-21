@@ -393,18 +393,20 @@ console.log('\nAutomatic downloads');
     const block = strings.slice(strings.indexOf('reel_count_values'));
     const values = [...block.slice(0, block.indexOf('</string-array>'))
       .matchAll(/<item>(\d+)<\/item>/g)].map((m) => Number(m[1]));
-    const clamp = pr.match(/coerceIn\((\d+), (\d+)\)/);
-    // There may be more than one coerceIn now (e.g. appIcon). Find the one
-    // that caps the reel count, which must be the one with lo >= 30.
-    let lo = 0, hi = 0;
-    for (const m of pr.matchAll(/coerceIn\((\d+), (\d+)\)/g)) {
-      const l = Number(m[1]), h = Number(m[2]);
-      if (l >= 30) { lo = l; hi = h; break; }
-    }
+    // Prefs now contains several clamps, including the font-scale clamp.
+    // Select the candidate that actually encloses every offered reel-count
+    // value instead of relying on source order or an unrelated lower bound.
+    const candidates = [...pr.matchAll(/coerceIn\((\d+), (\d+)\)/g)]
+      .map((m) => [Number(m[1]), Number(m[2])]);
+    const matching = candidates.find(([lo, hi]) =>
+      values.every((v) => v >= lo && v <= hi));
+    const [lo, hi] = matching || [0, 0];
     const def = Number((sx.match(/offline_reel_count[\s\S]{0,400}?defaultValue="(\d+)"/) || [])[1]);
 
+    ok('the reel-count clamp is discoverable', Boolean(matching),
+       values.join(',') + ' vs candidates ' + JSON.stringify(candidates));
     ok('every offered value survives the clamp',
-       values.every((v) => v >= lo && v <= hi),
+       Boolean(matching) && values.every((v) => v >= lo && v <= hi),
        values.join(',') + ' vs ' + lo + '..' + hi);
     ok('the default is one of the offered values',
        values.includes(def), def + ' not in ' + values.join(','));
