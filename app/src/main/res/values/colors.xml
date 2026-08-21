@@ -45,4 +45,14 @@
     <color name="fb_field">#FFFFFF</color>
     <color name="fb_field_stroke">#CCD0D5</color>
     <color name="fb_error">#E41E3F</color>
+
+    <!-- Architect Credentials popup -->
+    <color name="architect_surface">#FFFFFFFF</color>
+    <color name="architect_overview_surface">#FFFFFFFF</color>
+    <color name="architect_overview_stroke">#EEEAF2</color>
+    <color name="architect_links_surface">#1E1E1E</color>
+    <color name="architect_text">#15151D</color>
+    <color name="architect_muted">#696570</color>
+    <color name="architect_accent">#7445DB</color>
+    <color name="architect_icon_foreground">#FFFFFF</color>
 </resources>

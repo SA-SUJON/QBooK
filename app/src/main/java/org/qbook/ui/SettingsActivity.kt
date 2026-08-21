@@ -1142,15 +1142,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         private fun showDeveloperDialog() {
-            val ctx = requireContext()
-            val msg = getString(R.string.dev_bio) + "\n\n" +
-                getString(R.string.dev_email) + "\n" +
-                getString(R.string.dev_website)
-            AlertDialog.Builder(ctx)
-                .setTitle(getString(R.string.dev_name) + " — " + getString(R.string.dev_title))
-                .setMessage(msg)
-                .setPositiveButton(R.string.dev_acknowledge, null)
-                .show()
+            ArchitectCredentialsDialog.show(requireContext())
         }
 
         /** Enable one launcher alias and disable the other 15. */

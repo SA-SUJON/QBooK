@@ -434,7 +434,21 @@
     <string name="pref_developer">Architect Credentials</string>
     <string name="pref_developer_sum">Access lead developer profile and secure communication nodes</string>
     <string name="dev_name">SAMSUL AREFIN SUJON</string>
+    <string name="dev_display_name">SA SUJON</string>
     <string name="dev_title">Lead Developer &amp; Technology Researcher</string>
+    <string name="architect_acknowledge">ACKNOWLEDGE</string>
+    <string name="architect_projects_label">Projects</string>
+    <string name="architect_projects_value">25</string>
+    <string name="architect_experience_label">Experience</string>
+    <string name="architect_experience_value">8 Yrs</string>
+    <string name="architect_rating_label">Rating</string>
+    <string name="architect_rating_value">4.9</string>
+    <string name="architect_overview_title">Overview</string>
+    <string name="architect_dev_icon_description">QBooK developer icon</string>
+    <string name="architect_email_description">Open developer email</string>
+    <string name="architect_github_description">Open developer GitHub</string>
+    <string name="architect_email_unavailable">No email app is available</string>
+    <string name="architect_github_unavailable">Unable to open GitHub</string>
 
     <string name="dev_email">E-Mail: imsamsularefinsujon@gmail.com</string>
     <string name="dev_website">GitHub: https://github.com/SA-SUJON/QBooK</string>
