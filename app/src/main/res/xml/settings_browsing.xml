@@ -8,6 +8,12 @@
         <SwitchPreferenceCompat android:key="allow_zoom"
             android:title="@string/pref_zoom" android:summary="@string/pref_zoom_sum"
             android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="sticky_navbar"
+            android:title="@string/pref_sticky_navbar" android:summary="@string/pref_sticky_navbar_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="immersive_mode"
+            android:title="@string/pref_immersive" android:summary="@string/pref_immersive_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="pull_to_refresh"
             android:title="@string/pref_pull" android:summary="@string/pref_pull_sum" android:defaultValue="true"
             app:iconSpaceReserved="false" />
@@ -31,6 +37,15 @@
             android:defaultValue="false" app:iconSpaceReserved="false" />
         <SwitchPreferenceCompat android:key="haptics_enabled" android:title="@string/pref_haptics" android:summary="@string/pref_haptics_sum" android:defaultValue="false"
             app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="copy_media_clipboard"
+            android:title="@string/pref_copy_media" android:summary="@string/pref_copy_media_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="inpage_settings"
+            android:title="@string/pref_inpage_settings" android:summary="@string/pref_inpage_settings_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat android:key="selectable_captions"
+            android:title="@string/pref_selectable_captions" android:summary="@string/pref_selectable_captions_sum"
+            android:defaultValue="false" app:iconSpaceReserved="false" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/grp_notifications" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat android:key="push_notifications"

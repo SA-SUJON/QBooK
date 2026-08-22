@@ -41,6 +41,7 @@ class DiagnosticLogActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ScreenMotion.enter(this)
         setContentView(R.layout.activity_diagnostic_log)
         title = getString(R.string.diagnostic_log_title)
 

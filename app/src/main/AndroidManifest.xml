@@ -310,6 +310,14 @@
         <!-- No launcher entry; opened from the visible QBooK Control Center
              button inside MainActivity. -->
         <activity
+            android:name=".ui.AccountsActivity"
+            android:exported="false"
+            android:label="@string/accounts_sessions"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".ui.MainActivity"
+            android:theme="@style/Theme.QBooK" />
+
+        <activity
             android:name=".ui.SettingsActivity"
             android:exported="false"
             android:label="@string/hidden_settings"
@@ -317,6 +325,13 @@
             android:parentActivityName=".ui.MainActivity"
             android:theme="@style/Theme.QBooK" />
 
+        <activity
+            android:name=".ui.MediaGalleryActivity"
+            android:exported="false"
+            android:label="@string/labs_gallery_title"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".ui.SettingsActivity"
+            android:theme="@style/Theme.QBooK" />
         <activity
             android:name=".ui.DownloadCenterActivity"
             android:exported="false"

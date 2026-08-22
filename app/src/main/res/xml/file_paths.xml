@@ -2,6 +2,8 @@
 <paths>
     <!-- camera capture -->
     <cache-path name="captures" path="captures/" />
+    <cache-path name="clipboard_images" path="clipboard_images/" />
+    <external-path name="public_downloads" path="Download/" />
     <!-- update APKs. DownloadManager writes here from its own process, so it
          must be external app storage rather than the private cache. -->
     <external-files-path name="updates" path="updates/" />

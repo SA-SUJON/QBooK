@@ -21,6 +21,7 @@
   let currentContentContainer = null;
   let lastDownloadedUrl = null;
   const DOWNLOAD_BTN_ID = "qbook-global-downloader";
+  const BATCH_BTN_ID = "qbook-batch-downloader";
 
   // Selectors for finding media content
   const SELECTORS = {
@@ -159,6 +160,45 @@
       });
   };
 
+  const mediaForBatch = () => {
+    const root = currentContentContainer || document.body;
+    const seen = new Set();
+    return Array.from(root.querySelectorAll("video:not([hidden]), audio:not([hidden]), img[src*='fbcdn']:not([hidden])"))
+      .filter(element => {
+        const src = element.src;
+        if (!src || seen.has(src)) return false;
+        seen.add(src);
+        const rect = element.getBoundingClientRect();
+        return isElementVisible(element) && rect.width >= 100 && rect.height >= 100;
+      })
+      .slice(0, 12);
+  };
+
+  const blobAsDataUrl = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => reader.result ? resolve(reader.result) : reject(new Error("empty data"));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  const batchDownloadMedia = async () => {
+    if (!window.QBookDownloadBridge?.downloadBatch ||
+        !window.QBookDownloadBridge?.isBatchSaveEnabled?.()) return;
+    const elements = mediaForBatch();
+    if (!elements.length) return;
+    const items = [];
+    for (const element of elements) {
+      try {
+        const response = await fetch(element.src);
+        const blob = await response.blob();
+        items.push({ dataUrl: await blobAsDataUrl(blob), mimeType: blob.type || "application/octet-stream" });
+      } catch (error) {
+        console.warn("QBooK batch item skipped", error);
+      }
+    }
+    if (items.length) window.QBookDownloadBridge.downloadBatch(JSON.stringify(items));
+  };
+
   // Extract and download videos or images
   const extractAndDownloadMedia = () => {
     // Find current media element
@@ -256,8 +296,26 @@
         background-position: center;
         background-size: 24px;
       }
-      #${DOWNLOAD_BTN_ID}.visible {
+      #${DOWNLOAD_BTN_ID}.visible, #${BATCH_BTN_ID}.visible {
         display: flex !important;
+      }
+      #${BATCH_BTN_ID} {
+        position: fixed;
+        top: 118px;
+        right: 15px;
+        width: 40px;
+        height: 40px;
+        background-color: rgba(20, 82, 150, 0.82);
+        color: white;
+        border-radius: 50%;
+        z-index: ${CONFIG.buttonZIndex};
+        border: none;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        cursor: pointer;
       }
     `;
 
@@ -286,6 +344,17 @@
 
     document.body.appendChild(btn);
 
+    const batchBtn = document.createElement("button");
+    batchBtn.id = BATCH_BTN_ID;
+    batchBtn.textContent = "⇩";
+    batchBtn.title = "Save all visible media";
+    batchBtn.setAttribute("aria-label", "Save all visible media");
+    batchBtn.addEventListener("click", () => {
+      currentContentContainer = currentContentContainer || document.body;
+      batchDownloadMedia();
+    });
+    document.body.appendChild(batchBtn);
+
     return btn;
   };
 
@@ -305,6 +374,7 @@
     let btn = document.getElementById(DOWNLOAD_BTN_ID);
     if (!btn) btn = createDownloadButton();
 
+    const batchBtn = document.getElementById(BATCH_BTN_ID);
     if (isInStoryOrReelView() && !isFeedView()) {
       const mediaElement = getCurrentMediaElement();
 
@@ -314,6 +384,7 @@
       if (mediaElement) {
         currentContentContainer = findContentContainer(mediaElement);
         btn.classList.add("visible");
+        if (window.QBookDownloadBridge?.isBatchSaveEnabled?.()) batchBtn?.classList.add("visible");
         return;
       }
 
@@ -330,6 +401,7 @@
         if (mediaInHighlight && isElementVisible(mediaInHighlight)) {
           currentContentContainer = highlightedStoryContainer;
           btn.classList.add("visible");
+          if (window.QBookDownloadBridge?.isBatchSaveEnabled?.()) batchBtn?.classList.add("visible");
           return;
         }
       }
@@ -337,6 +409,7 @@
 
     // Hide button if not in relevant view
     btn.classList.remove("visible");
+    batchBtn?.classList.remove("visible");
     currentContentContainer = null;
   };
 

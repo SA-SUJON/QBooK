@@ -3,6 +3,7 @@ package org.qbook.ui
 import android.content.Context
 import android.util.AttributeSet
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceViewHolder
 import org.qbook.R
@@ -38,7 +39,20 @@ class ExpandablePreferenceCategory @JvmOverloads constructor(
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
         super.onBindViewHolder(holder)
         val indicator = holder.itemView.findViewById<View>(R.id.expand_indicator)
-        indicator?.rotation = if (expanded) 180f else 0f
+        indicator?.let {
+            val target = if (expanded) 180f else 0f
+            val previous = it.getTag(R.id.expand_indicator) as? Float
+            it.setTag(R.id.expand_indicator, target)
+            if (previous == null || previous == target || !it.isLaidOut) {
+                it.rotation = target
+            } else {
+                it.animate()
+                    .rotation(target)
+                    .setDuration(220L)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
+            }
+        }
         indicator?.contentDescription = context.getString(R.string.settings_expand_section)
     }
 }

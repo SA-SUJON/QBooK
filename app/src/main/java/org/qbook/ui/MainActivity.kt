@@ -72,10 +72,15 @@ import org.qbook.utils.AppExecutors
 import org.qbook.offline.OfflineVaults
 import org.qbook.utils.OfflineSync
 import org.qbook.utils.Prefs
+import org.qbook.utils.ProfileStore
 import org.qbook.utils.FontManager
 import org.qbook.utils.NativeTypography
 import org.qbook.utils.QBookDownloadBridge
 import org.qbook.utils.QBookMaterialYouBridge
+import org.qbook.utils.ClipboardBridge
+import org.qbook.utils.MaterialbookFeaturesBridge
+import org.qbook.utils.MaterialbookOverridesBridge
+import org.qbook.utils.SettingsBridge
 import org.qbook.utils.VideoHelper
 import org.qbook.utils.SessionState
 import org.qbook.utils.SoftRefresh
@@ -97,6 +102,7 @@ class MainActivity : AppCompatActivity() {
     private val viewModel: MainViewModel by viewModels()
     private lateinit var prefs: Prefs
     private lateinit var qbookDownloadBridge: QBookDownloadBridge
+    private var incognitoSession = false
     private var materialYouEnabledAtCreation = true
     private var mediaDownloaderEnabledAtCreation = true
     /** True only while the WebView is intentionally serving Messenger web. */
@@ -119,6 +125,9 @@ class MainActivity : AppCompatActivity() {
     private var settingsPromptShown = false
     private var earlyScriptHandle: androidx.webkit.ScriptHandler? = null
     private val materialYouScript by lazy { loadRawScript(R.raw.material_you) }
+    private val materialbookFeaturesScript by lazy { loadRawScript(R.raw.materialbook_features) }
+    private val materialbookOverridesScript by lazy { loadRawScript(R.raw.materialbook_overrides) }
+    private val mediaClipboardScript by lazy { loadRawScript(R.raw.media_clipboard) }
     private val mediaDownloaderScript by lazy { loadRawScript(R.raw.download_content) }
     private val labsToolboxScript by lazy { loadRawScript(R.raw.labs_toolbox) }
 
@@ -249,6 +258,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         liveInstance = WeakReference(this)
         prefs = Prefs(this)
+        incognitoSession = intent.getBooleanExtra(AccountsActivity.EXTRA_INCOGNITO, false)
         prefs.diagLog.enabled = prefs.diagnosticLog
         materialYouEnabledAtCreation = prefs.materialYou
         mediaDownloaderEnabledAtCreation = prefs.mediaDownloader
@@ -281,6 +291,12 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        if (prefs.labsAnimatedTheme) {
+            binding.root.apply {
+                alpha = 0f
+                animate().alpha(1f).setDuration(240L).start()
+            }
+        }
         setupSettingsButton()
 
         // Blocklist + offline store load off the main thread.
@@ -380,8 +396,16 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val url = urlFromIntent(intent)
-        if (url != null) loadUrlWithMessagingMode(url)
+        if (intent.getBooleanExtra(AccountsActivity.EXTRA_INCOGNITO, false)) {
+            incognitoSession = true
+            SessionState.clear(this)
+        }
+        val url = urlFromIntent(intent) ?: resolveStartUrl(intent)
+        if (::binding.isInitialized) {
+            binding.webView.stopLoading()
+            binding.webView.clearHistory()
+            loadUrlWithMessagingMode(url)
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -610,6 +634,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        if (incognitoSession) {
+            SessionState.clear(this)
+        } else {
+            ProfileStore.captureCurrentSession(this)
+        }
         CookieManager.getInstance().flush()
         persistSession()
         viewModel.blockedCount.value?.let { if (it > 0) prefs.blockCount = it }
@@ -635,7 +664,13 @@ class MainActivity : AppCompatActivity() {
         AppExecutors.diskIO.execute { OfflineCache.trimIfNeeded() }
         try { earlyScriptHandle?.remove() } catch (e: Exception) {}
         earlyScriptHandle = null
-        CookieManager.getInstance().flush()
+        if (incognitoSession) {
+            CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
+            SessionState.clear(this)
+        } else {
+            ProfileStore.captureCurrentSession(this)
+            CookieManager.getInstance().flush()
+        }
         binding.webView.apply {
             stopLoading()
             webChromeClient = null
@@ -831,6 +866,28 @@ class MainActivity : AppCompatActivity() {
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             addJavascriptInterface(JsBridge(), "FBPro")
+            addJavascriptInterface(
+                MaterialbookFeaturesBridge(
+                    stickyNavbar = { prefs.stickyNavbar },
+                    inPageSettings = { prefs.inPageSettings },
+                    selectableCaptions = { prefs.selectableCaptions }
+                ),
+                "MaterialbookFeaturesBridge"
+            )
+            addJavascriptInterface(ClipboardBridge(this@MainActivity), "ClipboardBridge")
+            addJavascriptInterface(
+                SettingsBridge { runOnUiThread { openControlCenter() } },
+                "SettingsBridge"
+            )
+            addJavascriptInterface(
+                MaterialbookOverridesBridge(
+                    desktopMode = { prefs.desktopMode },
+                    desktopCleanup = { prefs.labsMaterialbookDesktopCleanup },
+                    transparentProgress = { prefs.labsMaterialbookTransparentProgress },
+                    greyTap = { prefs.labsMaterialbookGreyTap }
+                ),
+                "MaterialbookOverridesBridge"
+            )
             if (prefs.mediaDownloader) {
                 qbookDownloadBridge = QBookDownloadBridge(
                     this@MainActivity,
@@ -842,7 +899,10 @@ class MainActivity : AppCompatActivity() {
                             if (status == "saving") showDownloadIndicator(getString(R.string.download_started))
                             else hideDownloadIndicatorDelayed()
                         }
-                    }
+                    },
+                    labsSavePaths = { prefs.labsSavePaths },
+                    labsAudioExtraction = { prefs.labsAudioExtraction },
+                    labsBatchSave = { prefs.labsBatchSave }
                 )
                 addJavascriptInterface(qbookDownloadBridge, "QBookDownloadBridge")
             }
@@ -857,7 +917,8 @@ class MainActivity : AppCompatActivity() {
                         this@MainActivity,
                         com.google.android.material.R.attr.colorOnPrimary,
                         ContextCompat.getColor(this@MainActivity, R.color.on_primary)
-                    )
+                    ),
+                    extended = { prefs.labsExtendedMaterial }
                 ),
                 "MaterialYouBridge"
             )
@@ -893,7 +954,12 @@ class MainActivity : AppCompatActivity() {
             earlyScriptHandle?.remove()
                             earlyScriptHandle = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
                 binding.webView,
-                AdBlocker.getEarlyScript(prefs.adBlock, prefs.blockAppPromo) + "\n" +
+                                    AdBlocker.getEarlyScript(
+                        prefs.adBlock,
+                        prefs.blockAppPromo,
+                        prefs.labsAppearOffline
+                    ) + "\n" +
+
                     FontManager.cssScript(this) + "\n" +
                     (if (prefs.adBlock && prefs.cosmeticFilter) MFacebookAds.script() else ""),
                 setOf("https://*.facebook.com", "https://*.messenger.com")
@@ -1087,6 +1153,7 @@ class MainActivity : AppCompatActivity() {
     private fun applyBlockerFlags() {
         AdBlocker.enabled = prefs.adBlock
         AdBlocker.cosmeticEnabled = prefs.cosmeticFilter
+        AdBlocker.appearOffline = prefs.labsAppearOffline
     }
 
     /**
@@ -1208,9 +1275,10 @@ class MainActivity : AppCompatActivity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         if (!prefs.showProgress) binding.progressBar.visibility = View.GONE
+        if (customView == null) enterImmersive(prefs.immersiveMode)
     }
-
     private fun setupSwipeRefresh() {
+
         binding.swipeRefresh.apply {
             setColorSchemeResources(R.color.primary, R.color.secondary)
             setOnRefreshListener { softRefresh() }
@@ -1394,28 +1462,48 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBackHandling() {
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+        lateinit var callback: OnBackPressedCallback
+        callback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
                     customView != null ->
                         (binding.webView.webChromeClient)?.onHideCustomView()
-
-                    binding.webView.canGoBack() -> {
-                        binding.webView.goBack()
-                        if (prefs.haptics) {
-                            binding.root.performHapticFeedback(
-                                android.view.HapticFeedbackConstants.VIRTUAL_KEY
-                            )
-                        }
-                    }
-
                     else -> {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
+                        // Materialbook’s feed behavior is queried first. The
+                        // callback returns false when a dialog/menu is open or
+                        // the page is already at the top, preserving QBooK’s
+                        // normal WebView-history and exit semantics.
+                        binding.webView.evaluateJavascript(
+                            "window.backHandlerNB ? String(Boolean(window.backHandlerNB())) : 'false'"
+                        ) { result ->
+                            if (result != "\"true\"" && result != "true") {
+                                continueBackNavigation(callback)
+                            }
+                        }
                     }
                 }
             }
-        })
+        }
+        onBackPressedDispatcher.addCallback(this, callback)
+    }
+
+    private fun continueBackNavigation(callback: OnBackPressedCallback) {
+        when {
+            binding.webView.canGoBack() -> {
+                binding.webView.goBack()
+                if (prefs.haptics) {
+                    binding.root.performHapticFeedback(
+                        android.view.HapticFeedbackConstants.VIRTUAL_KEY
+                    )
+                }
+            }
+            else -> {
+                // Disable this callback before delegating to the framework;
+                // otherwise the dispatcher would re-enter this same callback.
+                callback.isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+            }
+        }
     }
 
     private fun observeViewModel() {
@@ -1494,15 +1582,21 @@ class MainActivity : AppCompatActivity() {
                     AdBlocker.getStyleScript(
                         prefs.blockAppPromo,
                         prefs.adBlock,
-                        hideSiteLoadingBar = !prefs.showProgress
+                        hideSiteLoadingBar = !prefs.showProgress && !prefs.labsMaterialbookTransparentProgress
                     ),
                     null
                 )
                 // Fallback for devices without DOCUMENT_START_SCRIPT support.
                 if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                    view?.evaluateJavascript(
-                        AdBlocker.getEarlyScript(prefs.adBlock, prefs.blockAppPromo), null
-                    )
+                                            view?.evaluateJavascript(
+                            AdBlocker.getEarlyScript(
+                                prefs.adBlock,
+                                prefs.blockAppPromo,
+                                prefs.labsAppearOffline
+                            ),
+                            null
+                        )
+
                 }
                 // Start the m.facebook ad remover as early as possible so a
                 // sponsored video never gets to autoplay.
@@ -1833,9 +1927,39 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    private fun stripTrackingParameters(url: String): String {
+        if (!prefs.labsStripTracking) return url
+        val uri = try { Uri.parse(url) } catch (_: Exception) { return url }
+        if (uri.query.isNullOrBlank()) return url
+
+        val builder = uri.buildUpon().clearQuery()
+        uri.queryParameterNames.forEach { name ->
+            val lower = name.lowercase(Locale.ROOT)
+            val tracking = lower == "fbclid" ||
+                lower == "gclid" ||
+                lower == "dclid" ||
+                lower == "msclkid" ||
+                lower == "mc_cid" ||
+                lower == "mc_eid" ||
+                lower == "igshid" ||
+                lower == "_ga" ||
+                lower == "si" ||
+                lower == "ref_src" ||
+                lower == "ref_url" ||
+                lower.startsWith("utm_")
+            if (!tracking) {
+                uri.getQueryParameters(name).forEach { value ->
+                    builder.appendQueryParameter(name, value)
+                }
+            }
+        }
+        return builder.build().toString()
+    }
+
     private fun openExternally(url: String): Boolean {
+        val targetUrl = stripTrackingParameters(url)
         return try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
             true
@@ -1858,7 +1982,7 @@ class MainActivity : AppCompatActivity() {
             AdBlocker.getStyleScript(
                 prefs.blockAppPromo,
                 prefs.adBlock,
-                hideSiteLoadingBar = !prefs.showProgress
+                hideSiteLoadingBar = !prefs.showProgress && !prefs.labsMaterialbookTransparentProgress
             ),
             null
         )
@@ -1898,6 +2022,11 @@ class MainActivity : AppCompatActivity() {
         // only in story/reel/photo/video contexts.
         if (prefs.materialYou) {
             view.evaluateJavascript(materialYouScript, null)
+        }
+        view.evaluateJavascript(materialbookFeaturesScript, null)
+        view.evaluateJavascript(materialbookOverridesScript, null)
+        if (prefs.copyMediaToClipboard) {
+            view.evaluateJavascript(mediaClipboardScript, null)
         }
         if (prefs.mediaDownloader && prefs.labsReelOptions) {
             view.evaluateJavascript(mediaDownloaderScript, null)
@@ -2500,7 +2629,24 @@ class MainActivity : AppCompatActivity() {
                 permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
             }
 
-            val name = uniqueName(URLUtil.guessFileName(url, disposition, mimetype))
+            val guessedName = URLUtil.guessFileName(url, disposition, mimetype)
+            val name = if (prefs.labsSavePaths) {
+                val kind = when {
+                    mimetype?.startsWith("image/") == true -> "Images"
+                    mimetype?.startsWith("video/") == true -> "Videos"
+                    mimetype?.startsWith("audio/") == true -> "Audio"
+                    else -> "Other"
+                }
+                "QBooK_${kind.lowercase(Locale.US)}_${uniqueName(guessedName)}"
+            } else uniqueName(guessedName)
+            val destination = if (prefs.labsSavePaths) {
+                "${Environment.DIRECTORY_DOWNLOADS}/QBooK/${when {
+                    mimetype?.startsWith("image/") == true -> "Images"
+                    mimetype?.startsWith("video/") == true -> "Videos"
+                    mimetype?.startsWith("audio/") == true -> "Audio"
+                    else -> "Other"
+                }}"
+            } else Environment.DIRECTORY_DOWNLOADS
             val request = DownloadManager.Request(Uri.parse(url)).apply {
                 addRequestHeader("User-Agent", userAgent ?: "")
                 // Without cookies the Facebook CDN answers 403.
@@ -2514,7 +2660,7 @@ class MainActivity : AppCompatActivity() {
                 setNotificationVisibility(
                     DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
                 )
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+                setDestinationInExternalPublicDir(destination, name)
                 setAllowedOverMetered(true)
                 setAllowedOverRoaming(true)
             }
@@ -2561,6 +2707,14 @@ class MainActivity : AppCompatActivity() {
                             binding.root.postDelayed(this, 450)
                         }
                         DownloadManager.STATUS_SUCCESSFUL -> {
+                            if (prefs.labsAudioExtraction && ::qbookDownloadBridge.isInitialized) {
+                                val localUri = cursor.getString(
+                                    cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI)
+                                )
+                                if (!localUri.isNullOrBlank()) {
+                                    qbookDownloadBridge.extractAudioFromUri(localUri, name)
+                                }
+                            }
                             showDownloadIndicator(getString(R.string.labs_download_complete))
                             hideDownloadIndicatorDelayed()
                         }
@@ -2625,7 +2779,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun openLabsDownloadCenter() {
             runOnUiThread {
-                if (prefs.labsDownloadCenter && prefs.labsGallery) {
+                if (prefs.labsDownloadCenter) {
                     startActivity(Intent(this@MainActivity, DownloadCenterActivity::class.java))
                 } else {
                     toast(getString(R.string.labs_download_center_toggle_sum))

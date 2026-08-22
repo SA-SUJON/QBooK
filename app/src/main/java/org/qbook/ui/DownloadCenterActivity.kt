@@ -35,6 +35,7 @@ class DownloadCenterActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         if (Prefs(this).amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
         super.onCreate(savedInstanceState)
+        ScreenMotion.enter(this)
         setContentView(R.layout.activity_download_center)
 
         val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(

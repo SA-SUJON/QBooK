@@ -23,6 +23,8 @@
     <color name="settings_divider">#332E3A</color>
     <color name="settings_accent">#D2BBFF</color>
     <color name="settings_accent_on">#25005A</color>
+    <color name="settings_button_disabled">#45424A</color>
+    <color name="settings_button_disabled_on">#B0AAB7</color>
     <color name="settings_glass_surface">#22FFFFFF</color>
     <color name="settings_glass_surface_pressed">#38FFFFFF</color>
     <color name="settings_glass_stroke">#42FFFFFF</color>

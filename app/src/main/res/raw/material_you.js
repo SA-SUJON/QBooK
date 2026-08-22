@@ -8,6 +8,7 @@
   const MATERIALYOU_ONPRIMARY = window.MaterialYouBridge.getMaterialYouOnPrimaryRgbString();
   const MATERIALYOU_PRIMARY_RGB = JSON.parse(window.MaterialYouBridge.getMaterialYouPrimaryRgb());
   const MATERIALYOU_ONPRIMARY_RGB  = JSON.parse(window.MaterialYouBridge.getMaterialYouOnPrimaryRgb());
+  const EXTENDED_MATERIAL_YOU = window.MaterialYouBridge.isExtendedMaterialYouEnabled?.() === true;
 
   const backgroundColorRegex = /background-color\s*:\s*(rgba\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d*\.?\d+)\s*\)|rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)|#([0-9a-fA-F]{6}))\s*;/gi;
   const backgroundRegex = /background\s*:\s*(rgba\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d*\.?\d+)\s*\)|rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)|#([0-9a-fA-F]{6}))\s*;/gi;
@@ -133,6 +134,32 @@
 
   function materialYouCSS() {
     const style = document.createElement('style');
+    const extendedCSS = EXTENDED_MATERIAL_YOU ? `
+      :root {
+        --qbook-material-primary: ${MATERIALYOU_PRIMARY};
+        --qbook-material-on-primary: ${MATERIALYOU_ONPRIMARY};
+        --qbook-material-primary-soft: rgba(${MATERIALYOU_PRIMARY_RGB.r}, ${MATERIALYOU_PRIMARY_RGB.g}, ${MATERIALYOU_PRIMARY_RGB.b}, 0.16);
+        --qbook-material-primary-medium: rgba(${MATERIALYOU_PRIMARY_RGB.r}, ${MATERIALYOU_PRIMARY_RGB.g}, ${MATERIALYOU_PRIMARY_RGB.b}, 0.28);
+      }
+      button, [role="button"], input[type="submit"], input[type="button"] {
+        accent-color: var(--qbook-material-primary) !important;
+      }
+      [aria-selected="true"], [aria-checked="true"], [data-selected="true"] {
+        outline-color: var(--qbook-material-primary) !important;
+        background-color: var(--qbook-material-primary-soft) !important;
+      }
+      :focus-visible {
+        outline: 2px solid var(--qbook-material-primary) !important;
+        outline-offset: 2px !important;
+      }
+      video, audio, img {
+        caret-color: var(--qbook-material-primary) !important;
+      }
+      [style*="background-color: rgb(255, 255, 255)"],
+      [style*="background-color: #ffffff"] {
+        background-color: color-mix(in srgb, var(--qbook-material-primary-soft) 22%, transparent) !important;
+      }
+    ` : '';
     style.textContent = `
       ::selection {
         background: rgba(${MATERIALYOU_PRIMARY_RGB.r}, ${MATERIALYOU_PRIMARY_RGB.g}, ${MATERIALYOU_PRIMARY_RGB.b}, 0.5);
@@ -155,6 +182,7 @@
         --primary-deemphasized-button-background: rgba(${MATERIALYOU_PRIMARY_RGB.r}, ${MATERIALYOU_PRIMARY_RGB.g}, ${MATERIALYOU_PRIMARY_RGB.b}, 0.2);
         --primary-deemphasized-button-pressed-overlay: rgba(${MATERIALYOU_PRIMARY_RGB.r}, ${MATERIALYOU_PRIMARY_RGB.g}, ${MATERIALYOU_PRIMARY_RGB.b}, 0.15);
       }
+      ${extendedCSS}
     `;
     document.head.appendChild(style);
   }

@@ -16,6 +16,7 @@ import org.qbook.utils.OfflineCache
 import org.qbook.utils.OfflineDocs
 import org.qbook.utils.OfflineFeed
 import org.qbook.utils.Prefs
+import org.qbook.utils.PrivacySecurityManager
 import org.qbook.utils.UpdateWatcher
 
 class QBooKApplication : Application() {
@@ -24,6 +25,7 @@ class QBooKApplication : Application() {
         super.onCreate()
 
         val prefs = Prefs(this)
+        PrivacySecurityManager.install(this)
 
         // Apply the user's theme choice before any Activity is created.
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode())

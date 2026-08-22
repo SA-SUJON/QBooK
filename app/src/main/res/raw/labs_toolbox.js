@@ -19,6 +19,7 @@
   root.innerHTML = `
     <div class="qbook-labs-panel">
       <button data-action="save">Save media</button>
+      <button data-action="batch">Save all visible media</button>
       <button data-action="copy">Copy link</button>
       <button data-action="screenshot">Screenshot</button>
       <button data-action="reader">Reader mode</button>
@@ -31,6 +32,7 @@
   root.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => {
     const action = button.getAttribute('data-action');
     if (action === 'save') document.getElementById('qbook-global-downloader')?.click();
+    if (action === 'batch') document.getElementById('qbook-batch-downloader')?.click();
     if (action === 'copy' && window.FBPro?.copyCurrentLink) window.FBPro.copyCurrentLink();
     if (action === 'screenshot' && window.FBPro?.captureScreenshot) window.FBPro.captureScreenshot();
     if (action === 'center' && window.FBPro?.openLabsDownloadCenter) window.FBPro.openLabsDownloadCenter();

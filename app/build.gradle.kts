@@ -120,6 +120,8 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.work.runtime)
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

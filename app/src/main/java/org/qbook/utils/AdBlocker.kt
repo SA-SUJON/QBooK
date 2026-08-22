@@ -25,8 +25,11 @@ object AdBlocker {
 
     @Volatile var enabled: Boolean = true
     @Volatile var cosmeticEnabled: Boolean = true
+    @Volatile var appearOffline: Boolean = false
 
     fun shouldBlockRequest(request: WebResourceRequest): Boolean {
+        val requestUrl = request.url.toString()
+        if (appearOffline && isPresenceRequest(requestUrl)) return true
         if (!enabled) return false
         val uri = request.url
         val host = BlockList.normalizeHost(uri.host)
@@ -39,6 +42,19 @@ object AdBlocker {
         }
         if (BlockList.blocksHost(host)) return true
         return BlockList.blocksPath((uri.path ?: "").lowercase(Locale.ROOT))
+    }
+
+    private fun isPresenceRequest(url: String): Boolean {
+        val lower = url.lowercase(Locale.ROOT)
+        return lower.contains("active_status") ||
+            lower.contains("active-status") ||
+            lower.contains("presence") ||
+            lower.contains("read_receipt") ||
+            lower.contains("read-receipt") ||
+            lower.contains("mark_seen") ||
+            lower.contains("mark-seen") ||
+            lower.contains("seen_state") ||
+            lower.contains("typing_indicator")
     }
 
     fun createEmptyResponse(): WebResourceResponse =
@@ -60,14 +76,19 @@ object AdBlocker {
      * renders as if the ad was never served - no gap, no placeholder, and
      * nothing for Facebook's re-render logic to restore.
      */
-    fun getEarlyScript(blockAds: Boolean, blockAppPromos: Boolean): String {
+    fun getEarlyScript(
+        blockAds: Boolean,
+        blockAppPromos: Boolean,
+        appearOffline: Boolean = false
+    ): String {
         return """
             (function() {
               'use strict';
-              if (window.__fbproEarly) { window.__fbproEarly.set($blockAds, $blockAppPromos); return; }
+              if (window.__fbproEarly) { window.__fbproEarly.set($blockAds, $blockAppPromos, $appearOffline); return; }
 
               var BLOCK_ADS = $blockAds;
               var BLOCK_PROMOS = $blockAppPromos;
+              var APPEAR_OFFLINE = $appearOffline;
 
               /* Hard CSS kill for app-install notices, injected at document
                  start so the banner never paints even once. Uses a style
@@ -225,6 +246,12 @@ object AdBlocker {
                        url.indexOf('/ajax/pagelet/generic.php/NewsFeed') !== -1;
               }
 
+              function isPresencePing(url, body) {
+                if (!APPEAR_OFFLINE) return false;
+                var source = String(url || '') + ' ' + String(body || '');
+                return /active[_-]?status|activeStatus|presence|read[_-]?receipt|readReceipt|mark[_-]?seen|markSeen|seen[_-]?state|typing[_-]?indicator|messenger[_-]?presence/i.test(source);
+              }
+
               // --- XHR hook ---
               // Only ever touch text responses. Facebook loads some payloads
               // with responseType 'arraybuffer' or 'json'; reading
@@ -242,8 +269,12 @@ object AdBlocker {
                 return _open.apply(this, arguments);
               };
 
-              XHR.send = function() {
+              XHR.send = function(body) {
                 var xhr = this;
+                if (isPresencePing(xhr.__fbproUrl, body)) {
+                  try { xhr.abort(); } catch (e) {}
+                  return;
+                }
                 if (BLOCK_ADS && isGraphql(xhr.__fbproUrl) && textDesc && textDesc.get) {
                   try {
                     var cache = null, cacheSrc = null;
@@ -277,10 +308,13 @@ object AdBlocker {
               var _fetch = window.fetch;
               if (_fetch) {
                 window.fetch = function(input, init) {
+                  var url = (typeof input === 'string') ? input : (input && input.url);
+                  var fetchBody = init && init.body;
+                  if (isPresencePing(url, fetchBody)) {
+                    return Promise.resolve(new Response('', {status: 204}));
+                  }
                   var p = _fetch.apply(this, arguments);
                   if (!BLOCK_ADS) return p;
-
-                  var url = (typeof input === 'string') ? input : (input && input.url);
                   if (!isGraphql(url)) return p;
 
                   return p.then(function(res) {
@@ -321,7 +355,7 @@ object AdBlocker {
               }
 
               window.__fbproEarly = {
-                set: function(a, p) { BLOCK_ADS = a; BLOCK_PROMOS = p; },
+                set: function(a, p, o) { BLOCK_ADS = a; BLOCK_PROMOS = p; APPEAR_OFFLINE = o === true; },
                 filter: filterPayload
               };
             })();

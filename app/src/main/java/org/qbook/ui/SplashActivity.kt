@@ -7,6 +7,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import org.qbook.R
 import org.qbook.utils.Prefs
+import org.qbook.utils.ProfileStore
 
 @SuppressLint("CustomSplashScreen")
 class SplashActivity : AppCompatActivity() {
@@ -45,13 +46,29 @@ class SplashActivity : AppCompatActivity() {
 
         window.decorView.post {
             ready = true
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    intent?.data?.let { data = it; action = Intent.ACTION_VIEW }
-                }
-            )
-            overridePendingTransition(0, 0)
-            finish()
+            val isLauncherLaunch = intent?.action == Intent.ACTION_MAIN || intent?.action == null
+            val targetData = intent?.data
+            val launchMain: () -> Unit = {
+                startActivity(
+                    Intent(this, MainActivity::class.java).apply {
+                        targetData?.let { data = it; action = Intent.ACTION_VIEW }
+                    }
+                )
+                overridePendingTransition(0, 0)
+                finish()
+            }
+            if (isLauncherLaunch && Prefs(this).accountsShowOnStart) {
+                startActivity(
+                    Intent(this, AccountsActivity::class.java)
+                        .putExtra(AccountsActivity.EXTRA_TARGET_URL, targetData?.toString())
+                )
+                overridePendingTransition(0, 0)
+                finish()
+            } else if (isLauncherLaunch) {
+                ProfileStore.activateDefault(this) { runOnUiThread { launchMain() } }
+            } else {
+                launchMain()
+            }
         }
     }
 }

@@ -95,6 +95,11 @@ class Prefs(context: Context) {
         const val KEY_EXTERNAL_BROWSER = "open_links_external"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_HAPTICS = "haptics_enabled"
+        const val KEY_COPY_MEDIA_CLIPBOARD = "copy_media_clipboard"
+        const val KEY_STICKY_NAVBAR = "sticky_navbar"
+        const val KEY_IMMERSIVE_MODE = "immersive_mode"
+        const val KEY_INPAGE_SETTINGS = "inpage_settings"
+        const val KEY_SELECTABLE_CAPTIONS = "selectable_captions"
         const val KEY_INSPECT_ADS = "inspect_ads"
         const val KEY_LOG_VIDEOS = "log_video_urls"
         const val KEY_DIAGNOSTIC_LOG = "diagnostic_log"
@@ -123,7 +128,16 @@ class Prefs(context: Context) {
         const val KEY_LABS_ANIMATED_THEME = "labs_animated_theme"
         const val KEY_LABS_TOOLBOX = "labs_toolbox"
         const val KEY_LABS_EXTENDED_MATERIAL = "labs_extended_material"
+        const val KEY_LABS_MATERIALBOOK_DESKTOP_CLEANUP = "labs_materialbook_desktop_cleanup"
+        const val KEY_LABS_MATERIALBOOK_TRANSPARENT_PROGRESS = "labs_materialbook_transparent_progress"
+        const val KEY_LABS_MATERIALBOOK_GREY_TAP = "labs_materialbook_grey_tap"
+        const val KEY_LABS_APPEAR_OFFLINE = "labs_appear_offline"
+        const val KEY_LABS_APP_LOCK = "labs_app_lock"
+        const val KEY_LABS_STRIP_TRACKING = "labs_strip_tracking"
+        const val KEY_LABS_FLAG_SECURE = "labs_flag_secure"
         const val KEY_LABS_LIQUID_GLASS = "labs_liquid_glass"
+        const val KEY_LABS_SHOW_DISCLAIMER = "labs_show_disclaimer"
+        const val KEY_ACCOUNTS_SHOW_ON_START = "accounts_show_on_start"
 
         // Data
         const val KEY_SAVE_SESSION = "save_session"
@@ -362,12 +376,26 @@ class Prefs(context: Context) {
     val labsDynamicIndicator: Boolean get() = sp.getBoolean(KEY_LABS_DYNAMIC_INDICATOR, true)
     val labsAnimatedTheme: Boolean get() = sp.getBoolean(KEY_LABS_ANIMATED_THEME, false)
     val labsToolbox: Boolean get() = sp.getBoolean(KEY_LABS_TOOLBOX, false)
-    val labsExtendedMaterial: Boolean get() = sp.getBoolean(KEY_LABS_EXTENDED_MATERIAL, true)
+    val labsExtendedMaterial: Boolean get() = sp.getBoolean(KEY_LABS_EXTENDED_MATERIAL, false)
+    val labsMaterialbookDesktopCleanup: Boolean get() = sp.getBoolean(KEY_LABS_MATERIALBOOK_DESKTOP_CLEANUP, false)
+    val labsMaterialbookTransparentProgress: Boolean get() = sp.getBoolean(KEY_LABS_MATERIALBOOK_TRANSPARENT_PROGRESS, false)
+    val labsMaterialbookGreyTap: Boolean get() = sp.getBoolean(KEY_LABS_MATERIALBOOK_GREY_TAP, false)
+    val labsAppearOffline: Boolean get() = sp.getBoolean(KEY_LABS_APPEAR_OFFLINE, false)
+    val labsAppLock: Boolean get() = sp.getBoolean(KEY_LABS_APP_LOCK, false)
+    val labsStripTracking: Boolean get() = sp.getBoolean(KEY_LABS_STRIP_TRACKING, false)
+    val labsFlagSecure: Boolean get() = sp.getBoolean(KEY_LABS_FLAG_SECURE, false)
     val labsLiquidGlass: Boolean get() = sp.getBoolean(KEY_LABS_LIQUID_GLASS, true)
+    val labsShowDisclaimer: Boolean get() = sp.getBoolean(KEY_LABS_SHOW_DISCLAIMER, true)
+    val accountsShowOnStart: Boolean get() = sp.getBoolean(KEY_ACCOUNTS_SHOW_ON_START, true)
 
     val openLinksExternal: Boolean get() = sp.getBoolean(KEY_EXTERNAL_BROWSER, false)
     val keepScreenOn: Boolean get() = sp.getBoolean(KEY_KEEP_SCREEN_ON, false)
     val haptics: Boolean get() = sp.getBoolean(KEY_HAPTICS, false)
+    val copyMediaToClipboard: Boolean get() = sp.getBoolean(KEY_COPY_MEDIA_CLIPBOARD, false)
+    val stickyNavbar: Boolean get() = sp.getBoolean(KEY_STICKY_NAVBAR, false)
+    val immersiveMode: Boolean get() = sp.getBoolean(KEY_IMMERSIVE_MODE, false)
+    val inPageSettings: Boolean get() = sp.getBoolean(KEY_INPAGE_SETTINGS, false)
+    val selectableCaptions: Boolean get() = sp.getBoolean(KEY_SELECTABLE_CAPTIONS, false)
 
     /** Debug: long-press an ad to capture its markup. Off by default. */
     val inspectAds: Boolean get() = sp.getBoolean(KEY_INSPECT_ADS, false)

@@ -40,6 +40,11 @@
         android:summary="@string/labs_audio_extraction_sum"
         android:defaultValue="false"
         app:iconSpaceReserved="false" />
+    <Preference
+        android:key="labs_gallery_open"
+        android:title="@string/labs_gallery_title"
+        android:summary="@string/labs_gallery_sum"
+        app:iconSpaceReserved="false" />
     <SwitchPreferenceCompat
         app:widgetLayout="@layout/preference_widget_material_switch"
         android:key="labs_gallery"
@@ -84,10 +89,87 @@
         app:iconSpaceReserved="false" />
     <SwitchPreferenceCompat
         app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_materialbook_desktop_cleanup"
+        android:title="@string/labs_materialbook_desktop_cleanup"
+        android:summary="@string/labs_materialbook_desktop_cleanup_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_materialbook_transparent_progress"
+        android:title="@string/labs_materialbook_transparent_progress"
+        android:summary="@string/labs_materialbook_transparent_progress_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_materialbook_grey_tap"
+        android:title="@string/labs_materialbook_grey_tap"
+        android:summary="@string/labs_materialbook_grey_tap_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <PreferenceCategory
+        android:key="labs_privacy_section"
+        android:title="@string/labs_privacy_title"
+        android:layout="@layout/preference_category_material" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_appear_offline"
+        android:title="@string/labs_appear_offline"
+        android:summary="@string/labs_appear_offline_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_app_lock"
+        android:title="@string/labs_app_lock"
+        android:summary="@string/labs_app_lock_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_strip_tracking"
+        android:title="@string/labs_strip_tracking"
+        android:summary="@string/labs_strip_tracking_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_flag_secure"
+        android:title="@string/labs_flag_secure"
+        android:summary="@string/labs_flag_secure_sum"
+        android:defaultValue="false"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
         android:key="labs_liquid_glass"
         android:title="@string/labs_liquid_glass"
         android:summary="@string/labs_liquid_glass_sum"
         android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="labs_show_disclaimer"
+        android:title="@string/labs_show_disclaimer"
+        android:summary="@string/labs_show_disclaimer_sum"
+        android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+
+    <PreferenceCategory
+        android:key="labs_accounts_section"
+        android:title="@string/labs_accounts_title"
+        android:layout="@layout/preference_category_material" />
+    <SwitchPreferenceCompat
+        app:widgetLayout="@layout/preference_widget_material_switch"
+        android:key="accounts_show_on_start"
+        android:title="@string/labs_accounts_show_on_start"
+        android:summary="@string/labs_accounts_show_on_start_sum"
+        android:defaultValue="true"
+        app:iconSpaceReserved="false" />
+    <Preference
+        android:key="accounts_default_profile"
+        android:title="@string/labs_accounts_default_profile"
+        android:summary="@string/labs_accounts_default_profile_sum"
         app:iconSpaceReserved="false" />
 
     <Preference

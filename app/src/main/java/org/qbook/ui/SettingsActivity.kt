@@ -21,6 +21,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
+import androidx.recyclerview.widget.DefaultItemAnimator
 import org.qbook.R
 import org.qbook.utils.AdBlocker
 import org.qbook.utils.AppExecutors
@@ -93,9 +94,16 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         if (Prefs(this).amoled) theme.applyStyle(R.style.ThemeOverlay_Amoled, true)
         super.onCreate(savedInstanceState)
+        ScreenMotion.enter(this)
         setContentView(R.layout.activity_settings)
-
+        if (Prefs(this).labsAnimatedTheme) {
+            findViewById<android.view.View>(R.id.settings_root).apply {
+                alpha = 0f
+                animate().alpha(1f).setDuration(240L).start()
+            }
+        }
         toolbar = findViewById(R.id.toolbar)
+
         toolbar.setContentInsetsRelative(0, 0)
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(false)
@@ -134,18 +142,20 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         if (savedInstanceState == null) {
-            supportFragmentManager.beginTransaction()
-                .replace(
-                    R.id.settings_container,
-                    if (isLabsScreen) LabsFragment() else ControlCenterFragment()
-                )
-                .commit()
+                            val fragment = if (isLabsScreen) LabsFragment() else ControlCenterFragment()
+                ScreenMotion.configureSharedAxis(fragment)
+                supportFragmentManager.beginTransaction()
+                    .setReorderingAllowed(true)
+                    .replace(R.id.settings_container, fragment)
+                    .commit()
+
         }
         findViewById<android.widget.TextView>(R.id.settings_title)
             .text = getString(if (isLabsScreen) R.string.cat_labs else R.string.hidden_settings)
     }
 
     override fun onSupportNavigateUp(): Boolean {
+        ScreenMotion.exit(this)
         finish()
         return true
     }
@@ -252,6 +262,12 @@ class SettingsActivity : AppCompatActivity() {
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                itemAnimator = DefaultItemAnimator().apply {
+                    addDuration = 240L
+                    removeDuration = 180L
+                    moveDuration = 260L
+                    changeDuration = 180L
+                }
                 post {
                     if (itemDecorationCount == 0) {
                         addItemDecoration(SettingsSectionCardDecoration(requireContext(), SECTION_KEYS.toSet()))
@@ -539,7 +555,10 @@ class SettingsActivity : AppCompatActivity() {
             // Need a reload to take effect.
             listOf(
                 Prefs.KEY_DESKTOP_MODE,
-                Prefs.KEY_ZOOM, Prefs.KEY_AUTOPLAY_VIDEO, Prefs.KEY_INAPP_MESSAGING
+                Prefs.KEY_ZOOM, Prefs.KEY_AUTOPLAY_VIDEO, Prefs.KEY_INAPP_MESSAGING,
+                Prefs.KEY_STICKY_NAVBAR, Prefs.KEY_IMMERSIVE_MODE,
+                Prefs.KEY_INPAGE_SETTINGS, Prefs.KEY_SELECTABLE_CAPTIONS,
+                Prefs.KEY_COPY_MEDIA_CLIPBOARD
             ).forEach { key ->
                 findPreference<SwitchPreferenceCompat>(key)
                     ?.setOnPreferenceChangeListener { _, _ -> markDirty(true); true }

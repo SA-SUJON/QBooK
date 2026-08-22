@@ -5,7 +5,8 @@ import android.webkit.JavascriptInterface
 /** Exposes the already-resolved app theme colors to injected page JavaScript. */
 class QBookMaterialYouBridge(
     private val primary: Int,
-    private val onPrimary: Int
+    private val onPrimary: Int,
+    private val extended: () -> Boolean = { false }
 ) {
     @JavascriptInterface
     fun getMaterialYouPrimaryRgb(): String = colorToJson(primary)
@@ -18,6 +19,9 @@ class QBookMaterialYouBridge(
 
     @JavascriptInterface
     fun getMaterialYouOnPrimaryRgbString(): String = colorToCss(onPrimary)
+
+    @JavascriptInterface
+    fun isExtendedMaterialYouEnabled(): Boolean = extended()
 
     private fun colorToJson(color: Int): String {
         val r = (color shr 16) and 0xFF
