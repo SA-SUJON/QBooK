@@ -4,12 +4,15 @@ import android.app.Activity
 import android.app.DownloadManager
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import org.qbook.R
 import org.qbook.utils.ApkInstaller
 import org.qbook.utils.NativeTypography
+import org.qbook.utils.Prefs
 import org.qbook.utils.UpdateChecker
 import org.qbook.utils.UpdateWatcher
 
@@ -53,21 +56,41 @@ object UpdatePrompt {
         val bar = view.findViewById<ProgressBar>(R.id.updProgress)
         val status = view.findViewById<TextView>(R.id.updStatus)
         val button = view.findViewById<Button>(R.id.updButton)
+        val skip = view.findViewById<Button>(R.id.updSkip)
+        val dontShowAgain = view.findViewById<CheckBox>(R.id.updDontShowAgain)
 
         title.text = activity.getString(R.string.update_available)
+        dontShowAgain.isChecked = Prefs(activity).updatePromptsSuppressed
         body.text = activity.getString(R.string.update_msg_fmt, rel.version, local) +
             if (rel.notes.isNotBlank()) "\n\n" + rel.notes.take(300) else ""
 
         val dialog = AlertDialog.Builder(activity)
             .setView(view)
-            .setCancelable(false)          // mandatory: cannot be dismissed
+            .setCancelable(false)
             .create()
         dialog.setCanceledOnTouchOutside(false)
         showing = dialog
         dialog.setOnDismissListener { if (showing === dialog) showing = null }
         dialog.show()
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.68f }
+            setLayout(
+                minOf(activity.resources.displayMetrics.widthPixels - (24 * activity.resources.displayMetrics.density).toInt(),
+                    (420 * activity.resources.displayMetrics.density).toInt()),
+                android.view.WindowManager.LayoutParams.WRAP_CONTENT
+            )
+        }
         NativeTypography.applyDialog(dialog, activity)
 
+        skip.setOnClickListener {
+            UpdateWatcher.skip(rel.version, dontShowAgain.isChecked)
+            dialog.dismiss()
+        }
+        dontShowAgain.setOnCheckedChangeListener { _, checked ->
+            if (checked) Prefs(activity).updatePromptsSuppressed = true
+        }
         button.setOnClickListener {
             val apk = rel.apkUrl
             if (apk.isNullOrBlank()) {
@@ -81,7 +104,9 @@ object UpdatePrompt {
                 ApkInstaller.requestInstallPermission(activity)
                 return@setOnClickListener
             }
+            if (dontShowAgain.isChecked) Prefs(activity).updatePromptsSuppressed = true
             button.isEnabled = false
+            skip.isEnabled = false
             bar.visibility = View.VISIBLE
             status.visibility = View.VISIBLE
             status.text = activity.getString(R.string.update_downloading)
@@ -96,7 +121,7 @@ object UpdatePrompt {
                 } ?: activity.getString(R.string.update_failed)
                 return@setOnClickListener
             }
-            poll(activity, id, rel.version, bar, status, button, view)
+            poll(activity, id, rel.version, bar, status, button, skip, view)
         }
     }
 
@@ -107,6 +132,7 @@ object UpdatePrompt {
         bar: ProgressBar,
         status: TextView,
         button: Button,
+        skip: Button,
         host: View
     ) {
         val runnable = object : Runnable {
@@ -124,11 +150,13 @@ object UpdatePrompt {
                         } else {
                             status.text = activity.getString(R.string.update_failed)
                             button.isEnabled = true
+                            skip.isEnabled = true
                         }
                     }
                     DownloadManager.STATUS_FAILED -> {
                         status.text = activity.getString(R.string.update_failed)
                         button.isEnabled = true
+                        skip.isEnabled = true
                         bar.visibility = View.GONE
                     }
                     else -> {

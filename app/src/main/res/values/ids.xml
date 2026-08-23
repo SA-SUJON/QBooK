@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="animated_theme_animator_tag" type="id" />
+    <item name="animated_theme_motion_tag" type="id" />
+    <item name="animated_theme_key_tag" type="id" />
+    <item name="animated_theme_attach_listener_tag" type="id" />
+</resources>

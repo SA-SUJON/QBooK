@@ -85,6 +85,8 @@ class Prefs(context: Context) {
         // Updates
         const val KEY_AUTO_UPDATE = "auto_update_check"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
+        const val KEY_UPDATE_PROMPTS_SUPPRESSED = "update_prompts_suppressed"
+        const val KEY_UPDATE_SKIPPED_VERSION = "update_skipped_version"
 
         // Browsing
         const val KEY_DESKTOP_MODE = "desktop_mode"
@@ -126,7 +128,6 @@ class Prefs(context: Context) {
         const val KEY_LABS_BATCH_SAVE = "labs_batch_save"
         const val KEY_LABS_DYNAMIC_INDICATOR = "labs_dynamic_indicator"
         const val KEY_LABS_ANIMATED_THEME = "labs_animated_theme"
-        const val KEY_LABS_TOOLBOX = "labs_toolbox"
         const val KEY_LABS_EXTENDED_MATERIAL = "labs_extended_material"
         const val KEY_LABS_MATERIALBOOK_DESKTOP_CLEANUP = "labs_materialbook_desktop_cleanup"
         const val KEY_LABS_MATERIALBOOK_TRANSPARENT_PROGRESS = "labs_materialbook_transparent_progress"
@@ -352,6 +353,13 @@ class Prefs(context: Context) {
         get() = sp.getLong(KEY_LAST_UPDATE_CHECK, 0L)
         set(v) = sp.edit().putLong(KEY_LAST_UPDATE_CHECK, v).apply()
 
+    var updatePromptsSuppressed: Boolean
+        get() = sp.getBoolean(KEY_UPDATE_PROMPTS_SUPPRESSED, false)
+        set(v) = sp.edit().putBoolean(KEY_UPDATE_PROMPTS_SUPPRESSED, v).apply()
+
+    var updateSkippedVersion: String?
+        get() = sp.getString(KEY_UPDATE_SKIPPED_VERSION, null)
+        set(v) = sp.edit().putString(KEY_UPDATE_SKIPPED_VERSION, v).apply()
 
     val desktopMode: Boolean get() = sp.getBoolean(KEY_DESKTOP_MODE, false)
     /**
@@ -375,7 +383,6 @@ class Prefs(context: Context) {
     val labsBatchSave: Boolean get() = sp.getBoolean(KEY_LABS_BATCH_SAVE, false)
     val labsDynamicIndicator: Boolean get() = sp.getBoolean(KEY_LABS_DYNAMIC_INDICATOR, true)
     val labsAnimatedTheme: Boolean get() = sp.getBoolean(KEY_LABS_ANIMATED_THEME, false)
-    val labsToolbox: Boolean get() = sp.getBoolean(KEY_LABS_TOOLBOX, false)
     val labsExtendedMaterial: Boolean get() = sp.getBoolean(KEY_LABS_EXTENDED_MATERIAL, false)
     val labsMaterialbookDesktopCleanup: Boolean get() = sp.getBoolean(KEY_LABS_MATERIALBOOK_DESKTOP_CLEANUP, false)
     val labsMaterialbookTransparentProgress: Boolean get() = sp.getBoolean(KEY_LABS_MATERIALBOOK_TRANSPARENT_PROGRESS, false)

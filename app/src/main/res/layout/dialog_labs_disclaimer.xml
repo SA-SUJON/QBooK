@@ -31,7 +31,6 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
             android:layout_weight="1"
-            android:fontFamily="sans"
             android:text="@string/labs_disclaimer_title"
             android:textColor="@color/settings_title_foreground"
             android:textSize="20sp"
@@ -42,7 +41,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp"
-        android:fontFamily="sans"
         android:text="@string/labs_disclaimer_lead"
         android:textColor="@color/settings_title_foreground"
         android:textSize="16sp"
@@ -64,8 +62,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="sans"
-                android:text="@string/labs_disclaimer_paragraph_one"
+                    android:text="@string/labs_disclaimer_paragraph_one"
                 android:textColor="@color/settings_body_foreground"
                 android:textSize="14sp"
                 android:lineSpacingExtra="3dp" />
@@ -74,8 +71,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
-                android:fontFamily="sans"
-                android:text="@string/labs_disclaimer_paragraph_two"
+                    android:text="@string/labs_disclaimer_paragraph_two"
                 android:textColor="@color/settings_body_foreground"
                 android:textSize="14sp"
                 android:lineSpacingExtra="3dp" />
@@ -84,8 +80,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
-                android:fontFamily="sans"
-                android:text="@string/labs_disclaimer_paragraph_three"
+                    android:text="@string/labs_disclaimer_paragraph_three"
                 android:textColor="@color/settings_body_foreground"
                 android:textSize="14sp"
                 android:lineSpacingExtra="3dp" />
@@ -107,7 +102,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:fontFamily="sans"
         android:gravity="center"
         android:text="@string/labs_disclaimer_waiting"
         android:textColor="@color/settings_body_foreground"

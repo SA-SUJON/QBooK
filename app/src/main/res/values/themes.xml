@@ -40,6 +40,32 @@
         <item name="windowNoTitle">true</item>
     </style>
 
+    <style name="UnifiedGlassAction">
+        <item name="android:layout_width">180dp</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_margin">4dp</item>
+        <item name="android:background">@drawable/bg_settings_glass_pill</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:gravity">center</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:textColor">@color/settings_title_foreground</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="UnifiedGlassToggle">
+        <item name="android:layout_width">56dp</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:background">@drawable/bg_settings_glass_circle</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:padding">16dp</item>
+        <item name="android:scaleType">center</item>
+        <item name="android:tint">@color/settings_icon_foreground</item>
+    </style>
+
     <style name="Theme.QBooK.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>

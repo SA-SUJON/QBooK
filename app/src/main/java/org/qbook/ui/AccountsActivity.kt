@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.qbook.R
+import org.qbook.utils.NativeTypography
 import org.qbook.utils.Prefs
 import org.qbook.utils.ProfileStore
 
@@ -64,6 +65,13 @@ class AccountsActivity : AppCompatActivity() {
         prefs = startupPrefs
         WindowCompatHelper.prepare(window)
         setContentView(R.layout.activity_accounts_sessions)
+        val accountsScroll = findViewById<android.widget.ScrollView>(R.id.accounts_scroll)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(accountsScroll) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            view.setPadding(view.paddingLeft, bars.top, view.paddingRight, bars.bottom)
+            insets
+        }
+        androidx.core.view.ViewCompat.requestApplyInsets(accountsScroll)
         if (prefs.labsAnimatedTheme) {
             findViewById<android.view.View>(R.id.accounts_root).apply {
                 alpha = 0f
@@ -75,6 +83,7 @@ class AccountsActivity : AppCompatActivity() {
         state = ProfileStore.load(this)
         bindActions()
         renderProfiles()
+        NativeTypography.applyActivity(this)
     }
 
     override fun onResume() {
@@ -82,6 +91,7 @@ class AccountsActivity : AppCompatActivity() {
         if (::profileList.isInitialized) {
             state = ProfileStore.load(this)
             renderProfiles()
+            NativeTypography.applyActivity(this)
         }
     }
 
@@ -236,17 +246,20 @@ class AccountsActivity : AppCompatActivity() {
             add(getString(R.string.accounts_rename))
             if (current.profiles.size > 1) add(getString(R.string.accounts_delete))
         }.toTypedArray()
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.accounts_more_actions_title)
-            .setItems(actions) { _, which ->
-                val firstAction = if (profile.id != current.defaultProfileId) 0 else -1
-                when {
-                    firstAction == 0 && which == 0 -> selectDefault(profile.id)
-                    which == if (firstAction == 0) 1 else 0 -> showRenameDialog(profile)
-                    else -> showDeleteDialog(profile)
-                }
+        TypographySelectionDialog.show(
+            context = this,
+            title = getString(R.string.accounts_more_actions_title),
+            subtitle = "Manage this profile without leaving Accounts & Sessions.",
+            entries = actions.toList(),
+            selectedIndex = -1
+        ) { which ->
+            val firstAction = if (profile.id != current.defaultProfileId) 0 else -1
+            when {
+                firstAction == 0 && which == 0 -> selectDefault(profile.id)
+                which == if (firstAction == 0) 1 else 0 -> showRenameDialog(profile)
+                else -> showDeleteDialog(profile)
             }
-            .show()
+        }
     }
 
     private fun showCreateProfileDialog() {

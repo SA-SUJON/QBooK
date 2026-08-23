@@ -18,7 +18,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="14dp"
-        android:fontFamily="sans"
         android:letterSpacing="0.06"
         android:maxLines="1"
         android:textColor="@color/settings_accent"

@@ -12,6 +12,9 @@ import android.widget.Toast
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.PreferenceGroupAdapter
+import androidx.preference.PreferenceScreen
+import androidx.preference.PreferenceViewHolder
 import androidx.preference.SwitchPreferenceCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -24,6 +27,7 @@ import org.qbook.utils.DiagCapture
 import org.qbook.utils.Prefs
 import org.qbook.utils.ProfileStore
 import org.qbook.utils.NativeTypography
+import org.qbook.utils.UpdateWatcher
 import org.qbook.utils.PrivacySecurityManager
 import org.qbook.viewmodel.MainViewModel
 
@@ -34,6 +38,22 @@ class LabsFragment : PreferenceFragmentCompat() {
     private var disclaimerShownForVisit = false
     private var disclaimerDialog: Dialog? = null
     private var disclaimerTimer: CountDownTimer? = null
+
+    override fun onCreateAdapter(screen: PreferenceScreen): androidx.recyclerview.widget.RecyclerView.Adapter<PreferenceViewHolder> {
+        return object : PreferenceGroupAdapter(screen) {
+            override fun onBindViewHolder(holder: PreferenceViewHolder, position: Int) {
+                super.onBindViewHolder(holder, position)
+                if (::prefs.isInitialized && isAdded) {
+                    NativeTypography.apply(
+                        holder.itemView,
+                        requireContext(),
+                        prefs.fontFamily,
+                        prefs.fontScale
+                    )
+                }
+            }
+        }
+    }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.settings_labs, rootKey)
@@ -129,6 +149,7 @@ class LabsFragment : PreferenceFragmentCompat() {
             }
         }
         dialog.show()
+        NativeTypography.applyDialog(dialog, requireContext())
 
         val duration = 10_000L
         disclaimerTimer = object : CountDownTimer(duration, 250L) {
@@ -150,6 +171,11 @@ class LabsFragment : PreferenceFragmentCompat() {
     }
 
     private fun wireLabsFeatures() {
+        findPreference<Preference>("labs_show_update_dialog")?.setOnPreferenceClickListener {
+            UpdateWatcher.showAgain()
+            toast(getString(R.string.update_checking))
+            true
+        }
         findPreference<Preference>("labs_download_center_open")
             ?.setOnPreferenceClickListener {
                 if (prefs.labsDownloadCenter) {
@@ -188,8 +214,22 @@ class LabsFragment : PreferenceFragmentCompat() {
             ?.setOnPreferenceChangeListener { _, _ -> markDirty(true); true }
         findPreference<SwitchPreferenceCompat>(Prefs.KEY_LABS_LIQUID_GLASS)
             ?.setOnPreferenceChangeListener { _, _ -> activity?.recreate(); true }
-        findPreference<SwitchPreferenceCompat>(Prefs.KEY_LABS_ANIMATED_THEME)
-            ?.setOnPreferenceChangeListener { _, _ -> activity?.recreate(); true }
+        val animatedThemeInfo = findPreference<Preference>("labs_animated_theme_info")
+        findPreference<SwitchPreferenceCompat>(Prefs.KEY_LABS_ANIMATED_THEME)?.apply {
+            animatedThemeInfo?.summary = getString(
+                if (isChecked) R.string.labs_animated_theme_info_enabled
+                else R.string.labs_animated_theme_info_disabled
+            )
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                animatedThemeInfo?.summary = getString(
+                    if (enabled) R.string.labs_animated_theme_info_enabled
+                    else R.string.labs_animated_theme_info_disabled
+                )
+                activity?.recreate()
+                true
+            }
+        }
         findPreference<SwitchPreferenceCompat>(Prefs.KEY_LABS_EXTENDED_MATERIAL)
             ?.setOnPreferenceChangeListener { _, _ -> markDirty(true); true }
         findPreference<SwitchPreferenceCompat>(Prefs.KEY_LABS_MATERIALBOOK_DESKTOP_CLEANUP)

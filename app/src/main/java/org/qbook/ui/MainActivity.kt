@@ -131,7 +131,6 @@ class MainActivity : AppCompatActivity() {
     private val materialbookOverridesScript by lazy { loadRawScript(R.raw.materialbook_overrides) }
     private val mediaClipboardScript by lazy { loadRawScript(R.raw.media_clipboard) }
     private val mediaDownloaderScript by lazy { loadRawScript(R.raw.download_content) }
-    private val labsToolboxScript by lazy { loadRawScript(R.raw.labs_toolbox) }
 
     /** Live network state, updated by the ConnectivityManager callback. */
     @Volatile private var isOnline: Boolean = true
@@ -299,8 +298,7 @@ class MainActivity : AppCompatActivity() {
                 animate().alpha(1f).setDuration(240L).start()
             }
         }
-        setupSettingsButton()
-        setupBookmarksButton()
+        setupUnifiedActionMenu()
 
         // Blocklist + offline store load off the main thread.
         OfflineCache.init(applicationContext)
@@ -695,28 +693,6 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent(this, SettingsActivity::class.java))
     }
 
-    private fun setupBookmarksButton() {
-        binding.bookmarksButton.setOnClickListener {
-            startActivity(Intent(this, BookmarksActivity::class.java))
-        }
-        binding.bookmarksButton.setOnLongClickListener {
-            captureVisibleBookmark()
-            true
-        }
-        val density = resources.displayMetrics.density
-        val baseTop = (12f * density + 0.5f).toInt()
-        val baseEnd = (68f * density + 0.5f).toInt()
-        ViewCompat.setOnApplyWindowInsetsListener(binding.bookmarksButton) { view, insets ->
-            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
-            val params = view.layoutParams as android.widget.FrameLayout.LayoutParams
-            params.topMargin = baseTop + bars.top
-            params.marginEnd = baseEnd + bars.right
-            view.layoutParams = params
-            insets
-        }
-        ViewCompat.requestApplyInsets(binding.bookmarksButton)
-    }
-
     private fun captureVisibleBookmark() {
         binding.webView.evaluateJavascript("""
             (function() {
@@ -765,21 +741,129 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupSettingsButton() {
-        binding.settingsButton.setOnClickListener { openControlCenter() }
-        val density = resources.displayMetrics.density
-        val baseTop = (12f * density + 0.5f).toInt()
-        val baseEnd = (12f * density + 0.5f).toInt()
-        ViewCompat.setOnApplyWindowInsetsListener(binding.settingsButton) { view, insets ->
+    private fun setupUnifiedActionMenu() {
+        val menu = binding.unifiedActionMenu
+        val panel = binding.unifiedActionPanel
+        val toggle = binding.unifiedActionToggle
+        val baseBottom = actionDp(24)
+
+        ViewCompat.setOnApplyWindowInsetsListener(menu) { view, insets ->
             val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val params = view.layoutParams as android.widget.FrameLayout.LayoutParams
-            params.topMargin = baseTop + bars.top
-            params.marginEnd = baseEnd + bars.right
+            params.bottomMargin = baseBottom + bars.bottom
+            params.marginEnd = actionDp(16) + bars.right
             view.layoutParams = params
             insets
         }
-        ViewCompat.requestApplyInsets(binding.settingsButton)
+        ViewCompat.requestApplyInsets(menu)
+
+        toggle.setOnClickListener {
+            setUnifiedActionMenuExpanded(panel.visibility != View.VISIBLE)
+        }
+        binding.actionSettings.setOnClickListener {
+            closeUnifiedActionMenu()
+            openControlCenter()
+        }
+        binding.actionBookmark.setOnClickListener {
+            closeUnifiedActionMenu()
+            captureVisibleBookmark()
+        }
+        binding.actionDownloadCenter.setOnClickListener {
+            closeUnifiedActionMenu()
+            if (prefs.labsDownloadCenter) {
+                startActivity(Intent(this, DownloadCenterActivity::class.java))
+            } else {
+                toast(getString(R.string.labs_download_center_toggle_sum))
+            }
+        }
+        binding.actionReaderMode.setOnClickListener {
+            closeUnifiedActionMenu()
+            toggleReaderMode()
+        }
+        binding.actionScreenshot.setOnClickListener {
+            closeUnifiedActionMenu()
+            binding.webView.evaluateJavascript("window.FBPro?.captureScreenshot?.();", null)
+        }
+        binding.actionCopyLink.setOnClickListener {
+            closeUnifiedActionMenu()
+            binding.webView.evaluateJavascript("window.FBPro?.copyCurrentLink?.();", null)
+        }
+        binding.actionSaveAll.setOnClickListener {
+            closeUnifiedActionMenu()
+            clickPageAction("qbook-batch-downloader")
+        }
+        binding.actionSaveMedia.setOnClickListener {
+            closeUnifiedActionMenu()
+            clickPageAction("qbook-global-downloader")
+        }
     }
+
+    private fun setUnifiedActionMenuExpanded(expanded: Boolean) {
+        val panel = binding.unifiedActionPanel
+        val toggle = binding.unifiedActionToggle
+        panel.animate().cancel()
+        toggle.animate().cancel()
+        if (expanded) {
+            panel.visibility = View.VISIBLE
+            panel.alpha = 0f
+            panel.translationY = actionDp(12).toFloat()
+            panel.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(220L)
+                .start()
+            toggle.animate().rotation(180f).setDuration(220L).start()
+            toggle.contentDescription = getString(R.string.action_menu_close)
+        } else {
+            panel.animate()
+                .alpha(0f)
+                .translationY(actionDp(12).toFloat())
+                .setDuration(160L)
+                .withEndAction { panel.visibility = View.GONE }
+                .start()
+            toggle.animate().rotation(0f).setDuration(160L).start()
+            toggle.contentDescription = getString(R.string.action_menu_open)
+        }
+    }
+
+    private fun closeUnifiedActionMenu() {
+        if (binding.unifiedActionPanel.visibility == View.VISIBLE) {
+            setUnifiedActionMenuExpanded(false)
+        }
+    }
+
+    private fun toggleReaderMode() {
+        binding.webView.evaluateJavascript(
+            """
+            (function() {
+              const styleId = 'qbook-reader-mode-style';
+              if (!document.getElementById(styleId)) {
+                const style = document.createElement('style');
+                style.id = styleId;
+                style.textContent = `
+                  body.qbook-reader-mode { background: #111 !important; }
+                  body.qbook-reader-mode > *:not(#qbook-reader-mode-style) {
+                    filter: grayscale(.1) contrast(1.05);
+                  }
+                `;
+                (document.head || document.documentElement).appendChild(style);
+              }
+              document.body.classList.toggle('qbook-reader-mode');
+            })();
+            """.trimIndent(),
+            null
+        )
+    }
+
+    private fun clickPageAction(elementId: String) {
+        binding.webView.evaluateJavascript(
+            "document.getElementById('$elementId')?.click();",
+            null
+        )
+    }
+
+    private fun actionDp(value: Int): Int =
+        (value * resources.displayMetrics.density + 0.5f).toInt()
 
     // ---------------------------------------------------------------- setup
 
@@ -2104,9 +2188,6 @@ class MainActivity : AppCompatActivity() {
         if (prefs.mediaDownloader && prefs.labsReelOptions) {
             view.evaluateJavascript(mediaDownloaderScript, null)
         }
-        if (prefs.labsToolbox) {
-            view.evaluateJavascript(labsToolboxScript, null)
-        }
         // Typography is last so it wins over Facebook and QBooK's other
         // presentation sheets, and it is re-applied after SPA route changes.
         view.evaluateJavascript(FontManager.cssScript(this), null)
@@ -2285,7 +2366,8 @@ class MainActivity : AppCompatActivity() {
                 // back exactly as it left. It costs nothing: the WebView is
                 // covered by the fullscreen container and is not drawn.
                 binding.contentRoot.visibility = View.INVISIBLE
-                binding.settingsButton.visibility = View.GONE
+                closeUnifiedActionMenu()
+                binding.unifiedActionMenu.visibility = View.GONE
                 enterImmersive(true)
                 // Entering fullscreen straight after a fast Wi-Fi page load
                 // (the app opening directly into Reels, say) can race the
@@ -2325,7 +2407,7 @@ class MainActivity : AppCompatActivity() {
                 // whatever was there before - the dead-strip-no-tap shape.
                 binding.contentRoot.requestLayout()
                 binding.contentRoot.visibility = View.VISIBLE
-                binding.settingsButton.visibility = View.VISIBLE
+                binding.unifiedActionMenu.visibility = View.VISIBLE
                 customView = null
                 customViewCallback?.onCustomViewHidden()
                 customViewCallback = null

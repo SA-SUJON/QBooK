@@ -8,6 +8,12 @@
         android:layout="@layout/preference_category_material" />
 
     <Preference
+        android:key="labs_show_update_dialog"
+        android:title="@string/labs_show_update_dialog"
+        android:summary="@string/labs_show_update_dialog_sum"
+        app:iconSpaceReserved="false" />
+
+    <Preference
         android:key="labs_download_center_open"
         android:title="@string/labs_download_center"
         android:summary="@string/labs_download_center_sum"
@@ -73,12 +79,11 @@
         android:summary="@string/labs_animated_theme_sum"
         android:defaultValue="false"
         app:iconSpaceReserved="false" />
-    <SwitchPreferenceCompat
-        app:widgetLayout="@layout/preference_widget_material_switch"
-        android:key="labs_toolbox"
-        android:title="@string/labs_toolbox"
-        android:summary="@string/labs_toolbox_sum"
-        android:defaultValue="false"
+    <Preference
+        android:key="labs_animated_theme_info"
+        android:title="@string/labs_animated_theme_info_title"
+        android:summary="@string/labs_animated_theme_info_disabled"
+        android:selectable="false"
         app:iconSpaceReserved="false" />
     <SwitchPreferenceCompat
         app:widgetLayout="@layout/preference_widget_material_switch"

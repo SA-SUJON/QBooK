@@ -20,8 +20,12 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.PreferenceGroupAdapter
+import androidx.preference.PreferenceScreen
+import androidx.preference.PreferenceViewHolder
 import androidx.preference.SwitchPreferenceCompat
 import androidx.recyclerview.widget.DefaultItemAnimator
+import androidx.recyclerview.widget.RecyclerView
 import org.qbook.R
 import org.qbook.utils.AdBlocker
 import org.qbook.utils.AppExecutors
@@ -152,6 +156,12 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<android.widget.TextView>(R.id.settings_title)
             .text = getString(if (isLabsScreen) R.string.cat_labs else R.string.hidden_settings)
+        NativeTypography.applyActivity(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        NativeTypography.applyActivity(this)
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -180,6 +190,8 @@ class SettingsActivity : AppCompatActivity() {
         private lateinit var prefs: Prefs
         private val expandedSections = linkedMapOf<String, Boolean>()
         private var developerExpanded = false
+        private var typographyRecycler: RecyclerView? = null
+        private var typographyAttachListener: RecyclerView.OnChildAttachStateChangeListener? = null
 
         companion object {
             private const val STATE_EXPANDED = "qbook_expanded_sections"
@@ -215,33 +227,31 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         override fun onDisplayPreferenceDialog(preference: Preference) {
-            if (preference is ListPreference && preference.key in setOf(
-                    Prefs.KEY_DARK_MODE,
-                    Prefs.KEY_FONT_FAMILY,
-                    Prefs.KEY_FONT_SCALE,
-                    "offline_reel_count",
-                    "offline_post_count",
-                    "offline_network"
-                )
-            ) {
-                val entries = preference.entries ?: return
+            if (preference is ListPreference) {
+                val entries = preference.entries?.map { it.toString() } ?: return
                 val values = preference.entryValues ?: return
-                val selected = preference.findIndexOfValue(preference.value)
-                AlertDialog.Builder(requireContext())
-                    .setTitle(preference.dialogTitle ?: preference.title)
-                    .setSingleChoiceItems(entries, selected) { dialog, which ->
-                        val value = values[which].toString()
-                        if (preference.callChangeListener(value)) {
-                            preference.value = value
-                            dialog.dismiss()
-                        }
+                val selected = preference.findIndexOfValue(preference.value).coerceAtLeast(0)
+                val subtitle = when (preference.key) {
+                    Prefs.KEY_DARK_MODE -> "Choose how QBooK renders its surfaces and contrast."
+                    Prefs.KEY_FONT_FAMILY -> "Choose the typeface used across QBooK’s native surfaces."
+                    Prefs.KEY_FONT_SCALE -> "Adjust reading density across the complete interface."
+                    "offline_reel_count" -> "Set the maximum number of reels kept in the offline reserve."
+                    "offline_post_count" -> "Set the maximum number of posts kept in the offline reserve."
+                    "offline_network" -> "Choose which connection types may fill the offline reserve."
+                    else -> "Choose one option to continue."
+                }
+                TypographySelectionDialog.show(
+                    context = requireContext(),
+                    title = (preference.dialogTitle ?: preference.title)?.toString() ?: "Choose an option",
+                    subtitle = subtitle,
+                    entries = entries,
+                    selectedIndex = selected
+                ) { which ->
+                    val value = values[which].toString()
+                    if (preference.callChangeListener(value)) {
+                        preference.value = value
                     }
-                    .setNegativeButton(R.string.dialog_dismiss, null)
-                    .create()
-                    .also { dialog ->
-                        dialog.show()
-                        NativeTypography.applyDialog(dialog, requireContext())
-                    }
+                }
             } else {
                 super.onDisplayPreferenceDialog(preference)
             }
@@ -249,7 +259,6 @@ class SettingsActivity : AppCompatActivity() {
 
         override fun onViewCreated(view: android.view.View, savedInstanceState: Bundle?) {
             super.onViewCreated(view, savedInstanceState)
-            if (::prefs.isInitialized) applyTypographyNow()
             // The Stitch layout uses card spacing rather than list separators.
             // PreferenceFragmentCompat installs a full-width DividerDecoration
             // by default; remove it so no rules appear behind the glass cards.
@@ -271,6 +280,65 @@ class SettingsActivity : AppCompatActivity() {
                 post {
                     if (itemDecorationCount == 0) {
                         addItemDecoration(SettingsSectionCardDecoration(requireContext(), SECTION_KEYS.toSet()))
+                    }
+                }
+            }
+            installTypographyRowObserver()
+            if (::prefs.isInitialized) {
+                applyTypographyNow()
+                listView?.post { applyTypographyNow() }
+            }
+        }
+
+        private fun installTypographyRowObserver() {
+            val recycler = listView ?: return
+            typographyRecycler?.let { previous ->
+                typographyAttachListener?.let(previous::removeOnChildAttachStateChangeListener)
+            }
+            val listener = object : RecyclerView.OnChildAttachStateChangeListener {
+                override fun onChildViewAttachedToWindow(view: android.view.View) {
+                    if (::prefs.isInitialized) {
+                        NativeTypography.apply(view, requireContext(), prefs.fontFamily, prefs.fontScale)
+                    }
+                }
+
+                override fun onChildViewDetachedFromWindow(view: android.view.View) = Unit
+            }
+            typographyRecycler = recycler
+            typographyAttachListener = listener
+            recycler.addOnChildAttachStateChangeListener(listener)
+            recycler.post {
+                for (index in 0 until recycler.childCount) {
+                    NativeTypography.apply(
+                        recycler.getChildAt(index),
+                        requireContext(),
+                        prefs.fontFamily,
+                        prefs.fontScale
+                    )
+                }
+            }
+        }
+
+        override fun onDestroyView() {
+            typographyRecycler?.let { recycler ->
+                typographyAttachListener?.let(recycler::removeOnChildAttachStateChangeListener)
+            }
+            typographyAttachListener = null
+            typographyRecycler = null
+            super.onDestroyView()
+        }
+
+        override fun onCreateAdapter(screen: PreferenceScreen): androidx.recyclerview.widget.RecyclerView.Adapter<PreferenceViewHolder> {
+            return object : PreferenceGroupAdapter(screen) {
+                override fun onBindViewHolder(holder: PreferenceViewHolder, position: Int) {
+                    super.onBindViewHolder(holder, position)
+                    if (::prefs.isInitialized && isAdded) {
+                        NativeTypography.apply(
+                            holder.itemView,
+                            requireContext(),
+                            prefs.fontFamily,
+                            prefs.fontScale
+                        )
                     }
                 }
             }
@@ -296,6 +364,7 @@ class SettingsActivity : AppCompatActivity() {
         override fun onResume() {
             super.onResume()
             refreshOfflineSize()
+            refreshAnimatedThemeIcons()
             tick = object : Runnable {
                 override fun run() {
                     if (!isAdded) return
@@ -310,6 +379,19 @@ class SettingsActivity : AppCompatActivity() {
             super.onPause()
             tick?.let { view?.removeCallbacks(it) }
             tick = null
+        }
+
+        private fun refreshAnimatedThemeIcons() {
+            val recycler = listView ?: return
+            val enabled = prefs.labsAnimatedTheme
+            for (index in 0 until recycler.childCount) {
+                val icon = recycler.getChildAt(index)
+                    .findViewById<android.view.View>(android.R.id.icon)
+                    ?: continue
+                val key = icon.getTag(R.id.animated_theme_key_tag) as? String
+                    ?: continue
+                AnimatedThemeIconAnimator.bind(icon, key, enabled)
+            }
         }
 
         private fun setSectionExpanded(key: String, expanded: Boolean) {
@@ -1388,117 +1470,151 @@ class SettingsActivity : AppCompatActivity() {
         private fun showIconPickerDialog(currentIdx: Int) {
             val ctx = requireContext()
             val values = resources.getStringArray(R.array.icon_values)
+            val labels = resources.getStringArray(R.array.icon_entries)
             val d = resources.displayMetrics.density
+            fun dp(value: Int) = (value * d + 0.5f).toInt()
 
-            // The existing two-column picker remains unchanged; all 16 icons
-            // are reachable by scrolling the grid. Selection is
-            // shown as a ring rather than a name, so it reads at a glance
-            // instead of being read. Tapping an icon moves the ring there
-            // immediately and zooms the icon slightly - a live preview of
-            // the pending choice - but nothing is applied until OK; Cancel
-            // leaves the real selection untouched.
-            // Round 28: bigger preview. The old sizes (52dp icon, 84dp
-            // cell) read as a grid of thumbnails in the dialog, not as
-            // previews; a user picking a launcher icon wants to see
-            // what the icon will actually look like in their launcher
-            // drawer. Roughly 1.5x on the icon and the cell, the ring
-            // and the dialog height scaled to match, two cells per row
-            // (so the user can see fewer rows in better detail than
-            // three cramped ones). The ring scales with the icon so the
-            // selected-vs-not distinction still reads at a glance.
-            val cellSize = (80 * d).toInt()
-            val cellBox = (120 * d).toInt()
-            val cellMargin = (4 * d).toInt()
-            val ringSize = (96 * d).toInt()
+            val content = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(dp(20), dp(18), dp(20), dp(8))
+                setBackgroundResource(R.drawable.bg_launcher_picker)
+            }
+            val title = android.widget.TextView(ctx).apply {
+                text = getString(R.string.pref_icon)
+                setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.settings_title_foreground))
+                textSize = 22f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            }
+            content.addView(title, android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, dp(32)
+            ))
+            val subtitle = android.widget.TextView(ctx).apply {
+                text = getString(R.string.launcher_icon_picker_subtitle)
+                setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.settings_body_foreground))
+                textSize = 13f
+                setPadding(0, dp(2), 0, dp(10))
+            }
+            content.addView(subtitle)
 
             val grid = android.widget.GridLayout(ctx).apply {
-                columnCount = 2
-                setPadding((16 * d).toInt(), (16 * d).toInt(), (16 * d).toInt(), (8 * d).toInt())
+                columnCount = 4
+                alignmentMode = android.widget.GridLayout.ALIGN_MARGINS
+                useDefaultMargins = false
+                setPadding(0, dp(4), 0, dp(4))
             }
-
             val scroll = android.widget.ScrollView(ctx).apply {
+                isFillViewport = true
+                overScrollMode = android.view.View.OVER_SCROLL_NEVER
                 addView(grid)
-                layoutParams = android.widget.FrameLayout.LayoutParams(
-                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                    (440 * d).toInt()
-                )
             }
+            content.addView(scroll, android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, dp(430)
+            ))
 
             var pendingIdx = currentIdx
-            val rings = HashMap<Int, android.view.View>()
+            val cells = HashMap<Int, android.view.View>()
             val icons = HashMap<Int, android.widget.ImageView>()
+            val labelViews = HashMap<Int, android.widget.TextView>()
 
-            fun selectPending(i: Int) {
-                pendingIdx = i
-                for ((idx, ring) in rings) {
-                    ring.visibility = if (idx == i)
-                        android.view.View.VISIBLE else android.view.View.INVISIBLE
+            fun selectPending(index: Int) {
+                pendingIdx = index
+                cells.forEach { (key, cell) ->
+                    cell.setBackgroundResource(if (key == index) R.drawable.bg_icon_selected_ring else R.drawable.bg_icon_cell)
+                    cell.alpha = if (key == index) 1f else 0.84f
                 }
-                for ((idx, iv) in icons) {
-                    iv.scaleX = if (idx == i) 1.12f else 1f
-                    iv.scaleY = if (idx == i) 1.12f else 1f
+                icons.forEach { (key, icon) ->
+                    val scale = if (key == index) 1.08f else 1f
+                    icon.animate().scaleX(scale).scaleY(scale).setDuration(140L).start()
+                }
+                labelViews.forEach { (key, label) ->
+                    label.setTextColor(
+                        androidx.core.content.ContextCompat.getColor(
+                            ctx,
+                            if (key == index) R.color.primary else R.color.settings_body_foreground
+                        )
+                    )
                 }
             }
 
-            val dialog = AlertDialog.Builder(ctx)
-                .setTitle(getString(R.string.pref_icon))
-                .setView(scroll)
-                .setPositiveButton(android.R.string.ok) { _, _ ->
-                    applyAppIcon(pendingIdx)
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .create()
-
-            for (vi in values.indices) {
-                val i = values[vi].toIntOrNull() ?: continue
-                if (i !in 0..15) continue
-
-                val cell = android.widget.FrameLayout(ctx).apply {
-                    layoutParams = android.widget.GridLayout.LayoutParams(
-                        android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED),
-                        android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
-                    ).apply {
-                        width = 0
-                        height = cellBox
-                        setMargins(cellMargin, cellMargin, cellMargin, cellMargin)
-                    }
-                    foreground = android.graphics.drawable.RippleDrawable(
-                        android.content.res.ColorStateList.valueOf(0x33FFFFFF),
-                        null,
-                        android.graphics.drawable.ShapeDrawable(
-                            android.graphics.drawable.shapes.OvalShape()
-                        )
-                    )
+            for (valueIndex in values.indices) {
+                val index = values[valueIndex].toIntOrNull() ?: continue
+                if (index !in 0..15) continue
+                val cell = android.widget.LinearLayout(ctx).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    gravity = android.view.Gravity.CENTER
                     isClickable = true
                     isFocusable = true
+                    setPadding(dp(2), dp(4), dp(2), dp(4))
+                    setBackgroundResource(if (index == currentIdx) R.drawable.bg_icon_selected_ring else R.drawable.bg_icon_cell)
+                    alpha = if (index == currentIdx) 1f else 0.84f
                 }
-
-                val ring = android.view.View(ctx).apply {
-                    layoutParams = android.widget.FrameLayout.LayoutParams(
-                        ringSize, ringSize, android.view.Gravity.CENTER
-                    )
-                    setBackgroundResource(R.drawable.bg_icon_selected_ring)
-                    visibility = if (i == currentIdx)
-                        android.view.View.VISIBLE else android.view.View.INVISIBLE
+                val cellParams = android.widget.GridLayout.LayoutParams(
+                    android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f),
+                    android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                ).apply {
+                    width = 0
+                    height = dp(92)
+                    setMargins(dp(3), dp(3), dp(3), dp(3))
                 }
-                rings[i] = ring
-
-                val img = android.widget.ImageView(ctx).apply {
-                    setImageResource(iconRes(i))
-                    layoutParams = android.widget.FrameLayout.LayoutParams(
-                        cellSize, cellSize, android.view.Gravity.CENTER
-                    )
+                cell.layoutParams = cellParams
+                val icon = android.widget.ImageView(ctx).apply {
+                    setImageResource(iconRes(index))
+                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(54), dp(54))
                     scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                    if (i == currentIdx) { scaleX = 1.12f; scaleY = 1.12f }
+                    if (index == currentIdx) { scaleX = 1.08f; scaleY = 1.08f }
+                    contentDescription = labels.getOrNull(index) ?: getString(R.string.pref_icon)
                 }
-                icons[i] = img
-
-                cell.addView(ring)
-                cell.addView(img)
-                cell.setOnClickListener { selectPending(i) }
+                val name = android.widget.TextView(ctx).apply {
+                    text = labels.getOrNull(index) ?: "Icon ${index + 1}"
+                    gravity = android.view.Gravity.CENTER
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    textSize = 11f
+                    setTextColor(
+                        androidx.core.content.ContextCompat.getColor(
+                            ctx,
+                            if (index == currentIdx) R.color.primary else R.color.settings_body_foreground
+                        )
+                    )
+                }
+                cells[index] = cell
+                icons[index] = icon
+                labelViews[index] = name
+                cell.addView(icon)
+                cell.addView(name, android.widget.LinearLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT, dp(20)
+                ))
+                cell.setOnClickListener { selectPending(index) }
                 grid.addView(cell)
             }
 
+            val dialog = AlertDialog.Builder(ctx)
+                .setView(content)
+                .setPositiveButton(android.R.string.ok) { _, _ -> applyAppIcon(pendingIdx) }
+                .setNegativeButton(android.R.string.cancel, null)
+                .create()
+
+            dialog.setOnShowListener {
+                val width = minOf(resources.displayMetrics.widthPixels - dp(24), dp(420))
+                dialog.window?.apply {
+                    setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                    addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                    attributes = attributes.apply { dimAmount = 0.68f }
+                    setLayout(width, android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+                }
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+                    setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.on_primary))
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(
+                        androidx.core.content.ContextCompat.getColor(ctx, R.color.primary)
+                    )
+                    minWidth = dp(88)
+                }
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.apply {
+                    setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.primary))
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+                    minWidth = dp(88)
+                }
+            }
             dialog.show()
             NativeTypography.applyDialog(dialog, ctx)
         }

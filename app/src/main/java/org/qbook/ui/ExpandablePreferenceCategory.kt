@@ -7,6 +7,7 @@ import android.view.animation.DecelerateInterpolator
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceViewHolder
 import org.qbook.R
+import org.qbook.utils.Prefs
 
 /**
  * Selectable section header used by the single-screen Control Center.
@@ -38,6 +39,10 @@ class ExpandablePreferenceCategory @JvmOverloads constructor(
 
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
         super.onBindViewHolder(holder)
+        val preferenceKey = key ?: return
+        holder.itemView.findViewById<View>(android.R.id.icon)?.let { icon ->
+            AnimatedThemeIconAnimator.bind(icon, preferenceKey, Prefs(context).labsAnimatedTheme)
+        }
         val indicator = holder.itemView.findViewById<View>(R.id.expand_indicator)
         indicator?.let {
             val target = if (expanded) 180f else 0f

@@ -99,7 +99,7 @@ object FontManager {
             family == SYSTEM_VALUE -> null
             else -> PredefinedFonts.all.firstOrNull { it.asset == family }?.let { definition ->
                 runCatching {
-                    Typeface.createFromAsset(context.applicationContext.assets, "fonts-ttf/${definition.asset.removeSuffix(".woff2")}.ttf")
+                    Typeface.createFromAsset(context.applicationContext.assets, "fonts/${definition.asset}")
                 }.getOrNull()
             }
         }

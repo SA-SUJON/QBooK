@@ -1,36 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/updateDialogContainer"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:background="@drawable/bg_launcher_picker"
     android:orientation="vertical"
-    android:padding="24dp">
+    android:paddingStart="24dp"
+    android:paddingTop="22dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="16dp">
 
-    <TextView
-        android:id="@+id/updTitle"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="@color/fb_text"
-        android:textSize="20sp"
-        android:textStyle="bold" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_settings_glass_circle"
+            android:contentDescription="@string/qbook_logo_description"
+            android:padding="10dp"
+            android:src="@mipmap/ic_launcher"
+            android:scaleType="centerInside" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/updTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/settings_title_foreground"
+                android:textSize="21sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="QBooK release channel"
+                android:textColor="@color/settings_body_foreground"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/updBody"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:textColor="@color/fb_text_dim"
+        android:layout_marginTop="18dp"
+        android:lineSpacingExtra="2dp"
+        android:textColor="@color/settings_body_foreground"
         android:textSize="14sp" />
 
     <ProgressBar
         android:id="@+id/updProgress"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="6dp"
+        android:layout_height="7dp"
         android:layout_marginTop="18dp"
         android:indeterminate="true"
         android:max="100"
-        android:progressTint="@color/fb_brand"
+        android:progressTint="@color/primary"
         android:visibility="gone" />
 
     <TextView
@@ -38,18 +76,49 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:textColor="@color/fb_text_dim"
+        android:textColor="@color/settings_body_foreground"
         android:textSize="13sp"
         android:visibility="gone" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/updButton"
+    <CheckBox
+        android:id="@+id/updDontShowAgain"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_marginTop="18dp"
-        android:text="@string/update_download"
-        android:textAllCaps="false"
-        android:textSize="16sp"
-        app:backgroundTint="@color/fb_brand"
-        app:cornerRadius="24dp" />
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:buttonTint="@color/primary"
+        android:text="@string/update_dont_show_again"
+        android:textColor="@color/settings_body_foreground"
+        android:textSize="13sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="end|center_vertical"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/updSkip"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="46dp"
+            android:text="@string/update_skip"
+            android:textAllCaps="false"
+            android:textColor="@color/primary"
+            app:backgroundTint="@android:color/transparent"
+            app:cornerRadius="23dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/updButton"
+            android:layout_width="wrap_content"
+            android:layout_height="46dp"
+            android:layout_marginStart="8dp"
+            android:minWidth="112dp"
+            android:text="@string/update_download"
+            android:textAllCaps="false"
+            android:textColor="@color/on_primary"
+            android:textSize="15sp"
+            app:backgroundTint="@color/primary"
+            app:cornerRadius="23dp" />
+    </LinearLayout>
 </LinearLayout>

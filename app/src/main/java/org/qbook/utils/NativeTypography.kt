@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Typeface
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.TextView
 import java.util.WeakHashMap
 
@@ -15,7 +16,8 @@ object NativeTypography {
 
     private val baselines = WeakHashMap<TextView, Baseline>()
     private val appliedStates = WeakHashMap<TextView, String>()
-    private val observedRoots = WeakHashMap<View, View.OnLayoutChangeListener>()
+    private val appliedTypefaces = WeakHashMap<TextView, Typeface?>()
+    private val observedRoots = WeakHashMap<View, ViewTreeObserver.OnGlobalLayoutListener>()
 
     /** Apply and observe an entire Activity window. */
     fun applyActivity(activity: Activity) {
@@ -41,10 +43,14 @@ object NativeTypography {
                 textView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, desiredSize)
             }
             val style = baseline.typeface?.style ?: Typeface.NORMAL
-            val desiredTypeface = if (typeface == null) null else Typeface.create(typeface, style)
+            val desiredTypeface = if (typeface == null) baseline.typeface else Typeface.create(typeface, style)
             val state = "${family.lowercase()}:$style:$customToken"
-            if (appliedStates[textView] != state) {
-                textView.typeface = desiredTypeface ?: baseline.typeface
+            val stateChanged = appliedStates[textView] != state
+            val typefaceReset = !appliedTypefaces.containsKey(textView) ||
+                textView.typeface !== appliedTypefaces[textView]
+            if (stateChanged || typefaceReset) {
+                textView.typeface = desiredTypeface
+                appliedTypefaces[textView] = desiredTypeface
                 appliedStates[textView] = state
             }
         }
@@ -63,12 +69,14 @@ object NativeTypography {
 
     private fun observe(root: View, context: Context) {
         if (observedRoots.containsKey(root)) return
-        val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            val prefs = Prefs(context)
-            apply(root, context, prefs.fontFamily, prefs.fontScale)
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            if (root.isAttachedToWindow) {
+                val prefs = Prefs(context)
+                apply(root, context, prefs.fontFamily, prefs.fontScale)
+            }
         }
         observedRoots[root] = listener
-        root.addOnLayoutChangeListener(listener)
+        root.viewTreeObserver.addOnGlobalLayoutListener(listener)
     }
 
     private fun walk(view: View, action: (TextView) -> Unit) {

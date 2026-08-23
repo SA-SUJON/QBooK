@@ -11,22 +11,22 @@
     </string-array>
 
     <string-array name="icon_entries">
-        <item>Default Icon</item>
-        <item>Variant 01</item>
-        <item>Variant 02</item>
-        <item>Variant 03</item>
-        <item>Variant 04</item>
-        <item>Variant 05</item>
-        <item>Variant 06</item>
-        <item>Variant 07</item>
-        <item>Variant 08</item>
-        <item>Variant 09</item>
-        <item>Variant 10</item>
-        <item>Variant 11</item>
-        <item>Variant 12</item>
-        <item>Variant 13</item>
-        <item>Variant 14</item>
-        <item>Variant 15</item>
+        <item>Default</item>
+        <item>Aurora</item>
+        <item>Orbit</item>
+        <item>Bloom</item>
+        <item>Nexus</item>
+        <item>Verdant</item>
+        <item>Sync</item>
+        <item>Cube</item>
+        <item>Share</item>
+        <item>Globe</item>
+        <item>Shuffle</item>
+        <item>Monolith</item>
+        <item>Halo</item>
+        <item>Spark</item>
+        <item>Flux</item>
+        <item>Canvas</item>
     </string-array>
 
     <string-array name="icon_values">

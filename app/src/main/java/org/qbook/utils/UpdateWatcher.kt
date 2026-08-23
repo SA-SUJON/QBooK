@@ -73,7 +73,7 @@ object UpdateWatcher {
                     // A release found while the user was on another screen
                     // must not wait for the next poll to be offered.
                     if (pending != null) {
-                        main.post { present() }
+                        main.post { present(false) }
                     } else {
                         checkNow(force = false)
                     }
@@ -102,11 +102,11 @@ object UpdateWatcher {
         if (checking) return
 
         val prefs = Prefs(application)
-        if (!force && !prefs.autoUpdateCheck) return
+        if (!force && (!prefs.autoUpdateCheck || prefs.updatePromptsSuppressed)) return
 
         // Already know about one: show it rather than asking GitHub again.
         if (pending != null) {
-            main.post { present() }
+            main.post { present(force) }
             return
         }
 
@@ -121,7 +121,7 @@ object UpdateWatcher {
                 val rel = (res as? UpdateChecker.Result.Update)?.release
                 if (rel != null) {
                     pending = rel
-                    main.post { present() }
+                    main.post { present(force) }
                 }
             } catch (e: Exception) {
                 // A failed check is not worth reporting; we try again later.
@@ -132,11 +132,13 @@ object UpdateWatcher {
     }
 
     /** Show the prompt on whichever Activity is in front, if any. */
-    private fun present() {
+    private fun present(force: Boolean) {
         val rel = pending ?: return
         val activity = current?.get() ?: return
         if (activity.isFinishing || activity.isDestroyed) return
         val application = app ?: return
+        val prefs = Prefs(application)
+        if (!force && (prefs.updatePromptsSuppressed || prefs.updateSkippedVersion == rel.version)) return
         val local = UpdateChecker.currentVersion(application)
         // The version may have been installed since the check.
         if (!UpdateChecker.isNewer(rel.version, local)) {
@@ -148,6 +150,27 @@ object UpdateWatcher {
         } catch (e: Exception) {
             // Activity went away between the check and the dialog.
         }
+    }
+
+    /** Skip one release and optionally silence automatic prompts. */
+    fun skip(version: String, suppressFuturePrompts: Boolean) {
+        app?.let { application ->
+            val prefs = Prefs(application)
+            prefs.updateSkippedVersion = version
+            if (suppressFuturePrompts) prefs.updatePromptsSuppressed = true
+        }
+        pending = null
+    }
+
+    /** Re-enable automatic prompts and explicitly check for the latest release. */
+    fun showAgain() {
+        app?.let { application ->
+            val prefs = Prefs(application)
+            prefs.updatePromptsSuppressed = false
+            prefs.updateSkippedVersion = null
+        }
+        pending = null
+        checkNow(force = true)
     }
 
     /** Called once the update has been installed, or no longer applies. */

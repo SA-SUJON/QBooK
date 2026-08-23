@@ -29,7 +29,7 @@
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
-            android:background="@drawable/bg_settings_button"
+            android:background="@drawable/bg_qbook_pill"
             android:hint="@string/download_search_hint"
             android:inputType="text"
             android:paddingStart="14dp"

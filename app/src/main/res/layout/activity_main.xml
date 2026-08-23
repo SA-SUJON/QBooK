@@ -106,7 +106,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
         android:layout_marginTop="16dp"
-        android:background="@drawable/bg_settings_button"
+        android:background="@drawable/bg_qbook_pill"
         android:elevation="8dp"
         android:paddingStart="14dp"
         android:paddingTop="8dp"
@@ -116,37 +116,76 @@
         android:textSize="12sp"
         android:visibility="gone" />
 
-    <ImageButton
-        android:id="@+id/bookmarksButton"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="12dp"
-        android:layout_marginEnd="68dp"
-        android:background="@drawable/bg_settings_button"
-        android:contentDescription="@string/open_bookmarks"
-        android:elevation="6dp"
-        android:padding="12dp"
-        android:src="@drawable/ic_bookmark"
-        android:tint="@color/fb_icon"
-        android:translationZ="6dp"
-        android:visibility="visible" />
 
-    <ImageButton
-        android:id="@+id/settingsButton"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="12dp"
-        android:layout_marginEnd="12dp"
-        android:background="@drawable/bg_settings_button"
-        android:contentDescription="@string/open_settings"
-        android:elevation="6dp"
-        android:padding="12dp"
-        android:src="@drawable/ic_settings"
-        android:translationZ="6dp"
-        android:tint="@color/fb_icon"
-        android:visibility="visible" />
+
+    <LinearLayout
+        android:id="@+id/unifiedActionMenu"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="24dp"
+        android:gravity="end"
+        android:orientation="vertical"
+        android:elevation="10dp"
+        android:translationZ="10dp">
+
+        <LinearLayout
+            android:id="@+id/unifiedActionPanel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:gravity="end"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/actionSettings"
+                style="@style/UnifiedGlassAction"
+                android:text="@string/action_menu_settings" />
+
+            <TextView
+                android:id="@+id/actionBookmark"
+                style="@style/UnifiedGlassAction"
+                android:text="@string/action_menu_bookmark" />
+
+            <TextView
+                android:id="@+id/actionDownloadCenter"
+                style="@style/UnifiedGlassAction"
+                android:text="@string/action_menu_download_center" />
+
+            <TextView
+                android:id="@+id/actionReaderMode"
+                style="@style/UnifiedGlassAction"
+                android:text="@string/action_menu_reader_mode" />
+
+            <TextView
+                android:id="@+id/actionScreenshot"
+                style="@style/UnifiedGlassAction"
+                android:text="@string/action_menu_screenshot" />
+
+            <TextView
+                android:id="@+id/actionCopyLink"
+                style="@style/UnifiedGlassAction"
+                android:text="@string/action_menu_copy_link" />
+
+            <TextView
+                android:id="@+id/actionSaveAll"
+                style="@style/UnifiedGlassAction"
+                android:text="@string/action_menu_save_all" />
+
+            <TextView
+                android:id="@+id/actionSaveMedia"
+                style="@style/UnifiedGlassAction"
+                android:text="@string/action_menu_save_media" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/unifiedActionToggle"
+            style="@style/UnifiedGlassToggle"
+            android:contentDescription="@string/action_menu_open"
+            android:src="@drawable/ic_expand_up" />
+    </LinearLayout>
 
     <FrameLayout
         android:id="@+id/customViewContainer"
