@@ -80,6 +80,8 @@ import org.qbook.utils.QBookMaterialYouBridge
 import org.qbook.utils.ClipboardBridge
 import org.qbook.utils.MaterialbookFeaturesBridge
 import org.qbook.utils.MaterialbookOverridesBridge
+import org.qbook.utils.BookmarkStore
+import org.json.JSONTokener
 import org.qbook.utils.SettingsBridge
 import org.qbook.utils.VideoHelper
 import org.qbook.utils.SessionState
@@ -298,6 +300,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         setupSettingsButton()
+        setupBookmarksButton()
 
         // Blocklist + offline store load off the main thread.
         OfflineCache.init(applicationContext)
@@ -690,6 +693,76 @@ class MainActivity : AppCompatActivity() {
             )
         }
         startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    private fun setupBookmarksButton() {
+        binding.bookmarksButton.setOnClickListener {
+            startActivity(Intent(this, BookmarksActivity::class.java))
+        }
+        binding.bookmarksButton.setOnLongClickListener {
+            captureVisibleBookmark()
+            true
+        }
+        val density = resources.displayMetrics.density
+        val baseTop = (12f * density + 0.5f).toInt()
+        val baseEnd = (68f * density + 0.5f).toInt()
+        ViewCompat.setOnApplyWindowInsetsListener(binding.bookmarksButton) { view, insets ->
+            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            val params = view.layoutParams as android.widget.FrameLayout.LayoutParams
+            params.topMargin = baseTop + bars.top
+            params.marginEnd = baseEnd + bars.right
+            view.layoutParams = params
+            insets
+        }
+        ViewCompat.requestApplyInsets(binding.bookmarksButton)
+    }
+
+    private fun captureVisibleBookmark() {
+        binding.webView.evaluateJavascript("""
+            (function() {
+              const candidates = Array.from(document.querySelectorAll(
+                'div[role="article"], article, [data-pagelet*="FeedUnit"], [data-pagelet*="Reels"]'
+              ));
+              const visible = candidates.find((node) => {
+                const r = node.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
+              });
+              if (!visible) return null;
+              const links = Array.from(visible.querySelectorAll('a[href]'))
+                .map((a) => a.href).filter(Boolean);
+              const mediaUrls = Array.from(visible.querySelectorAll('img[src],video[src],source[src]'))
+                .map((node) => node.currentSrc || node.src).filter(Boolean).slice(0, 12);
+              const id = visible.getAttribute('data-ft') || visible.getAttribute('data-store') ||
+                links.find((url) => /(?:story|posts?|videos?|reel|permalink)/i.test(url)) ||
+                visible.innerText.slice(0, 160);
+              const title = (visible.innerText || 'Saved Facebook post').trim().replace(/\s+/g, ' ').slice(0, 180);
+              return JSON.stringify({ id: String(id).slice(0, 240), title, url: location.href,
+                html: visible.outerHTML, mediaUrls });
+            })()
+        """.trimIndent()) { raw ->
+            val encoded = raw?.takeIf { it != "null" } ?: run {
+                toast(getString(R.string.bookmark_not_found))
+                return@evaluateJavascript
+            }
+            runCatching {
+                val payload = JSONTokener(encoded).nextValue() as String
+                val objectValue = org.json.JSONObject(payload)
+                val bookmark = BookmarkStore.Bookmark(
+                    id = objectValue.optString("id").ifBlank { "bookmark_${System.currentTimeMillis()}" },
+                    title = objectValue.optString("title").ifBlank { getString(R.string.bookmarks_title) },
+                    url = objectValue.optString("url"),
+                    html = objectValue.optString("html"),
+                    mediaUrls = objectValue.optJSONArray("mediaUrls")?.let { array ->
+                        buildList { for (index in 0 until array.length()) add(array.optString(index)) }
+                    } ?: emptyList(),
+                    createdAt = System.currentTimeMillis()
+                )
+                BookmarkStore.upsert(this, bookmark)
+                toast(getString(R.string.bookmark_saved))
+            }.onFailure {
+                toast(getString(R.string.bookmark_not_found))
+            }
+        }
     }
 
     private fun setupSettingsButton() {

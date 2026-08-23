@@ -18,11 +18,15 @@ object ProfileStore {
     private const val VERSION = 1
     private const val FACEBOOK_COOKIE_URL = "https://www.facebook.com/"
     private const val PROFILE_ID_PREFIX = "profile_"
+    const val KIND_PERSONAL = "personal"
+    const val KIND_BUSINESS = "business"
+    const val KIND_PAGE = "page"
 
     data class Profile(
         val id: String,
         val name: String,
-        val cookies: String
+        val cookies: String,
+        val kind: String = KIND_PERSONAL
     ) {
         val isActive: Boolean get() = cookies.isNotBlank()
         val initial: String get() = name.trim().firstOrNull()?.uppercase() ?: "?"
@@ -52,7 +56,8 @@ object ProfileStore {
                 Profile(
                     id = "personal",
                     name = "Personal",
-                    cookies = currentCookies()
+                    cookies = currentCookies(),
+                    kind = KIND_PERSONAL
                 )
             ),
             defaultProfileId = "personal",
@@ -78,12 +83,12 @@ object ProfileStore {
     }
 
     @Synchronized
-    fun create(context: Context, name: String, cookies: String = ""): State {
+    fun create(context: Context, name: String, cookies: String = "", kind: String = KIND_PERSONAL): State {
         val current = captureCurrentSession(context)
         val cleanName = name.trim().ifBlank { "New profile" }
         val id = PROFILE_ID_PREFIX + UUID.randomUUID().toString().replace("-", "").take(12)
         val updated = current.copy(
-            profiles = current.profiles + Profile(id, cleanName, cookies.trim())
+            profiles = current.profiles + Profile(id, cleanName, cookies.trim(), normalizeKind(kind))
         )
         save(context, updated)
         return updated
@@ -157,7 +162,8 @@ object ProfileStore {
                     put(JSONObject()
                         .put("id", profile.id)
                         .put("name", profile.name)
-                        .put("cookies", profile.cookies))
+                        .put("cookies", profile.cookies)
+                        .put("kind", profile.kind))
                 }
             })
 
@@ -190,7 +196,7 @@ object ProfileStore {
                 val id = item.optString("id").trim()
                 val name = item.optString("name").trim()
                 if (id.isNotBlank() && name.isNotBlank()) {
-                    add(Profile(id, name, item.optString("cookies")))
+                    add(Profile(id, name, item.optString("cookies"), normalizeKind(item.optString("kind"))))
                 }
             }
         }.ifEmpty { listOf(Profile("personal", "Personal", "")) }
@@ -257,7 +263,7 @@ object ProfileStore {
         val profiles = buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                add(Profile(item.optString("id"), item.optString("name"), item.optString("cookies")))
+                add(Profile(item.optString("id"), item.optString("name"), item.optString("cookies"), normalizeKind(item.optString("kind"))))
             }
         }
         return State(
@@ -278,13 +284,29 @@ object ProfileStore {
                     put(JSONObject()
                         .put("id", profile.id)
                         .put("name", profile.name)
-                        .put("cookies", profile.cookies))
+                        .put("cookies", profile.cookies)
+                        .put("kind", profile.kind))
                 }
             })
         val destination = file(context)
         val temporary = File(destination.parentFile, "$FILE_NAME.part")
         temporary.writeText(root.toString())
         if (!temporary.renameTo(destination)) temporary.delete()
+    }
+
+    /** Stable WebView suffix selected before the first WebView is created. */
+    fun storageSuffix(context: Context): String {
+        val activeId = runCatching {
+            if (!file(context).exists()) "personal"
+            else JSONObject(file(context).readText()).optString("activeProfileId")
+        }.getOrDefault("personal").ifBlank { "personal" }
+        return "profile_" + activeId.replace(Regex("[^A-Za-z0-9_]"), "_").take(48)
+    }
+
+    private fun normalizeKind(value: String): String = when (value.lowercase()) {
+        KIND_BUSINESS -> KIND_BUSINESS
+        KIND_PAGE -> KIND_PAGE
+        else -> KIND_PERSONAL
     }
 
     private fun currentCookies(): String =

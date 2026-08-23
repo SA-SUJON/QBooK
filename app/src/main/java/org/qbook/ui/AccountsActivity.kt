@@ -13,6 +13,8 @@ import android.view.Window
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -178,6 +180,12 @@ class AccountsActivity : AppCompatActivity() {
             setTextColor(resolveColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
         })
         details.addView(TextView(this).apply {
+            text = getString(R.string.accounts_profile_kind_summary, profileKindLabel(profile.kind))
+            setPadding(0, dp(4), 0, 0)
+            textSize = 12f
+            setTextColor(resolveColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
+        })
+        details.addView(TextView(this).apply {
             text = getString(R.string.accounts_profile_id, profile.id)
             setPadding(0, dp(4), 0, 0)
             textSize = 11f
@@ -242,23 +250,59 @@ class AccountsActivity : AppCompatActivity() {
     }
 
     private fun showCreateProfileDialog() {
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(4), dp(4), 0)
+        }
         val input = EditText(this).apply {
             hint = getString(R.string.accounts_profile_name)
             setSingleLine(true)
             setPadding(dp(4), dp(8), dp(4), dp(8))
         }
+        form.addView(input, LinearLayout.LayoutParams(-1, dp(56)))
+        form.addView(TextView(this).apply {
+            text = getString(R.string.accounts_profile_kind)
+            textSize = 13f
+            setTextColor(resolveColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
+            setPadding(dp(4), dp(12), dp(4), dp(2))
+        })
+        val kinds = listOf(
+            ProfileStore.KIND_PERSONAL to R.string.accounts_profile_kind_personal,
+            ProfileStore.KIND_BUSINESS to R.string.accounts_profile_kind_business,
+            ProfileStore.KIND_PAGE to R.string.accounts_profile_kind_page
+        )
+        var selectedKind = ProfileStore.KIND_PERSONAL
+        val group = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
+        kinds.forEachIndexed { index, (kind, label) ->
+            group.addView(RadioButton(this).apply {
+                text = getString(label)
+                tag = kind
+                isChecked = index == 0
+                setPadding(dp(4), dp(4), 0, dp(4))
+            })
+        }
+        group.setOnCheckedChangeListener { _, checkedId ->
+            selectedKind = group.findViewById<RadioButton>(checkedId)?.tag as? String ?: selectedKind
+        }
+        form.addView(group)
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.accounts_add_profile)
             .setMessage(R.string.accounts_import_hint)
-            .setView(input)
+            .setView(form)
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(R.string.accounts_add_profile) { _, _ ->
-                val created = ProfileStore.create(this, input.text.toString())
+                val created = ProfileStore.create(this, input.text.toString(), kind = selectedKind)
                 state = created
                 renderProfiles()
                 openProfile(created.profiles.last().id)
             }
             .show()
+    }
+
+    private fun profileKindLabel(kind: String): String = when (kind) {
+        ProfileStore.KIND_BUSINESS -> getString(R.string.accounts_profile_kind_business)
+        ProfileStore.KIND_PAGE -> getString(R.string.accounts_profile_kind_page)
+        else -> getString(R.string.accounts_profile_kind_personal)
     }
 
     private fun showRenameDialog(profile: ProfileStore.Profile) {

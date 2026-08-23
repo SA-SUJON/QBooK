@@ -339,6 +339,13 @@
             android:excludeFromRecents="true"
             android:parentActivityName=".ui.SettingsActivity"
             android:theme="@style/Theme.QBooK" />
+        <activity
+            android:name=".ui.BookmarksActivity"
+            android:exported="false"
+            android:label="@string/bookmarks_title"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".ui.MainActivity"
+            android:theme="@style/Theme.QBooK" />
 
         <activity
             android:name=".ui.DiagnosticLogActivity"

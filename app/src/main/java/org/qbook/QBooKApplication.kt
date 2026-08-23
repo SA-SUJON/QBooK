@@ -16,6 +16,7 @@ import org.qbook.utils.OfflineCache
 import org.qbook.utils.OfflineDocs
 import org.qbook.utils.OfflineFeed
 import org.qbook.utils.Prefs
+import org.qbook.utils.ProfileStore
 import org.qbook.utils.PrivacySecurityManager
 import org.qbook.utils.UpdateWatcher
 
@@ -94,6 +95,17 @@ class QBooKApplication : Application() {
         if (prefs.pushNotifications) NotificationPresenter.ensureChannels(this)
         NotificationWorker.sync(this, prefs)
 
+        // Select the active profile before the first WebView/CookieManager use.
+        // This gives each profile its own Chromium storage namespace on Android P+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val process = getProcessName()
+            if (packageName != process) {
+                WebView.setDataDirectorySuffix(process)
+            } else {
+                WebView.setDataDirectorySuffix(ProfileStore.storageSuffix(this))
+            }
+        }
+
         // Start Chromium during app startup rather than on the first frame of
         // MainActivity. Without this the very first load pays for the whole
         // WebView provider init, which is the long delay after a cold start.
@@ -103,12 +115,6 @@ class QBooKApplication : Application() {
 
         // Ensure the launcher icon matches the user's saved preference.
         syncAppIcon(prefs)
-
-        // Required when more than one process uses a WebView.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val process = getProcessName()
-            if (packageName != process) WebView.setDataDirectorySuffix(process)
-        }
     }
 
     override fun onTerminate() {
