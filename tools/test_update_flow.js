@@ -37,7 +37,7 @@ ok('checks again while the app stays open', watcher.includes('POLL_INTERVAL_MS')
 ok('polls far more often than daily',
    /POLL_INTERVAL_MS\s*=\s*30L \* 60 \* 1000/.test(watcher));
 ok('re-offers a known release on screen change',
-   /onActivityResumed[\s\S]{0,400}pending != null[\s\S]{0,120}present\(\)/.test(watcher));
+   /onActivityResumed[\s\S]{0,400}pending != null[\s\S]{0,120}present\(false\)/.test(watcher));
 // V4 routes background work through AppExecutors instead of raw threads.
 ok('never blocks the main thread',
    watcher.includes('AppExecutors.background.execute') ||
@@ -45,16 +45,22 @@ ok('never blocks the main thread',
 ok('drops the activity reference on pause',
    watcher.includes('WeakReference') && watcher.includes('onActivityPaused'));
 ok('re-verifies the version before prompting',
-   /present\(\)[\s\S]{0,600}isNewer/.test(watcher));
+   /private fun present\(force: Boolean\)[\s\S]{0,700}isNewer/.test(watcher));
 ok('failures stay silent', /catch \(e: Exception\)/.test(watcher));
 
 console.log('\nUpdatePrompt');
 ok('works from any Activity', /fun show\(\s*activity: Activity/.test(prompt));
-ok('is still mandatory',
+ok('cannot be dismissed accidentally',
    prompt.includes('setCancelable(false)') &&
    prompt.includes('setCanceledOnTouchOutside(false)'));
-ok('offers no skip or later button',
-   !/update_skip|update_later/.test(prompt));
+ ok('offers Skip and Do not show again controls',
+   prompt.includes('R.id.updSkip') &&
+   prompt.includes('R.id.updDontShowAgain') &&
+   prompt.includes('UpdateWatcher.skip(rel.version, dontShowAgain.isChecked)'));
+ ok('the Labs re-show path re-enables prompts',
+   watcher.includes('fun showAgain()') &&
+   watcher.includes('updatePromptsSuppressed = false') &&
+   watcher.includes('updateSkippedVersion = null'));
 ok('never stacks two dialogs', prompt.includes('isShowing()'));
 ok('installs in the app, not a browser',
    prompt.includes('ApkInstaller.install') && !/ACTION_VIEW/.test(prompt));

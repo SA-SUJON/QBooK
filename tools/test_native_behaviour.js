@@ -1613,7 +1613,10 @@ console.log('\nBackground audio is for Reels, and only when audible');
     ok('and from the settings screen', !/layout_probe/.test(browsingXml));
     ok('with no orphan strings left behind', !/pref_layout_probe/.test(strings));
 
-    // The visible gear is the only normal settings entry point.
+    // The standalone gear, bookmark, and toolbox buttons were intentionally
+    // replaced by one native action menu anchored at the bottom right.
+    // Keep these checks aligned with the shipped interaction rather than
+    // preserving assertions for controls the product no longer exposes.
     const legacySettingsTokens = [
       'ThreeFinger' + 'DoubleTapDetector',
       'gesture' + 'Detector',
@@ -1625,36 +1628,59 @@ console.log('\nBackground audio is for Reels, and only when audible');
 
     const mainLayout = fs.readFileSync(
       path.join(ROOT, 'app/src/main/res/layout/activity_main.xml'), 'utf8');
-    ok('the settings gear is a native root overlay outside the WebView',
-       /<ImageButton[\s\S]*android:id="@\+id\/settingsButton"/.test(mainLayout) &&
-       mainLayout.indexOf('android:id="@+id/settingsButton"') >
-         mainLayout.indexOf('android:id="@+id/webView"') &&
-       mainLayout.indexOf('android:id="@+id/settingsButton"') <
-         mainLayout.indexOf('android:id="@+id/customViewContainer"'));
-    ok('the settings gear has an accessible 48dp target and label',
-       /android:layout_width="48dp"[\s\S]{0,240}android:layout_height="48dp"/.test(mainLayout) &&
-       /android:contentDescription="@string\/open_settings"/.test(mainLayout));
-    ok('the gear uses a native settings vector and visible ripple treatment',
-       /android:src="@drawable\/ic_settings"/.test(mainLayout) &&
-       /android:background="@drawable\/bg_settings_button"/.test(mainLayout));
-    ok('the gear listener uses the visible Control Center launch path',
-       /setupSettingsButton[\s\S]{0,300}binding\.settingsButton\.setOnClickListener\s*\{\s*openControlCenter\(\)\s*\}/.test(ma) &&
+    const themes = fs.readFileSync(
+      path.join(ROOT, 'app/src/main/res/values/themes.xml'), 'utf8');
+    const menuAt = mainLayout.indexOf('android:id="@+id/unifiedActionMenu"');
+    const webViewAt = mainLayout.indexOf('android:id="@+id/webView"');
+    const customViewAt = mainLayout.indexOf('android:id="@+id/customViewContainer"');
+    ok('the standalone floating controls are removed',
+       !mainLayout.includes('settingsButton') &&
+       !mainLayout.includes('bookmarkButton') &&
+       !mainLayout.includes('toolboxButton') &&
+       !ma.includes('settingsButton'));
+    ok('the unified action menu is a native overlay outside the WebView',
+       menuAt > webViewAt && menuAt < customViewAt &&
+       /android:layout_gravity="bottom\|end"/.test(mainLayout));
+    ok('the circular toggle has an accessible target and label',
+       /android:id="@\+id\/unifiedActionToggle"[\s\S]{0,180}android:contentDescription="@string\/action_menu_open"/.test(mainLayout) &&
+       /<style name="UnifiedGlassToggle">[\s\S]{0,220}android:layout_width">56dp[\s\S]{0,80}android:layout_height">56dp/.test(themes));
+    const actionIds = [
+      'actionSettings', 'actionBookmark', 'actionDownloadCenter',
+      'actionReaderMode', 'actionScreenshot', 'actionCopyLink',
+      'actionSaveAll', 'actionSaveMedia'
+    ];
+    ok('all action options use the shared glass pill style',
+       actionIds.every((id) =>
+         new RegExp('android:id="@\\+id/' + id + '"[\\s\\S]{0,100}style="@style/UnifiedGlassAction"')
+           .test(mainLayout)) &&
+       /<style name="UnifiedGlassAction">[\s\S]{0,180}android:layout_width">180dp[\s\S]{0,100}android:layout_height">48dp/.test(themes) &&
+       themes.includes('bg_settings_glass_pill'));
+    ok('the settings action uses the visible Control Center launch path',
+       /setupUnifiedActionMenu\(\)/.test(ma) &&
+       /binding\.actionSettings\.setOnClickListener[\s\S]{0,180}openControlCenter\(\)/.test(ma) &&
        /private fun openControlCenter\(\)[\s\S]{0,220}startActivity\(Intent\(this, SettingsActivity::class\.java\)\)/.test(ma));
-    ok('the gear remains reachable on the normal and error screens',
-       /setupSettingsButton\(\)/.test(ma) &&
-       /android:id="@\+id\/errorView"[\s\S]*android:id="@\+id\/settingsButton"/.test(mainLayout));
-    ok('the gear hides only during custom fullscreen and returns afterward',
-       /binding\.contentRoot\.visibility = View\.INVISIBLE[\s\S]{0,140}binding\.settingsButton\.visibility = View\.GONE/.test(ma) &&
-       /binding\.contentRoot\.visibility = View\.VISIBLE[\s\S]{0,140}binding\.settingsButton\.visibility = View\.VISIBLE/.test(ma));
+    ok('the unified menu is available on normal and error screens',
+       /setupUnifiedActionMenu\(\)/.test(ma) &&
+       menuAt > mainLayout.indexOf('android:id="@+id/errorView"'));
+    ok('the unified menu hides during custom fullscreen and returns afterward',
+       /binding\.contentRoot\.visibility = View\.INVISIBLE[\s\S]{0,260}binding\.unifiedActionMenu\.visibility = View\.GONE/.test(ma) &&
+       /binding\.contentRoot\.visibility = View\.VISIBLE[\s\S]{0,220}binding\.unifiedActionMenu\.visibility = View\.VISIBLE/.test(ma));
+    ok('the toggle expands and rotates the action panel',
+       /toggle\.setOnClickListener[\s\S]{0,120}setUnifiedActionMenuExpanded/.test(ma) &&
+       /toggle\.animate\(\)\.rotation\(180f\)/.test(ma) &&
+       /toggle\.animate\(\)\.rotation\(0f\)/.test(ma));
+    ok('the action menu listener routes all eight options',
+       actionIds.every((id) => new RegExp('binding\\.' + id + '\\.setOnClickListener').test(ma)));
 
     const sectionKeys = [
       'section_appearance', 'section_browsing', 'section_blocking',
       'section_home', 'section_offline', 'section_privacy', 'section_about'
     ];
     const settingsActivity = fs.readFileSync(KT('ui/SettingsActivity.kt'), 'utf8');
+    const preferenceSetupStart = settingsActivity.indexOf('override fun onCreatePreferences');
     const preferenceSetup = settingsActivity.slice(
-      settingsActivity.indexOf('override fun onCreatePreferences'),
-      settingsActivity.indexOf('override fun onResume'));
+      preferenceSetupStart,
+      settingsActivity.indexOf('override fun onResume', preferenceSetupStart));
     const sectionHeaderLayout = fs.readFileSync(
       path.join(ROOT, 'app/src/main/res/layout/preference_expandable_category.xml'), 'utf8');
     const categorySource = fs.readFileSync(
