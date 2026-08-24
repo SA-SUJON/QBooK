@@ -35,8 +35,8 @@ android {
         applicationId = "org.qbook"
         minSdk = 26
         targetSdk = 34
-        versionCode = 620
-        versionName = "6.2.0"
+        versionCode = 621
+        versionName = "6.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

@@ -410,8 +410,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        // Do not call WebView.saveState(outState) here. Chromium places its
+        // renderer state under WEBVIEW_CHROMIUM_STATE, which can exceed the
+        // Binder transaction limit while this Activity is being stopped (for
+        // example, when SettingsActivity is opened). SessionState already
+        // persists the validated WebView state to disk from onPause, so the
+        // framework Bundle must remain small and contain only ordinary view
+        // state.
         super.onSaveInstanceState(outState)
-        binding.webView.saveState(outState)
     }
 
     /**

@@ -180,6 +180,8 @@ console.log('\nSessionState');
   ok('caps the blob size', /1024 \* 1024/.test(ss));
 
   const ma = fs.readFileSync(KT('ui/MainActivity.kt'), 'utf8');
+  ok('does not put Chromium state into the framework bundle',
+     !ma.includes('binding.webView.saveState(outState)'));
   ok('restores from disk when the bundle is gone',
      ma.includes('SessionState.restore(this)'));
   ok('persists on pause', /onPause[\s\S]{0,600}persistSession\(\)/.test(ma));
