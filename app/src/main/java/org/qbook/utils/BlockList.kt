@@ -29,10 +29,14 @@ object BlockList {
     @Volatile
     private var hashes: LongArray = LongArray(0)
 
-    private fun hash(s: String): Long {
+    /**
+     * Computes FNV-1a 64-bit hash directly over [s] starting from [startIndex].
+     * Zero heap allocation per call, avoiding String.substring() overhead.
+     */
+    private fun hash(s: CharSequence, startIndex: Int = 0): Long {
         var h = -0x340d631b7bdddcdbL          // FNV-1a 64 offset basis
-        for (c in s) {
-            h = h xor c.code.toLong()
+        for (i in startIndex until s.length) {
+            h = h xor s[i].code.toLong()
             h *= 0x100000001b3L               // FNV prime
         }
         return h
@@ -96,7 +100,15 @@ object BlockList {
         if (isLoaded) return
         synchronized(this) {
             if (isLoaded) return
-            val list = ArrayList<Long>(700_000)
+            // Primitive LongArray buffer to avoid java.lang.Long boxing allocations during load
+            var buffer = LongArray(128_000)
+            var count = 0
+            fun addHash(h: Long) {
+                if (count == buffer.size) {
+                    buffer = buffer.copyOf(buffer.size * 2)
+                }
+                buffer[count++] = h
+            }
             try {
                 // The asset ships as blocklist.txt.gz, but aapt strips the .gz
                 // suffix and applies its own deflate, so at runtime the entry
@@ -127,7 +139,7 @@ object BlockList {
                             var line = r.readLine()
                             while (line != null) {
                                 val t = line.trim()
-                                if (t.isNotEmpty() && t[0] != '#') list.add(hash(t))
+                                if (t.isNotEmpty() && t[0] != '#') addHash(hash(t))
                                 line = r.readLine()
                             }
                         }
@@ -141,9 +153,8 @@ object BlockList {
             } catch (e: Exception) {
                 // Asset missing or corrupt: fall back to extraBlocked only.
             }
-            for (d in extraBlocked) list.add(hash(d))
-            val arr = LongArray(list.size)
-            for (i in list.indices) arr[i] = list[i]
+            for (d in extraBlocked) addHash(hash(d))
+            val arr = buffer.copyOf(count)
             arr.sort()                       // binary search needs sorted input
             hashes = arr
             isLoaded = true
@@ -156,13 +167,13 @@ object BlockList {
         allowList.any { host == it || host.endsWith(".$it") }
 
     /**
-     * True if [host] or any of its parent domains is on the blocklist.
-     * `ads.tracker.co.uk` checks: ads.tracker.co.uk, tracker.co.uk, co.uk.
+     * True if [s] or any of its parent domains is on the blocklist.
+     * Starts hashing at [startIndex] to avoid String.substring allocations.
      */
-    private fun contains(s: String): Boolean {
+    private fun contains(s: CharSequence, startIndex: Int = 0): Boolean {
         val arr = hashes
         if (arr.isEmpty()) return false
-        return arr.binarySearch(hash(s)) >= 0
+        return arr.binarySearch(hash(s, startIndex)) >= 0
     }
 
     fun blocksHost(host: String): Boolean {
@@ -170,7 +181,8 @@ object BlockList {
         if (contains(host)) return true
         var i = host.indexOf('.')
         while (i in 0 until host.length - 1) {
-            if (contains(host.substring(i + 1))) return true
+            // Zero-allocation subdomain lookup using index offset
+            if (contains(host, i + 1)) return true
             i = host.indexOf('.', i + 1)
         }
         return false
