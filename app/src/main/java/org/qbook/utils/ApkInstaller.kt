@@ -40,10 +40,29 @@ object ApkInstaller {
     }
 
     /**
+     * Validates that the APK URL uses HTTPS and comes from trusted release sources
+     * (e.g. GitHub releases or release assets CDN) to prevent cleartext downloads
+     * or arbitrary host downloads.
+     */
+    fun isSecureUpdateUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val uri = try { java.net.URI(url) } catch (e: Exception) { return false }
+        val scheme = uri.scheme?.lowercase(java.util.Locale.ROOT) ?: return false
+        if (scheme != "https") return false
+        val host = uri.host?.lowercase(java.util.Locale.ROOT) ?: return false
+        return host == "github.com" || host.endsWith(".github.com") ||
+            host == "githubusercontent.com" || host.endsWith(".githubusercontent.com")
+    }
+
+    /**
      * Start the download.
      * @return the DownloadManager id, or -1 if it could not be queued.
      */
     fun startDownload(context: Context, url: String, version: String): Long {
+        if (!isSecureUpdateUrl(url)) {
+            lastError = "Insecure or untrusted update URL"
+            return -1L
+        }
         return try {
             val file = target(context, version)
             if (file.exists()) file.delete()
